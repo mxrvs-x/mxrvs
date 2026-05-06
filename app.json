@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "mxrvs",
+    "slug": "mxrvs",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "mxrvs",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.anonymous.mxrvs",
+      "permissions": [
+        "ACTIVITY_RECOGNITION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ]
+    },
+    "web": {
+      "output": "static"
+    },
+    "plugins": ["expo-router", "expo-secure-store"],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}
