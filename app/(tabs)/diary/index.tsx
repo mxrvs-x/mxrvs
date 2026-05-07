@@ -1,12 +1,14 @@
 import FullNutritionDetails from "@/components/FullNutritionDetails";
+import MacroProgressCard from "@/components/MacroProgressCard";
+import MealCard from "@/components/MealCard";
+import { useDiary } from "@/contexts/DiaryContext";
 import { supabase } from "@/lib/supabase";
 import { AppTheme, useTheme } from "@/lib/theme";
-import { useFocusEffect, useRouter } from "expo-router";
-import { StepBack, StepForward } from "lucide-react-native";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useFocusEffect } from "expo-router";
+import { ChevronLeft, ChevronRight, SaladIcon } from "lucide-react-native";
+import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  PanResponder,
   Pressable,
   ScrollView,
   Text,
@@ -17,7 +19,7 @@ type MealType = "breakfast" | "lunch" | "dinner" | "snack";
 
 type FoodLog = {
   id: string;
-  log_date: string;
+  date: string;
   meal_type: MealType;
   quantity: number;
   unit: string;
@@ -42,7 +44,7 @@ type FoodLog = {
     id: string;
     name: string;
     brand: string | null;
-    source: "custom" | "usda_fdc" | "nccdb";
+    source: "custom" | "usda_fdc";
   } | null;
 };
 
@@ -53,10 +55,6 @@ type MacroTarget = {
   fat_target_g: number;
   goal: "cut" | "maintain" | "bulk";
   activity_level: "sedentary" | "light" | "moderate" | "active";
-};
-
-type LoggedDateRow = {
-  log_date: string;
 };
 
 const MEALS: { key: MealType; label: string }[] = [
@@ -74,11 +72,11 @@ const DEFAULT_TARGETS = {
   fiber_target_g: 30,
 };
 
-function n(value?: number | null) {
+function n(value?: number | string | null) {
   return Number(value ?? 0);
 }
 
-function localDateString(date: Date) {
+function formatDateKey(date: Date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
@@ -86,35 +84,12 @@ function localDateString(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
-function dateFromKey(dateKey: string) {
-  const [year, month, day] = dateKey.split("-").map(Number);
-  return new Date(year, month - 1, day);
-}
-
 function formatHeaderDate(date: Date) {
-  const today = localDateString(new Date());
-  const selected = localDateString(date);
-
-  const yesterdayDate = new Date();
-  yesterdayDate.setDate(yesterdayDate.getDate() - 1);
-  const yesterday = localDateString(yesterdayDate);
-
-  const label = date.toLocaleDateString("en-US", {
+  return date.toLocaleDateString("en-PH", {
     month: "short",
     day: "numeric",
-    year: selected === today || selected === yesterday ? undefined : "numeric",
+    year: "numeric",
   });
-
-  if (selected === today) return `Today, ${label}`;
-  if (selected === yesterday) return `← Yesterday, ${label}`;
-  if (selected < today) return `← ${label}`;
-  return `${label} →`;
-}
-
-function sourceLabel(source?: string | null) {
-  if (source === "usda_fdc") return "USDA";
-  if (source === "nccdb") return "AU";
-  return "CUSTOM";
 }
 
 function goalLabel(goal?: string) {
@@ -125,19 +100,14 @@ function goalLabel(goal?: string) {
 
 export default function DiaryScreen() {
   const theme = useTheme();
+  const diary = useDiary();
 
-  const [selectedDate, setSelectedDate] = useState(new Date());
+  const selectedDateString = diary.selectedDateString;
+
   const [logs, setLogs] = useState<FoodLog[]>([]);
-  const [loggedDates, setLoggedDates] = useState<Record<string, number>>({});
   const [macroTarget, setMacroTarget] = useState<MacroTarget | null>(null);
   const [loading, setLoading] = useState(false);
   const [nutritionModalOpen, setNutritionModalOpen] = useState(false);
-  const [calendarOpen, setCalendarOpen] = useState(false);
-
-  const selectedDateString = localDateString(selectedDate);
-
-  const [calendarMonth, setCalendarMonth] = useState(selectedDate.getMonth());
-  const [calendarYear, setCalendarYear] = useState(selectedDate.getFullYear());
 
   const targets = {
     calories: Math.round(
@@ -163,13 +133,12 @@ export default function DiaryScreen() {
 
     if (!user) {
       setLogs([]);
-      setLoggedDates({});
       setMacroTarget(null);
       setLoading(false);
       return;
     }
 
-    const [logsResult, targetResult, datesResult] = await Promise.all([
+    const [logsResult, targetResult] = await Promise.all([
       supabase
         .from("food_logs")
         .select(
@@ -184,7 +153,7 @@ export default function DiaryScreen() {
         `,
         )
         .eq("user_id", user.id)
-        .eq("log_date", selectedDateString)
+        .eq("date", selectedDateString)
         .order("created_at", { ascending: true }),
 
       supabase
@@ -205,8 +174,6 @@ export default function DiaryScreen() {
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle(),
-
-      supabase.from("food_logs").select("log_date").eq("user_id", user.id),
     ]);
 
     if (logsResult.error) {
@@ -221,20 +188,6 @@ export default function DiaryScreen() {
       setMacroTarget(null);
     } else {
       setMacroTarget((targetResult.data ?? null) as MacroTarget | null);
-    }
-
-    if (datesResult.error) {
-      console.log("Logged dates error:", datesResult.error);
-      setLoggedDates({});
-    } else {
-      const rows = (datesResult.data ?? []) as LoggedDateRow[];
-      const map: Record<string, number> = {};
-
-      rows.forEach((row) => {
-        map[row.log_date] = (map[row.log_date] || 0) + 1;
-      });
-
-      setLoggedDates(map);
     }
 
     setLoading(false);
@@ -262,6 +215,7 @@ export default function DiaryScreen() {
         acc.iron_mg += n(item.iron_mg);
         acc.magnesium_mg += n(item.magnesium_mg);
         acc.zinc_mg += n(item.zinc_mg);
+
         return acc;
       },
       {
@@ -282,431 +236,54 @@ export default function DiaryScreen() {
     );
   }, [logs]);
 
-  const monthDays = useMemo(() => {
-    const firstDay = new Date(calendarYear, calendarMonth, 1);
-    const lastDay = new Date(calendarYear, calendarMonth + 1, 0);
-
-    const firstWeekday = firstDay.getDay();
-    const totalDays = lastDay.getDate();
-
-    const days: {
-      date: string | null;
-      day: number | null;
-    }[] = [];
-
-    for (let i = 0; i < firstWeekday; i++) {
-      days.push({ date: null, day: null });
-    }
-
-    for (let day = 1; day <= totalDays; day++) {
-      days.push({
-        date: localDateString(new Date(calendarYear, calendarMonth, day)),
-        day,
-      });
-    }
-
-    return days;
-  }, [calendarMonth, calendarYear]);
-
-  function changeDate(days: number) {
-    setSelectedDate((current) => {
-      const next = new Date(current);
-      next.setDate(next.getDate() + days);
-
-      setCalendarMonth(next.getMonth());
-      setCalendarYear(next.getFullYear());
-
-      return next;
-    });
-  }
-
-  function goToToday() {
-    const today = new Date();
-
-    setSelectedDate(today);
-    setCalendarMonth(today.getMonth());
-    setCalendarYear(today.getFullYear());
-  }
-
-  function openCalendar() {
-    setCalendarMonth(selectedDate.getMonth());
-    setCalendarYear(selectedDate.getFullYear());
-    setCalendarOpen((value) => !value);
-  }
-
-  function selectCalendarDate(date: string) {
-    const next = dateFromKey(date);
-
-    setSelectedDate(next);
-    setCalendarMonth(next.getMonth());
-    setCalendarYear(next.getFullYear());
-    setCalendarOpen(false);
-  }
-
-  function changeMonth(direction: "prev" | "next") {
-    const nextDate = new Date(calendarYear, calendarMonth, 1);
-
-    if (direction === "prev") {
-      nextDate.setMonth(nextDate.getMonth() - 1);
-    } else {
-      nextDate.setMonth(nextDate.getMonth() + 1);
-    }
-
-    setCalendarMonth(nextDate.getMonth());
-    setCalendarYear(nextDate.getFullYear());
-  }
-
-  function monthTitle() {
-    return new Date(calendarYear, calendarMonth, 1).toLocaleDateString(
-      "en-PH",
-      {
-        month: "long",
-        year: "numeric",
-      },
-    );
-  }
-
-  function formatDate(date: string) {
-    return dateFromKey(date).toLocaleDateString("en-PH", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
-  }
-
-  const dateSwipeResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-
-      onMoveShouldSetPanResponderCapture: (_, gestureState) => {
-        const horizontal = Math.abs(gestureState.dx);
-        const vertical = Math.abs(gestureState.dy);
-
-        return horizontal > 20 && horizontal > vertical * 1.5;
-      },
-
-      onPanResponderTerminationRequest: () => false,
-
-      onPanResponderRelease: (_, gestureState) => {
-        const horizontal = Math.abs(gestureState.dx);
-        const vertical = Math.abs(gestureState.dy);
-
-        if (horizontal < 50 || horizontal < vertical * 1.5) return;
-
-        if (gestureState.dx > 0) {
-          changeDate(-1);
-        } else {
-          changeDate(1);
-        }
-      },
-    }),
-  ).current;
-
   return (
     <ScrollView
       directionalLockEnabled
-      style={{ flex: 1, backgroundColor: theme.colors.background }}
+      style={{
+        flex: 1,
+        backgroundColor: theme.colors.background,
+      }}
     >
-      <View style={{ padding: 12 }}>
-        <View
-          {...dateSwipeResponder.panHandlers}
-          style={{
-            marginBottom: 18,
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}
-        >
-          <Pressable onPress={() => changeDate(-1)}>
-            <StepBack color={theme.colors.text} />
-          </Pressable>
-
-          <Pressable
-            onPress={openCalendar}
-            style={{
-              alignItems: "center",
-              flex: 1,
-              paddingVertical: 10,
-            }}
-          >
-            <Text
-              style={{
-                fontSize: 20,
-                fontWeight: "900",
-                color: theme.colors.text,
-              }}
-            >
-              {formatHeaderDate(selectedDate)}
-            </Text>
-          </Pressable>
-
-          <Pressable onPress={() => changeDate(+1)}>
-            <StepForward color={theme.colors.text} />
-          </Pressable>
-        </View>
-
-        {calendarOpen && (
+      <View>
+        {diary.calendarOpen && (
           <View
             style={{
-              backgroundColor: theme.colors.surface,
-              borderRadius: 20,
-              padding: 14,
-              marginBottom: 18,
-              borderWidth: 1,
-              borderColor: theme.colors.border,
+              paddingHorizontal: 12,
+              paddingTop: 8,
             }}
           >
-            <View
-              style={{
-                flexDirection: "row",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: 12,
-              }}
-            >
-              <Pressable
-                onPress={() => changeMonth("prev")}
-                style={{
-                  backgroundColor: theme.colors.surfaceAlt,
-                  width: 34,
-                  height: 34,
-                  borderRadius: 17,
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <Text
-                  style={{
-                    fontSize: 18,
-                    fontWeight: "900",
-                    color: theme.colors.text,
-                  }}
-                >
-                  ‹
-                </Text>
-              </Pressable>
-
-              <Text
-                style={{
-                  fontSize: 16,
-                  fontWeight: "900",
-                  color: theme.colors.text,
-                }}
-              >
-                {monthTitle()}
-              </Text>
-
-              <Pressable
-                onPress={() => changeMonth("next")}
-                style={{
-                  backgroundColor: theme.colors.surfaceAlt,
-                  width: 34,
-                  height: 34,
-                  borderRadius: 17,
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <Text
-                  style={{
-                    fontSize: 18,
-                    fontWeight: "900",
-                    color: theme.colors.text,
-                  }}
-                >
-                  ›
-                </Text>
-              </Pressable>
-            </View>
-
-            <View style={{ flexDirection: "row", marginBottom: 6 }}>
-              {["S", "M", "T", "W", "T", "F", "S"].map((day, index) => (
-                <Text
-                  key={`${day}-${index}`}
-                  style={{
-                    flex: 1,
-                    textAlign: "center",
-                    color: theme.colors.textMuted,
-                    fontWeight: "800",
-                    fontSize: 11,
-                  }}
-                >
-                  {day}
-                </Text>
-              ))}
-            </View>
-
-            <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
-              {monthDays.map((item, index) => {
-                const isSelected = item.date === selectedDateString;
-                const isToday = item.date === localDateString(new Date());
-                const hasFoodLog = item.date
-                  ? loggedDates[item.date] > 0
-                  : false;
-
-                return (
-                  <Pressable
-                    key={`${item.date || "empty"}-${index}`}
-                    disabled={!item.date}
-                    onPress={() => {
-                      if (item.date) selectCalendarDate(item.date);
-                    }}
-                    style={{
-                      width: `${100 / 7}%`,
-                      paddingVertical: 4,
-                      alignItems: "center",
-                    }}
-                  >
-                    {item.day ? (
-                      <View
-                        style={{
-                          width: 36,
-                          height: 42,
-                          borderRadius: 14,
-                          alignItems: "center",
-                          justifyContent: "center",
-                          backgroundColor: isSelected
-                            ? theme.colors.selectedDay
-                            : isToday
-                              ? theme.colors.surfaceAlt
-                              : "transparent",
-                        }}
-                      >
-                        <Text
-                          style={{
-                            fontSize: 13,
-                            fontWeight: "900",
-                            color: isSelected
-                              ? theme.colors.textInverse
-                              : theme.colors.text,
-                          }}
-                        >
-                          {item.day}
-                        </Text>
-
-                        <Text style={{ fontSize: 10 }}>
-                          {hasFoodLog ? "🍽️" : ""}
-                        </Text>
-                      </View>
-                    ) : (
-                      <View style={{ width: 36, height: 42 }} />
-                    )}
-                  </Pressable>
-                );
-              })}
-            </View>
-
-            <View
-              style={{
-                marginTop: 10,
-                backgroundColor: theme.colors.surfaceAlt,
-                borderRadius: 14,
-                padding: 12,
-              }}
-            >
-              <Text style={{ fontWeight: "900", color: theme.colors.text }}>
-                {loggedDates[selectedDateString] || 0} food log
-                {(loggedDates[selectedDateString] || 0) === 1
-                  ? ""
-                  : "s"} on {formatDate(selectedDateString)}
-              </Text>
-
-              <Pressable onPress={goToToday}>
-                <Text style={{ color: theme.colors.textMuted, marginTop: 6 }}>
-                  Go to today
-                </Text>
-              </Pressable>
-            </View>
+            <ExpandedDiaryCalendar theme={theme} />
           </View>
         )}
 
-        <View
-          style={{
-            backgroundColor: theme.colors.surface,
-            borderRadius: 18,
-            padding: 18,
-            marginBottom: 18,
-            borderWidth: 1,
-            borderColor: theme.colors.border,
+        <MacroProgressCard
+          theme={theme}
+          totals={{
+            calories: totals.calories,
+            protein_g: totals.protein_g,
+            carbs_g: totals.carbs_g,
+            fat_g: totals.fat_g,
           }}
-        >
-          <Text
-            style={{
-              fontSize: 16,
-              color: theme.colors.textMuted,
-              marginBottom: 4,
-            }}
-          >
-            Daily Nutrition
-          </Text>
-
-          <Text
-            style={{
-              fontSize: 32,
-              fontWeight: "900",
-              color: theme.colors.text,
-            }}
-          >
-            {Math.round(totals.calories)} / {targets.calories} kcal
-          </Text>
-
-          <Text style={{ color: theme.colors.textMuted, marginTop: 4 }}>
-            Goal: {goalLabel(macroTarget?.goal)} · Activity:{" "}
-            {macroTarget?.activity_level ?? "active"}
-          </Text>
-
-          {!macroTarget && (
-            <Text
-              style={{
-                color: theme.colors.warning,
-                marginTop: 6,
-                fontSize: 12,
-              }}
-            >
-              No Supabase macro target found. Using fallback targets.
-            </Text>
-          )}
-
-          <Pressable
-            onPress={() => setNutritionModalOpen(true)}
-            style={{ flexDirection: "row", gap: 10, marginTop: 16 }}
-          >
-            <MacroBox
-              theme={theme}
-              label="Protein"
-              value={`${Math.round(totals.protein_g)}g`}
-              target={`${targets.protein_g}g`}
-            />
-            <MacroBox
-              theme={theme}
-              label="Carbs"
-              value={`${Math.round(totals.carbs_g)}g`}
-              target={`${targets.carbs_g}g`}
-            />
-            <MacroBox
-              theme={theme}
-              label="Fat"
-              value={`${Math.round(totals.fat_g)}g`}
-              target={`${targets.fat_g}g`}
-            />
-          </Pressable>
-
-          <Text
-            style={{
-              color: theme.colors.textFaint,
-              fontSize: 12,
-              marginTop: 8,
-            }}
-          >
-            Tap macros to view full nutrition
-          </Text>
-        </View>
+          targets={{
+            calories: targets.calories,
+            protein_g: targets.protein_g,
+            carbs_g: targets.carbs_g,
+            fat_g: targets.fat_g,
+          }}
+          goalLabel={goalLabel(macroTarget?.goal)}
+          activityLevel={macroTarget?.activity_level ?? "active"}
+          hasMacroTarget={!!macroTarget}
+          onPress={() => setNutritionModalOpen(true)}
+        />
 
         {loading ? (
-          <ActivityIndicator color={theme.colors.primary} />
+          <ActivityIndicator
+            color={theme.colors.primary}
+            style={{ marginTop: 20 }}
+          />
         ) : (
           MEALS.map((meal) => (
-            <MealSection
+            <MealCard
               key={meal.key}
               theme={theme}
               title={meal.label}
@@ -727,247 +304,217 @@ export default function DiaryScreen() {
   );
 }
 
-function MacroBox({
-  theme,
-  label,
-  value,
-  target,
-}: {
-  theme: AppTheme;
-  label: string;
-  value: string;
-  target: string;
-}) {
-  return (
-    <View
-      style={{
-        flex: 1,
-        backgroundColor: theme.colors.surfaceAlt,
-        borderRadius: 14,
-        padding: 12,
-      }}
-    >
-      <Text style={{ color: theme.colors.textMuted, fontSize: 12 }}>
-        {label}
-      </Text>
-      <Text
-        style={{
-          fontSize: 18,
-          fontWeight: "900",
-          color: theme.colors.text,
-        }}
-      >
-        {value}
-      </Text>
-      <Text style={{ color: theme.colors.textFaint, fontSize: 12 }}>
-        Goal {target}
-      </Text>
-    </View>
-  );
-}
-
-function MealSection({
-  theme,
-  title,
-  mealType,
-  date,
-  logs,
-}: {
-  theme: AppTheme;
-  title: string;
-  mealType: MealType;
-  date: string;
-  logs: FoodLog[];
-}) {
-  const router = useRouter();
-  const [isOpen, setIsOpen] = useState(false);
-
-  const mealTotals = logs.reduce(
-    (acc, item) => {
-      acc.calories += n(item.calories);
-      acc.protein_g += n(item.protein_g);
-      acc.carbs_g += n(item.carbs_g);
-      acc.fat_g += n(item.fat_g);
-      return acc;
-    },
-    {
-      calories: 0,
-      protein_g: 0,
-      carbs_g: 0,
-      fat_g: 0,
-    },
-  );
+function ExpandedDiaryCalendar({ theme }: { theme: AppTheme }) {
+  const diary = useDiary();
 
   return (
     <View
       style={{
         backgroundColor: theme.colors.surface,
-        borderRadius: 18,
-        marginBottom: 16,
-        overflow: "hidden",
+        borderRadius: 22,
+        padding: 16,
+        marginBottom: 12,
         borderWidth: 1,
         borderColor: theme.colors.border,
       }}
     >
-      <Pressable
-        onPress={() => setIsOpen((value) => !value)}
+      <View
         style={{
-          padding: 16,
           flexDirection: "row",
           alignItems: "center",
           justifyContent: "space-between",
-          borderBottomWidth: isOpen ? 1 : 0,
-          borderBottomColor: theme.colors.border,
+          marginBottom: 14,
         }}
       >
-        <View>
+        <Pressable
+          onPress={() => diary.changeMonth("prev")}
+          style={{
+            width: 42,
+            height: 42,
+            borderRadius: 21,
+            backgroundColor: theme.colors.surfaceAlt,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <ChevronLeft size={22} color={theme.colors.text} />
+        </Pressable>
+
+        <Text
+          style={{
+            fontSize: 18,
+            fontWeight: "900",
+            color: theme.colors.text,
+          }}
+        >
+          {diary.monthTitle}
+        </Text>
+
+        <Pressable
+          onPress={() => diary.changeMonth("next")}
+          style={{
+            width: 42,
+            height: 42,
+            borderRadius: 21,
+            backgroundColor: theme.colors.surfaceAlt,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <ChevronRight size={22} color={theme.colors.text} />
+        </Pressable>
+      </View>
+
+      <View style={{ flexDirection: "row", marginBottom: 8 }}>
+        {["S", "M", "T", "W", "T", "F", "S"].map((day, index) => (
           <Text
+            key={`${day}-${index}`}
             style={{
-              fontSize: 20,
+              width: `${100 / 7}%`,
+              textAlign: "center",
+              color: theme.colors.textMuted,
+              fontSize: 13,
               fontWeight: "900",
-              color: theme.colors.text,
             }}
           >
-            {isOpen ? "⌄" : "›"} {title}
+            {day}
           </Text>
+        ))}
+      </View>
 
+      <View
+        style={{
+          flexDirection: "row",
+          flexWrap: "wrap",
+        }}
+      >
+        {diary.monthDays.map((item, index) => {
+          const isSelected = item.date === diary.selectedDateString;
+          const isToday = item.date === formatDateKey(new Date());
+          const hasFoodLog = item.date
+            ? diary.loggedDates[item.date] > 0
+            : false;
+
+          return (
+            <Pressable
+              key={`${item.date || "empty"}-${index}`}
+              disabled={!item.date}
+              onPress={() => {
+                if (item.date) {
+                  diary.selectCalendarDate(item.date);
+                }
+              }}
+              style={{
+                width: `${100 / 7}%`,
+                height: 48,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              {item.day ? (
+                <View
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 14,
+                    overflow: "hidden",
+
+                    alignItems: "center",
+                    justifyContent: "center",
+
+                    backgroundColor: isSelected
+                      ? theme.colors.primary
+                      : isToday
+                        ? theme.colors.surfaceAlt
+                        : "transparent",
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 16,
+                      fontWeight: "900",
+                      color: isSelected
+                        ? theme.colors.background
+                        : theme.colors.text,
+                    }}
+                  >
+                    {item.day}
+                  </Text>
+
+                  {hasFoodLog && (
+                    <View
+                      style={{
+                        position: "relative",
+
+                        width: 16,
+                        height: 16,
+                        borderRadius: 999,
+                        backgroundColor: isSelected
+                          ? theme.colors.background
+                          : theme.colors.primary,
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <SaladIcon
+                        size={9}
+                        strokeWidth={2.5}
+                        color={
+                          isSelected
+                            ? theme.colors.primary
+                            : theme.colors.background
+                        }
+                      />
+                    </View>
+                  )}
+                </View>
+              ) : (
+                <View
+                  style={{
+                    width: 40,
+                    height: 40,
+                  }}
+                />
+              )}
+            </Pressable>
+          );
+        })}
+      </View>
+
+      <View
+        style={{
+          marginTop: 14,
+          backgroundColor: theme.colors.surfaceAlt,
+          borderRadius: 14,
+          padding: 12,
+        }}
+      >
+        <Text
+          style={{
+            color: theme.colors.text,
+            fontSize: 14,
+            fontWeight: "900",
+          }}
+        >
+          {diary.loggedDates[diary.selectedDateString] || 0} food log
+          {(diary.loggedDates[diary.selectedDateString] || 0) === 1
+            ? ""
+            : "s"}{" "}
+          on {formatHeaderDate(diary.selectedDate)}
+        </Text>
+
+        <Pressable onPress={diary.goToToday}>
           <Text
             style={{
               color: theme.colors.textMuted,
-              marginTop: 4,
-              fontSize: 12,
+              fontSize: 14,
+              marginTop: 6,
             }}
           >
-            {logs.length} item{logs.length === 1 ? "" : "s"} ·{" "}
-            {Math.round(mealTotals.calories)} kcal
+            Go to today
           </Text>
-        </View>
-
-        <View style={{ alignItems: "flex-end" }}>
-          <Text style={{ fontWeight: "900", color: theme.colors.text }}>
-            {Math.round(mealTotals.calories)}
-          </Text>
-
-          <Text style={{ color: theme.colors.textMuted, fontSize: 12 }}>
-            P {Math.round(mealTotals.protein_g)} · C{" "}
-            {Math.round(mealTotals.carbs_g)} · F {Math.round(mealTotals.fat_g)}
-          </Text>
-        </View>
-      </Pressable>
-
-      {isOpen && (
-        <View style={{ padding: 16, paddingTop: 12 }}>
-          {logs.length === 0 ? (
-            <Text
-              style={{
-                color: theme.colors.textFaint,
-                marginBottom: 12,
-              }}
-            >
-              No foods logged yet.
-            </Text>
-          ) : (
-            logs.map((item) => (
-              <Pressable
-                key={item.id}
-                onPress={() =>
-                  router.push({
-                    pathname: "/(tabs)/diary/edit-log" as never,
-                    params: { logId: item.id },
-                  })
-                }
-                style={{
-                  borderBottomWidth: 1,
-                  borderBottomColor: theme.colors.border,
-                  paddingVertical: 12,
-                }}
-              >
-                <View
-                  style={{
-                    flexDirection: "row",
-                    justifyContent: "space-between",
-                  }}
-                >
-                  <View style={{ flex: 1, paddingRight: 10 }}>
-                    <Text
-                      style={{
-                        fontSize: 15,
-                        fontWeight: "900",
-                        color: theme.colors.text,
-                      }}
-                    >
-                      {item.foods?.name ?? "Unknown food"}
-                    </Text>
-
-                    {!!item.foods?.brand && (
-                      <Text
-                        style={{
-                          color: theme.colors.textMuted,
-                          fontSize: 12,
-                        }}
-                      >
-                        {item.foods.brand}
-                      </Text>
-                    )}
-
-                    <Text
-                      style={{
-                        color: theme.colors.textMuted,
-                        fontSize: 12,
-                      }}
-                    >
-                      {Number(item.quantity)} {item.unit} ·{" "}
-                      {sourceLabel(item.foods?.source)}
-                    </Text>
-                  </View>
-
-                  <View style={{ alignItems: "flex-end" }}>
-                    <Text
-                      style={{
-                        fontWeight: "900",
-                        color: theme.colors.text,
-                      }}
-                    >
-                      {Math.round(Number(item.calories))} kcal
-                    </Text>
-
-                    <Text
-                      style={{
-                        color: theme.colors.textMuted,
-                        fontSize: 12,
-                      }}
-                    >
-                      P {Math.round(Number(item.protein_g))} · C{" "}
-                      {Math.round(Number(item.carbs_g))} · F{" "}
-                      {Math.round(Number(item.fat_g))}
-                    </Text>
-                  </View>
-                </View>
-              </Pressable>
-            ))
-          )}
-
-          <Pressable
-            onPress={() =>
-              router.push({
-                pathname: "/(tabs)/diary/add-food" as never,
-                params: { mealType, date },
-              })
-            }
-            style={{
-              marginTop: 14,
-              backgroundColor: theme.colors.surfaceAlt,
-              borderRadius: 14,
-              padding: 14,
-              alignItems: "center",
-            }}
-          >
-            <Text style={{ fontWeight: "900", color: theme.colors.text }}>
-              + Add Food
-            </Text>
-          </Pressable>
-        </View>
-      )}
+        </Pressable>
+      </View>
     </View>
   );
 }

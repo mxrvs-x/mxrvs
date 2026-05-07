@@ -1,7 +1,9 @@
+import ThemedAlert from "@/components/ThemedAlert";
 import { supabase } from "@/lib/supabase";
 import { useTheme } from "@/lib/theme";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { ChevronDown, X } from "lucide-react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -13,18 +15,25 @@ import {
 } from "react-native";
 
 type MealType = "breakfast" | "lunch" | "dinner" | "snack";
+type ResultType = "local" | "usda";
+type FoodSource = "custom" | "usda_fdc";
+type ServingMode = "serving" | "gram";
 
-type SearchPayload = any;
+type FoodServing = {
+  mode: ServingMode;
+  name: string;
+  amount: number;
+  unit: string;
+  gram_weight: number;
+  is_default: boolean;
+};
 
 type NormalizedFood = {
   foodId?: string;
-  source: "custom" | "usda_fdc" | "nccdb";
+  source: FoodSource;
   external_id?: string | null;
-  source_food_type?: string | null;
-
   name: string;
   brand?: string | null;
-  description?: string | null;
 
   serving_size: number;
   serving_unit: string;
@@ -55,54 +64,133 @@ type NormalizedFood = {
 
 const USDA_DETAIL_URL = "https://api.nal.usda.gov/fdc/v1/food";
 
-const AU_BASE_URL =
-  "https://www.foodstandards.gov.au/science-data/food-nutrient-databases/afcd/search/api/foods";
-
-function n(value: any) {
+function n(value: number | string | null | undefined) {
   return Number(value ?? 0);
 }
 
-function label(source: string) {
-  if (source === "usda_fdc") return "USDA";
-  if (source === "nccdb") return "AU";
-  return "CUSTOM";
+function isUuid(value?: string | null) {
+  if (!value) return false;
+
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    value,
+  );
 }
 
-function getUsdaNutrient(food: any, names: string[]) {
+function sourceLabel(source: string) {
+  if (source === "usda_fdc") return "USDA";
+  return "Custom";
+}
+
+function scaled(
+  food: NormalizedFood | null,
+  key: keyof NormalizedFood,
+  grams: number,
+) {
+  if (!food) return 0;
+
+  const baseGrams = Number(food.serving_size) || 100;
+  const value = Number(food[key] ?? 0);
+
+  return value * (grams / baseGrams);
+}
+
+function getUsdaNutrient(
+  food: any,
+  names: string[],
+  preferredUnits?: string[],
+) {
   const nutrients = food.foodNutrients ?? [];
 
-  const found = nutrients.find((item: any) => {
+  const matches = nutrients.filter((item: any) => {
     const nutrientName = String(
-      item.nutrient?.name ?? item.nutrientName ?? "",
+      item.nutrient?.name ?? item.nutrientName ?? item.name ?? "",
     ).toLowerCase();
 
     return names.some((name) => nutrientName.includes(name.toLowerCase()));
   });
 
-  return Number(found?.amount ?? found?.value ?? 0);
+  if (matches.length === 0) return 0;
+
+  if (preferredUnits?.length) {
+    const preferred = matches.find((item: any) => {
+      const unit = String(
+        item.nutrient?.unitName ?? item.unitName ?? item.unit ?? "",
+      ).toLowerCase();
+
+      return preferredUnits.some((preferredUnit) =>
+        unit.includes(preferredUnit.toLowerCase()),
+      );
+    });
+
+    if (preferred) {
+      return Number(
+        preferred?.amount ??
+          preferred?.value ??
+          preferred?.nutrient?.amount ??
+          0,
+      );
+    }
+  }
+
+  const first = matches[0];
+
+  return Number(first?.amount ?? first?.value ?? first?.nutrient?.amount ?? 0);
 }
 
-function getAuNutrient(food: any, names: string[]) {
-  const nutrients =
-    food.nutrients ??
-    food.foodNutrients ??
-    food.nutrient_profiles ??
-    food.nutrientProfiles ??
-    [];
+function buildServingOptions(food: NormalizedFood | null): FoodServing[] {
+  const baseGrams = Number(food?.serving_size) || 100;
+  const unit = food?.serving_unit || "g";
 
-  const found = nutrients.find((item: any) => {
-    const nutrientName = String(
-      item.name ??
-        item.nutrient_name ??
-        item.nutrientName ??
-        item.nutrient?.name ??
-        "",
-    ).toLowerCase();
+  return [
+    {
+      mode: "serving",
+      name: `${baseGrams}${unit}`,
+      amount: 1,
+      unit: "serving",
+      gram_weight: baseGrams,
+      is_default: true,
+    },
+    {
+      mode: "gram",
+      name: "g",
+      amount: 1,
+      unit: "g",
+      gram_weight: 1,
+      is_default: false,
+    },
+  ];
+}
 
-    return names.some((name) => nutrientName.includes(name.toLowerCase()));
-  });
+function nutritionRow(
+  label: string,
+  value: number,
+  unit: string,
+  theme: any,
+  decimals = 1,
+) {
+  const displayValue =
+    unit === "kcal" || unit === "mg"
+      ? Math.round(n(value))
+      : n(value).toFixed(decimals);
 
-  return Number(found?.amount ?? found?.value ?? found?.nutrient_value ?? 0);
+  return (
+    <View
+      key={label}
+      style={{
+        flexDirection: "row",
+        justifyContent: "space-between",
+        paddingVertical: 10,
+        borderBottomWidth: 1,
+        borderBottomColor: theme.colors.border,
+      }}
+    >
+      <Text style={{ color: theme.colors.textMuted }}>{label}</Text>
+      <Text style={{ color: theme.colors.text, fontWeight: "900" }}>
+        {displayValue}
+        {unit ? ` ${unit}` : ""}
+      </Text>
+    </View>
+  );
 }
 
 export default function SearchFoodDetailScreen() {
@@ -111,27 +199,81 @@ export default function SearchFoodDetailScreen() {
 
   const { payload, resultType, mealType, date } = useLocalSearchParams<{
     payload: string;
-    resultType: "local" | "usda" | "au";
+    resultType: ResultType;
     mealType: MealType;
     date: string;
   }>();
 
-  const parsedPayload: SearchPayload = useMemo(() => {
+  const parsedPayload = useMemo(() => {
     try {
-      return JSON.parse(payload ?? "{}");
+      return JSON.parse(decodeURIComponent(payload ?? "{}"));
     } catch {
       return {};
     }
   }, [payload]);
 
   const [food, setFood] = useState<NormalizedFood | null>(null);
-  const [quantity, setQuantity] = useState("100");
+
+  const [selectedServing, setSelectedServing] = useState<FoodServing | null>(
+    null,
+  );
+
+  const [quantity, setQuantity] = useState("1");
+
+  const [servingsOpen, setServingsOpen] = useState(false);
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  const servingOptions = useMemo(() => buildServingOptions(food), [food]);
+
+  const [alertOpen, setAlertOpen] = useState(false);
+
+  const [alertTitle, setAlertTitle] = useState("");
+
+  const [alertMessage, setAlertMessage] = useState("");
+
+  const scrollRef = useRef<ScrollView>(null);
+
+  const grams = useMemo(() => {
+    if (!selectedServing) return 0;
+
+    const qty = n(quantity);
+
+    if (selectedServing.mode === "gram") {
+      return qty;
+    }
+
+    return selectedServing.gram_weight;
+  }, [quantity, selectedServing]);
 
   useEffect(() => {
     loadFoodDetails();
   }, []);
+
+  function showAlert(title: string, message: string) {
+    setAlertTitle(title);
+    setAlertMessage(message);
+    setAlertOpen(true);
+  }
+
+  async function findExistingFoodId(
+    source: FoodSource,
+    externalId?: string | null,
+  ) {
+    if (!externalId) return null;
+
+    const { data, error } = await supabase
+      .from("foods")
+      .select("id")
+      .eq("source", source)
+      .eq("external_id", externalId)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    return data?.id ?? null;
+  }
 
   async function loadFoodDetails() {
     setLoading(true);
@@ -139,16 +281,16 @@ export default function SearchFoodDetailScreen() {
     try {
       if (resultType === "local") {
         const normalized: NormalizedFood = {
-          foodId: parsedPayload.id,
-          source: parsedPayload.source,
-          external_id: null,
-          source_food_type: null,
+          foodId: isUuid(parsedPayload.id) ? parsedPayload.id : undefined,
+          source: parsedPayload.source ?? "custom",
+
+          external_id: parsedPayload.external_id ?? null,
 
           name: parsedPayload.name,
           brand: parsedPayload.brand ?? null,
-          description: parsedPayload.description ?? null,
 
-          serving_size: Number(parsedPayload.serving_size ?? 100),
+          serving_size: n(parsedPayload.serving_size) || 100,
+
           serving_unit: parsedPayload.serving_unit ?? "g",
 
           calories: n(parsedPayload.calories),
@@ -175,9 +317,12 @@ export default function SearchFoodDetailScreen() {
           raw_data: parsedPayload,
         };
 
+        const options = buildServingOptions(normalized);
+
         setFood(normalized);
-        setQuantity(String(normalized.serving_size));
-        setLoading(false);
+        setSelectedServing(options[0]);
+        setQuantity("1");
+
         return;
       }
 
@@ -185,8 +330,8 @@ export default function SearchFoodDetailScreen() {
         const apiKey = process.env.EXPO_PUBLIC_USDA_API_KEY;
 
         if (!apiKey) {
-          Alert.alert("Missing API key", "Missing EXPO_PUBLIC_USDA_API_KEY.");
-          setLoading(false);
+          showAlert("Missing API key", "Missing EXPO_PUBLIC_USDA_API_KEY.");
+
           return;
         }
 
@@ -200,27 +345,46 @@ export default function SearchFoodDetailScreen() {
           throw new Error(JSON.stringify(json));
         }
 
+        const externalId = String(parsedPayload.fdcId);
+
+        const existingFoodId = await findExistingFoodId("usda_fdc", externalId);
+
         const normalized: NormalizedFood = {
+          foodId: existingFoodId ?? undefined,
+
           source: "usda_fdc",
-          external_id: String(parsedPayload.fdcId),
-          source_food_type: json.dataType ?? parsedPayload.dataType ?? "USDA",
+
+          external_id: externalId,
 
           name: json.description ?? parsedPayload.name,
+
           brand:
-            json.brandOwner ?? json.brandName ?? parsedPayload.brand ?? null,
-          description: json.description ?? parsedPayload.name,
+            json.brandOwner ?? json.brandName ?? parsedPayload.brand ?? "USDA",
 
           serving_size: 100,
           serving_unit: "g",
 
-          calories: getUsdaNutrient(json, ["energy"]),
+          calories: getUsdaNutrient(json, ["energy"], ["kcal"]),
+
           protein_g: getUsdaNutrient(json, ["protein"]),
-          carbs_g: getUsdaNutrient(json, ["carbohydrate"]),
-          fat_g: getUsdaNutrient(json, ["total lipid", "fat"]),
+
+          carbs_g: getUsdaNutrient(json, [
+            "carbohydrate, by difference",
+            "carbohydrate",
+          ]),
+
+          fat_g: getUsdaNutrient(json, ["total lipid", "total fat", "fat"]),
 
           fiber_g: getUsdaNutrient(json, ["fiber"]),
-          sugar_g: getUsdaNutrient(json, ["sugars"]),
+
+          sugar_g: getUsdaNutrient(json, [
+            "total sugars",
+            "sugars, total",
+            "sugars",
+          ]),
+
           sodium_mg: getUsdaNutrient(json, ["sodium"]),
+
           cholesterol_mg: getUsdaNutrient(json, ["cholesterol"]),
 
           potassium_mg: getUsdaNutrient(json, ["potassium"]),
@@ -229,9 +393,12 @@ export default function SearchFoodDetailScreen() {
           magnesium_mg: getUsdaNutrient(json, ["magnesium"]),
           zinc_mg: getUsdaNutrient(json, ["zinc"]),
 
-          vitamin_a_mcg: getUsdaNutrient(json, ["vitamin a"]),
+          vitamin_a_mcg: getUsdaNutrient(json, ["vitamin a, rae", "vitamin a"]),
           vitamin_c_mg: getUsdaNutrient(json, ["vitamin c"]),
-          vitamin_d_mcg: getUsdaNutrient(json, ["vitamin d"]),
+          vitamin_d_mcg: getUsdaNutrient(json, [
+            "vitamin d",
+            "vitamin d (d2 + d3)",
+          ]),
           vitamin_b12_mcg: getUsdaNutrient(json, [
             "vitamin b-12",
             "vitamin b12",
@@ -240,222 +407,117 @@ export default function SearchFoodDetailScreen() {
           raw_data: json,
         };
 
-        setFood(normalized);
-        setQuantity("100");
-        setLoading(false);
-        return;
-      }
-
-      if (resultType === "au") {
-        const response = await fetch(`${AU_BASE_URL}/${parsedPayload.pfk}`);
-        const json = await response.json();
-
-        if (!response.ok) {
-          throw new Error(JSON.stringify(json));
-        }
-
-        const normalized: NormalizedFood = {
-          source: "nccdb",
-          external_id: parsedPayload.pfk,
-          source_food_type: "AFCD",
-
-          name: json.name ?? parsedPayload.name,
-          brand: null,
-          description: json.name ?? parsedPayload.name,
-
-          serving_size: 100,
-          serving_unit: "g",
-
-          calories: getAuNutrient(json, ["energy"]),
-          protein_g: getAuNutrient(json, ["protein"]),
-          carbs_g: getAuNutrient(json, ["carbohydrate"]),
-          fat_g: getAuNutrient(json, ["fat", "lipid"]),
-
-          fiber_g: getAuNutrient(json, ["fibre", "fiber"]),
-          sugar_g: getAuNutrient(json, ["sugars"]),
-          sodium_mg: getAuNutrient(json, ["sodium"]),
-          cholesterol_mg: getAuNutrient(json, ["cholesterol"]),
-
-          potassium_mg: getAuNutrient(json, ["potassium"]),
-          calcium_mg: getAuNutrient(json, ["calcium"]),
-          iron_mg: getAuNutrient(json, ["iron"]),
-          magnesium_mg: getAuNutrient(json, ["magnesium"]),
-          zinc_mg: getAuNutrient(json, ["zinc"]),
-
-          vitamin_a_mcg: getAuNutrient(json, ["vitamin a"]),
-          vitamin_c_mg: getAuNutrient(json, ["vitamin c"]),
-          vitamin_d_mcg: getAuNutrient(json, ["vitamin d"]),
-          vitamin_b12_mcg: getAuNutrient(json, ["vitamin b12", "vitamin b-12"]),
-
-          raw_data: json,
-        };
+        const options = buildServingOptions(normalized);
 
         setFood(normalized);
-        setQuantity("100");
-        setLoading(false);
+        setSelectedServing(options[0]);
+        setQuantity("1");
       }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : JSON.stringify(err);
-      console.log("Search food detail error:", message);
-      Alert.alert("Error", "Could not load food details.");
+    } catch (error: any) {
+      showAlert("Error", error?.message ?? "Could not load food details.");
+    } finally {
       setLoading(false);
     }
   }
 
-  const multiplier = useMemo(() => {
-    if (!food) return 0;
-    return (Number(quantity) || 0) / (Number(food.serving_size) || 100);
-  }, [food, quantity]);
-
-  const computed = useMemo(() => {
-    if (!food) return null;
-
-    return {
-      calories: food.calories * multiplier,
-      protein_g: food.protein_g * multiplier,
-      carbs_g: food.carbs_g * multiplier,
-      fat_g: food.fat_g * multiplier,
-
-      fiber_g: food.fiber_g * multiplier,
-      sugar_g: food.sugar_g * multiplier,
-      sodium_mg: food.sodium_mg * multiplier,
-      cholesterol_mg: food.cholesterol_mg * multiplier,
-
-      potassium_mg: food.potassium_mg * multiplier,
-      calcium_mg: food.calcium_mg * multiplier,
-      iron_mg: food.iron_mg * multiplier,
-      magnesium_mg: food.magnesium_mg * multiplier,
-      zinc_mg: food.zinc_mg * multiplier,
-
-      vitamin_a_mcg: food.vitamin_a_mcg * multiplier,
-      vitamin_c_mg: food.vitamin_c_mg * multiplier,
-      vitamin_d_mcg: food.vitamin_d_mcg * multiplier,
-      vitamin_b12_mcg: food.vitamin_b12_mcg * multiplier,
-    };
-  }, [food, multiplier]);
-
-  async function getOrCreateFoodId(userId: string) {
-    if (!food) return null;
-
-    if (food.foodId) return food.foodId;
-
-    const { data: existing } = await supabase
-      .from("foods")
-      .select("id")
-      .eq("user_id", userId)
-      .eq("source", food.source)
-      .eq("external_id", food.external_id)
-      .maybeSingle();
-
-    if (existing?.id) return existing.id;
-
-    const { data, error } = await supabase
-      .from("foods")
-      .insert({
-        user_id: userId,
-
-        source: food.source,
-        external_id: food.external_id,
-        source_food_type: food.source_food_type,
-
-        name: food.name,
-        brand: food.brand,
-        description: food.description,
-
-        serving_size: food.serving_size,
-        serving_unit: food.serving_unit,
-
-        calories: food.calories,
-        protein_g: food.protein_g,
-        carbs_g: food.carbs_g,
-        fat_g: food.fat_g,
-
-        fiber_g: food.fiber_g,
-        sugar_g: food.sugar_g,
-        sodium_mg: food.sodium_mg,
-        cholesterol_mg: food.cholesterol_mg,
-
-        potassium_mg: food.potassium_mg,
-        calcium_mg: food.calcium_mg,
-        iron_mg: food.iron_mg,
-        magnesium_mg: food.magnesium_mg,
-        zinc_mg: food.zinc_mg,
-
-        vitamin_a_mcg: food.vitamin_a_mcg,
-        vitamin_c_mg: food.vitamin_c_mg,
-        vitamin_d_mcg: food.vitamin_d_mcg,
-        vitamin_b12_mcg: food.vitamin_b12_mcg,
-
-        raw_data: food.raw_data ?? null,
-      })
-      .select("id")
-      .single();
-
-    if (error) {
-      console.log("Create food error:", error);
-      throw error;
-    }
-
-    return data.id;
-  }
-
-  async function addToDiary() {
-    if (!food || !computed) return;
-
-    const qty = Number(quantity);
-
-    if (!qty || qty <= 0) {
-      Alert.alert("Invalid quantity", "Enter a valid quantity.");
-      return;
-    }
+  async function handleAddFood() {
+    if (!food || !selectedServing) return;
 
     setSaving(true);
 
     try {
-      const { data: userData } = await supabase.auth.getUser();
-      const user = userData.user;
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
 
-      if (!user) {
-        Alert.alert("Not logged in", "Please sign in first.");
-        setSaving(false);
+      if (userError) throw userError;
+
+      if (!user?.id) {
+        showAlert("Error", "User not authenticated.");
+
         return;
       }
 
-      const foodId = await getOrCreateFoodId(user.id);
+      const logDate = String(date);
+
+      if (!logDate || logDate === "undefined") {
+        showAlert("Missing date", "Please select a date again.");
+
+        return;
+      }
+
+      const totalGrams =
+        selectedServing.mode === "serving"
+          ? selectedServing.gram_weight
+          : n(quantity);
+
+      if (totalGrams <= 0) {
+        showAlert("Invalid serving", "Enter valid grams.");
+
+        return;
+      }
+
+      const foodId = isUuid(food.foodId) ? food.foodId : null;
+
+      const calories = scaled(food, "calories", totalGrams);
+
+      const protein = scaled(food, "protein_g", totalGrams);
+
+      const carbs = scaled(food, "carbs_g", totalGrams);
+
+      const fat = scaled(food, "fat_g", totalGrams);
+
+      const fiber = scaled(food, "fiber_g", totalGrams);
+
+      const sugar = scaled(food, "sugar_g", totalGrams);
+
+      const sodium = scaled(food, "sodium_mg", totalGrams);
+
+      const cholesterol = scaled(food, "cholesterol_mg", totalGrams);
 
       const { error } = await supabase.from("food_logs").insert({
         user_id: user.id,
-        food_id: foodId,
 
-        log_date: date,
-        meal_type: mealType,
+        food_id: foodId ?? null,
 
-        quantity: qty,
-        unit: food.serving_unit,
+        food_name: food.name,
+        food_brand: food.brand ?? null,
+        food_source: food.source,
+        external_id: food.external_id ?? null,
 
-        calories: computed.calories,
-        protein_g: computed.protein_g,
-        carbs_g: computed.carbs_g,
-        fat_g: computed.fat_g,
+        date: logDate,
 
-        fiber_g: computed.fiber_g,
-        sugar_g: computed.sugar_g,
-        sodium_mg: computed.sodium_mg,
-        cholesterol_mg: computed.cholesterol_mg,
+        meal_type: mealType ?? "breakfast",
 
-        potassium_mg: computed.potassium_mg,
-        calcium_mg: computed.calcium_mg,
-        iron_mg: computed.iron_mg,
-        magnesium_mg: computed.magnesium_mg,
-        zinc_mg: computed.zinc_mg,
+        quantity: selectedServing.mode === "serving" ? 1 : totalGrams,
+        unit: selectedServing.mode === "serving" ? "serving" : "g",
+
+        serving_size: totalGrams,
+        serving_unit: "g",
+
+        calories,
+        protein_g: protein,
+        carbs_g: carbs,
+        fat_g: fat,
+
+        fiber_g: fiber,
+        sugar_g: sugar,
+        sodium_mg: sodium,
+        cholesterol_mg: cholesterol,
       });
 
-      if (error) throw error;
+      if (error) {
+        showAlert("Could not log food", error.message);
 
-      router.replace("/(tabs)/diary" as never);
-    } catch (err) {
-      console.log("Add to diary error:", err);
-      Alert.alert("Error", "Could not add food to diary.");
+        return;
+      }
+
+      router.dismissAll();
+
+      router.replace("/(tabs)/diary");
+    } catch (error: any) {
+      showAlert("Error", error?.message ?? "Could not log food.");
     } finally {
       setSaving(false);
     }
@@ -467,6 +529,7 @@ export default function SearchFoodDetailScreen() {
         style={{
           flex: 1,
           backgroundColor: theme.colors.background,
+          alignItems: "center",
           justifyContent: "center",
         }}
       >
@@ -475,227 +538,373 @@ export default function SearchFoodDetailScreen() {
     );
   }
 
-  if (!food || !computed) {
+  if (!food || !selectedServing) {
     return (
       <View
         style={{
           flex: 1,
           backgroundColor: theme.colors.background,
-          padding: 20,
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 24,
         }}
       >
-        <Text style={{ color: theme.colors.text }}>Food not found.</Text>
+        <Text
+          style={{
+            color: theme.colors.text,
+            fontSize: 18,
+          }}
+        >
+          Food not found.
+        </Text>
       </View>
     );
   }
 
+  const calories = scaled(food, "calories", grams);
+
+  const protein = scaled(food, "protein_g", grams);
+
+  const carbs = scaled(food, "carbs_g", grams);
+
+  const fat = scaled(food, "fat_g", grams);
+
+  const fiber = scaled(food, "fiber_g", grams);
+  const sugar = scaled(food, "sugar_g", grams);
+  const sodium = scaled(food, "sodium_mg", grams);
+  const cholesterol = scaled(food, "cholesterol_mg", grams);
+
+  const potassium = scaled(food, "potassium_mg", grams);
+  const calcium = scaled(food, "calcium_mg", grams);
+  const iron = scaled(food, "iron_mg", grams);
+  const magnesium = scaled(food, "magnesium_mg", grams);
+  const zinc = scaled(food, "zinc_mg", grams);
+
+  const vitaminA = scaled(food, "vitamin_a_mcg", grams);
+  const vitaminC = scaled(food, "vitamin_c_mg", grams);
+  const vitaminD = scaled(food, "vitamin_d_mcg", grams);
+  const vitaminB12 = scaled(food, "vitamin_b12_mcg", grams);
+
+  const quantityDisabled = selectedServing.mode === "serving";
+
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: theme.colors.background }}>
-      <View style={{ padding: 20 }}>
+    <>
+      <Stack.Screen
+        options={{
+          headerShown: true,
+          headerShadowVisible: false,
+          headerTitle: "",
+
+          headerStyle: {
+            backgroundColor: theme.colors.surface,
+          },
+
+          headerLeft: () => (
+            <Pressable
+              onPress={() => router.back()}
+              style={{
+                width: 46,
+                height: 46,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <X size={30} color={theme.colors.text} />
+            </Pressable>
+          ),
+        }}
+      />
+
+      <ScrollView
+        ref={scrollRef}
+        style={{ flex: 1, backgroundColor: theme.colors.background }}
+        contentContainerStyle={{ padding: 18, paddingBottom: 180 }}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+      >
         <View
           style={{
             backgroundColor: theme.colors.surface,
-            borderRadius: 18,
+
+            borderRadius: 20,
             padding: 18,
-            marginBottom: 16,
+
             borderWidth: 1,
             borderColor: theme.colors.border,
           }}
         >
           <Text
             style={{
+              color: theme.colors.text,
               fontSize: 24,
               fontWeight: "900",
-              color: theme.colors.text,
             }}
           >
             {food.name}
           </Text>
 
-          {!!food.brand && (
-            <Text style={{ color: theme.colors.textMuted, marginTop: 4 }}>
+          {food.brand ? (
+            <Text
+              style={{
+                color: theme.colors.textMuted,
+                fontSize: 15,
+                marginTop: 4,
+              }}
+            >
               {food.brand}
             </Text>
-          )}
+          ) : null}
 
-          <Text style={{ color: theme.colors.textMuted, marginTop: 6 }}>
-            {label(food.source)} · base {food.serving_size} {food.serving_unit}
-          </Text>
-        </View>
-
-        <View
-          style={{
-            backgroundColor: theme.colors.surface,
-            borderRadius: 18,
-            padding: 18,
-            marginBottom: 16,
-            borderWidth: 1,
-            borderColor: theme.colors.border,
-          }}
-        >
           <Text
             style={{
+              color: theme.colors.primary,
+              fontSize: 13,
               fontWeight: "900",
-              marginBottom: 8,
-              color: theme.colors.text,
+              marginTop: 10,
             }}
           >
-            Quantity
-          </Text>
-
-          <View style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
-            <TextInput
-              value={quantity}
-              onChangeText={setQuantity}
-              keyboardType="decimal-pad"
-              placeholderTextColor={theme.colors.textFaint}
-              style={{
-                flex: 1,
-                borderWidth: 1,
-                borderColor: theme.colors.border,
-                borderRadius: 14,
-                padding: 14,
-                backgroundColor: theme.colors.surfaceAlt,
-                fontSize: 16,
-                color: theme.colors.text,
-              }}
-            />
-
-            <Text style={{ fontWeight: "900", color: theme.colors.text }}>
-              {food.serving_unit}
-            </Text>
-          </View>
-
-          <Text style={{ color: theme.colors.textMuted, marginTop: 8 }}>
-            Logging to {mealType} · {date}
+            {sourceLabel(food.source)}
           </Text>
         </View>
 
         <View
           style={{
             backgroundColor: theme.colors.surface,
-            borderRadius: 18,
+
+            borderRadius: 20,
             padding: 18,
-            marginBottom: 16,
+
+            marginTop: 14,
+
             borderWidth: 1,
             borderColor: theme.colors.border,
           }}
         >
           <Text
             style={{
-              fontSize: 28,
+              color: theme.colors.text,
+              fontSize: 18,
               fontWeight: "900",
               marginBottom: 12,
-              color: theme.colors.calories,
             }}
           >
-            {Math.round(computed.calories)} kcal
+            Serving
           </Text>
 
-          <NutrientRow
-            label="Protein"
-            value={`${computed.protein_g.toFixed(1)} g`}
-          />
-          <NutrientRow
-            label="Carbs"
-            value={`${computed.carbs_g.toFixed(1)} g`}
-          />
-          <NutrientRow label="Fat" value={`${computed.fat_g.toFixed(1)} g`} />
-          <NutrientRow
-            label="Fiber"
-            value={`${computed.fiber_g.toFixed(1)} g`}
-          />
-          <NutrientRow
-            label="Sugar"
-            value={`${computed.sugar_g.toFixed(1)} g`}
-          />
-          <NutrientRow
-            label="Sodium"
-            value={`${Math.round(computed.sodium_mg)} mg`}
-          />
-          <NutrientRow
-            label="Cholesterol"
-            value={`${Math.round(computed.cholesterol_mg)} mg`}
-          />
-          <NutrientRow
-            label="Potassium"
-            value={`${Math.round(computed.potassium_mg)} mg`}
-          />
-          <NutrientRow
-            label="Calcium"
-            value={`${Math.round(computed.calcium_mg)} mg`}
-          />
-          <NutrientRow
-            label="Iron"
-            value={`${computed.iron_mg.toFixed(1)} mg`}
-          />
-          <NutrientRow
-            label="Magnesium"
-            value={`${Math.round(computed.magnesium_mg)} mg`}
-          />
-          <NutrientRow
-            label="Zinc"
-            value={`${computed.zinc_mg.toFixed(1)} mg`}
-          />
-          <NutrientRow
-            label="Vitamin A"
-            value={`${Math.round(computed.vitamin_a_mcg)} mcg`}
-          />
-          <NutrientRow
-            label="Vitamin C"
-            value={`${Math.round(computed.vitamin_c_mg)} mg`}
-          />
-          <NutrientRow
-            label="Vitamin D"
-            value={`${computed.vitamin_d_mcg.toFixed(1)} mcg`}
-          />
-          <NutrientRow
-            label="Vitamin B12"
-            value={`${computed.vitamin_b12_mcg.toFixed(1)} mcg`}
-          />
+          <Pressable
+            onPress={() => setServingsOpen((value) => !value)}
+            style={{
+              borderWidth: 1,
+              borderColor: theme.colors.border,
+
+              borderRadius: 14,
+              padding: 14,
+
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            <Text
+              style={{
+                color: theme.colors.text,
+                fontSize: 16,
+              }}
+            >
+              {selectedServing.name}
+            </Text>
+
+            <ChevronDown size={22} color={theme.colors.textMuted} />
+          </Pressable>
+
+          {servingsOpen ? (
+            <View
+              style={{
+                marginTop: 10,
+
+                borderWidth: 1,
+                borderColor: theme.colors.border,
+
+                borderRadius: 14,
+                overflow: "hidden",
+              }}
+            >
+              {servingOptions.map((serving, index) => (
+                <Pressable
+                  key={`${serving.name}-${index}`}
+                  onPress={() => {
+                    setSelectedServing(serving);
+
+                    if (serving.mode === "serving") {
+                      setQuantity("1");
+                    } else {
+                      setQuantity(String(Math.round(food.serving_size || 100)));
+                    }
+
+                    setServingsOpen(false);
+                  }}
+                  style={{
+                    padding: 14,
+
+                    borderBottomWidth:
+                      index === servingOptions.length - 1 ? 0 : 1,
+
+                    borderBottomColor: theme.colors.border,
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: theme.colors.text,
+
+                      fontWeight:
+                        serving.mode === selectedServing.mode ? "900" : "500",
+                    }}
+                  >
+                    {serving.mode === "serving"
+                      ? `${serving.name} · 1 serving`
+                      : "g · custom grams"}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
+
+          {quantityDisabled ? (
+            <View
+              style={{
+                marginTop: 18,
+              }}
+            >
+              <Text
+                style={{
+                  color: theme.colors.textMuted,
+                  fontSize: 14,
+                }}
+              >
+                1 serving selected = {Math.round(selectedServing.gram_weight)}g
+              </Text>
+            </View>
+          ) : (
+            <>
+              <Text
+                style={{
+                  color: theme.colors.text,
+                  fontSize: 18,
+                  fontWeight: "900",
+
+                  marginTop: 18,
+                  marginBottom: 10,
+                }}
+              >
+                Grams
+              </Text>
+
+              <TextInput
+                value={quantity}
+                onChangeText={setQuantity}
+                keyboardType="decimal-pad"
+                onFocus={() => {
+                  setTimeout(() => {
+                    scrollRef.current?.scrollToEnd({ animated: true });
+                  }, 300);
+                }}
+                style={{
+                  borderWidth: 1,
+                  borderColor: theme.colors.border,
+                  borderRadius: 14,
+                  padding: 14,
+                  color: theme.colors.text,
+                  fontSize: 18,
+                }}
+              />
+            </>
+          )}
+
+          <Text
+            style={{
+              color: theme.colors.textMuted,
+
+              marginTop: 8,
+              fontSize: 14,
+            }}
+          >
+            Total weight: {grams.toFixed(0)}g · Base: per {food.serving_size}
+            {food.serving_unit}
+          </Text>
+        </View>
+
+        <View
+          style={{
+            backgroundColor: theme.colors.surface,
+
+            borderRadius: 20,
+            padding: 18,
+
+            marginTop: 14,
+
+            borderWidth: 1,
+            borderColor: theme.colors.border,
+          }}
+        >
+          <Text
+            style={{
+              color: theme.colors.text,
+              fontSize: 18,
+              fontWeight: "900",
+              marginBottom: 14,
+            }}
+          >
+            Nutrition
+          </Text>
+
+          {nutritionRow("Calories", calories, "kcal", theme)}
+          {nutritionRow("Protein", protein, "g", theme)}
+          {nutritionRow("Carbs", carbs, "g", theme)}
+          {nutritionRow("Fat", fat, "g", theme)}
+          {nutritionRow("Fiber", fiber, "g", theme)}
+          {nutritionRow("Sugar", sugar, "g", theme)}
+          {nutritionRow("Sodium", sodium, "mg", theme)}
+          {nutritionRow("Cholesterol", cholesterol, "mg", theme)}
+          {nutritionRow("Potassium", potassium, "mg", theme)}
+          {nutritionRow("Calcium", calcium, "mg", theme)}
+          {nutritionRow("Iron", iron, "mg", theme)}
+          {nutritionRow("Magnesium", magnesium, "mg", theme)}
+          {nutritionRow("Zinc", zinc, "mg", theme)}
+          {nutritionRow("Vitamin A", vitaminA, "mcg", theme)}
+          {nutritionRow("Vitamin C", vitaminC, "mg", theme)}
+          {nutritionRow("Vitamin D", vitaminD, "mcg", theme)}
+          {nutritionRow("Vitamin B12", vitaminB12, "mcg", theme)}
         </View>
 
         <Pressable
-          onPress={addToDiary}
+          onPress={handleAddFood}
           disabled={saving}
           style={{
-            backgroundColor: theme.colors.primary,
-            borderRadius: 16,
-            padding: 16,
+            height: 56,
+            borderRadius: 18,
+
+            backgroundColor: saving
+              ? theme.colors.textFaint
+              : theme.colors.primary,
+
             alignItems: "center",
-            opacity: saving ? 0.6 : 1,
+            justifyContent: "center",
+
+            marginTop: 18,
           }}
         >
           <Text
             style={{
-              color: theme.colors.textInverse,
+              color: theme.colors.surface,
+
+              fontSize: 18,
               fontWeight: "900",
-              fontSize: 16,
             }}
           >
-            {saving ? "Adding..." : "Add to Diary"}
+            {saving ? "Adding..." : `Add to ${mealType ?? "breakfast"}`}
           </Text>
         </Pressable>
-      </View>
-    </ScrollView>
+      </ScrollView>
+    </>
   );
-
-  function NutrientRow({ label, value }: { label: string; value: string }) {
-    return (
-      <View
-        style={{
-          flexDirection: "row",
-          justifyContent: "space-between",
-          paddingVertical: 7,
-          borderBottomWidth: 1,
-          borderBottomColor: theme.colors.border,
-        }}
-      >
-        <Text style={{ color: theme.colors.textMuted }}>{label}</Text>
-        <Text style={{ fontWeight: "800", color: theme.colors.text }}>
-          {value}
-        </Text>
-      </View>
-    );
-  }
 }
