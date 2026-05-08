@@ -1,11 +1,13 @@
 import ExerciseSessionModal from "@/components/ExerciseSessionModal";
+import ThemedAlert from "@/components/ThemedAlert";
 import { supabase } from "@/lib/supabase";
+import { useTheme } from "@/lib/theme";
 import { Audio } from "expo-av";
-import { useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { Stack, useFocusEffect, useRouter } from "expo-router";
+import { X } from "lucide-react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Pressable,
   ScrollView,
@@ -101,10 +103,22 @@ function formatWorkoutType(type: WorkoutType) {
 
 export default function StartWorkoutScreen() {
   const router = useRouter();
+  const theme = useTheme();
   const todaySplit = useMemo(() => getTodaySplit(), []);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [closeAlertVisible, setCloseAlertVisible] = useState(false);
+
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [alertTitle, setAlertTitle] = useState("");
+  const [alertMessage, setAlertMessage] = useState("");
+  const [alertConfirmText, setAlertConfirmText] = useState("OK");
+  const [alertCancelText, setAlertCancelText] = useState<string | undefined>();
+  const [alertDanger, setAlertDanger] = useState(false);
+  const [alertOnConfirm, setAlertOnConfirm] = useState<
+    (() => void) | undefined
+  >();
 
   const [sessionStarted, setSessionStarted] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -128,6 +142,30 @@ export default function StartWorkoutScreen() {
     const weight = Number(set.weight_kg) || 0;
     return sum + reps * weight;
   }, 0);
+
+  function showAlert({
+    title,
+    message,
+    confirmText = "OK",
+    cancelText,
+    danger = false,
+    onConfirm,
+  }: {
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    danger?: boolean;
+    onConfirm?: () => void;
+  }) {
+    setAlertTitle(title);
+    setAlertMessage(message);
+    setAlertConfirmText(confirmText);
+    setAlertCancelText(cancelText);
+    setAlertDanger(danger);
+    setAlertOnConfirm(() => onConfirm);
+    setAlertOpen(true);
+  }
 
   async function playRestCompleteAlert() {
     try {
@@ -191,7 +229,11 @@ export default function StartWorkoutScreen() {
 
     if (exerciseError) {
       console.log("Load exercises error:", exerciseError);
-      Alert.alert("Error", "Could not load exercises.");
+      showAlert({
+        title: "Error",
+        message: "Could not load exercises.",
+        danger: true,
+      });
     }
 
     setExercises((exerciseData || []) as Exercise[]);
@@ -202,7 +244,10 @@ export default function StartWorkoutScreen() {
 
   function actuallyStartSession() {
     if (exercises.length === 0) {
-      Alert.alert("No exercises", "Add exercises for this workout day first.");
+      showAlert({
+        title: "No exercises",
+        message: "Add exercises for this workout day first.",
+      });
       return;
     }
 
@@ -213,24 +258,20 @@ export default function StartWorkoutScreen() {
 
   function startSession() {
     if (todayWorkout) {
-      Alert.alert(
-        "Already logged today",
-        `You already completed ${formatWorkoutType(
+      showAlert({
+        title: "Already logged today",
+        message: `You already completed ${formatWorkoutType(
           todayWorkout.workout_type,
         )} today${
           todayWorkout.duration_minutes
             ? ` for ${todayWorkout.duration_minutes} minutes`
             : ""
         }. Do you still want to go? Remember, rest and recovery are also important.`,
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Start Anyway",
-            style: "destructive",
-            onPress: actuallyStartSession,
-          },
-        ],
-      );
+        cancelText: "Cancel",
+        confirmText: "Start Anyway",
+        danger: true,
+        onConfirm: actuallyStartSession,
+      });
 
       return;
     }
@@ -246,20 +287,28 @@ export default function StartWorkoutScreen() {
 
   function openExercise(exercise: Exercise) {
     if (!sessionStarted) {
-      Alert.alert("Start workout", "Tap Start Workout first.");
+      showAlert({
+        title: "Start workout",
+        message: "Tap Start Workout first.",
+      });
       return;
     }
 
     if (isPaused) {
-      Alert.alert("Workout paused", "Resume the workout before logging sets.");
+      showAlert({
+        title: "Workout paused",
+        message: "Resume the workout before logging sets.",
+      });
       return;
     }
 
     if (isResting && restExerciseId !== exercise.id) {
-      Alert.alert(
-        "Rest timer active",
-        `Please wait ${formatRest(restRemaining)} before starting another set.`,
-      );
+      showAlert({
+        title: "Rest timer active",
+        message: `Please wait ${formatRest(
+          restRemaining,
+        )} before starting another set.`,
+      });
       return;
     }
 
@@ -333,7 +382,10 @@ export default function StartWorkoutScreen() {
 
   async function endAndSaveWorkout() {
     if (sets.length === 0) {
-      Alert.alert("No sets", "Log at least one set before ending workout.");
+      showAlert({
+        title: "No sets",
+        message: "Log at least one set before ending workout.",
+      });
       return;
     }
 
@@ -346,35 +398,27 @@ export default function StartWorkoutScreen() {
         .map((exercise) => exercise.name)
         .join(", ");
 
-      Alert.alert(
-        "Some exercises have no sets",
-        `You don't have any sets for ${exerciseNames} exercise${
+      showAlert({
+        title: "Some exercises have no sets",
+        message: `You don't have any sets for ${exerciseNames} exercise${
           exercisesWithoutSets.length > 1 ? "s" : ""
         }. Are you sure you want to end the session?`,
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "End Session",
-            style: "destructive",
-            onPress: saveWorkout,
-          },
-        ],
-      );
+        cancelText: "Cancel",
+        confirmText: "End Session",
+        danger: true,
+        onConfirm: saveWorkout,
+      });
 
       return;
     }
 
-    Alert.alert(
-      "End workout?",
-      "This will stop the timer and save your workout.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "End & Save",
-          onPress: saveWorkout,
-        },
-      ],
-    );
+    showAlert({
+      title: "End workout?",
+      message: "This will stop the timer and save your workout.",
+      cancelText: "Cancel",
+      confirmText: "End & Save",
+      onConfirm: saveWorkout,
+    });
   }
 
   async function saveWorkout() {
@@ -407,7 +451,11 @@ export default function StartWorkoutScreen() {
 
     if (workoutError || !workout) {
       console.log("Create workout error:", workoutError);
-      Alert.alert("Error", "Could not create workout.");
+      showAlert({
+        title: "Error",
+        message: "Could not create workout.",
+        danger: true,
+      });
       setSaving(false);
       return;
     }
@@ -428,20 +476,52 @@ export default function StartWorkoutScreen() {
 
     if (setsError) {
       console.log("Save sets error:", setsError);
-      Alert.alert("Error", "Workout created but sets failed to save.");
+      showAlert({
+        title: "Error",
+        message: "Workout created but sets failed to save.",
+        danger: true,
+      });
       setSaving(false);
       return;
     }
 
     setSaving(false);
 
-    Alert.alert("Workout saved", "Your workout was logged successfully.", [
-      {
-        text: "OK",
-        onPress: () => router.back(),
-      },
-    ]);
+    showAlert({
+      title: "Workout saved",
+      message: "Your workout was logged successfully.",
+      confirmText: "OK",
+      onConfirm: () => router.back(),
+    });
   }
+
+  function handleClosePress() {
+    if (sessionStarted || isPaused) {
+      setCloseAlertVisible(true);
+      return;
+    }
+
+    router.back();
+  }
+
+  function confirmCloseSession() {
+    setCloseAlertVisible(false);
+    setModalVisible(false);
+    setSessionStarted(false);
+    setIsPaused(false);
+    finishRest();
+    router.back();
+  }
+
+  useFocusEffect(
+    useCallback(() => {
+      theme.setSessionTheme(todaySplit.type);
+
+      return () => {
+        theme.setSessionTheme("default");
+      };
+    }, [todaySplit.type]),
+  );
 
   useEffect(() => {
     if (todaySplit.type !== "rest") {
@@ -480,17 +560,43 @@ export default function StartWorkoutScreen() {
       <View
         style={{
           flex: 1,
-          backgroundColor: "#111",
+          backgroundColor: theme.colors.background,
           justifyContent: "center",
           alignItems: "center",
           padding: 24,
         }}
       >
+        <Stack.Screen
+          options={{
+            headerShown: true,
+            headerShadowVisible: false,
+            headerBackVisible: false,
+            headerTitle: "",
+            headerStyle: {
+              backgroundColor: theme.colors.surface,
+            },
+            headerTintColor: theme.colors.text,
+            headerLeft: () => (
+              <Pressable
+                onPress={() => router.back()}
+                style={{
+                  width: 42,
+                  height: 42,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <X size={30} color={theme.colors.text} />
+              </Pressable>
+            ),
+          }}
+        />
+
         <Text style={{ fontSize: 64 }}>😴</Text>
 
         <Text
           style={{
-            color: "#fff",
+            color: theme.colors.primary,
             fontSize: 30,
             fontWeight: "800",
             marginTop: 16,
@@ -502,7 +608,7 @@ export default function StartWorkoutScreen() {
 
         <Text
           style={{
-            color: "#bbb",
+            color: theme.colors.textMuted,
             fontSize: 16,
             marginTop: 12,
             textAlign: "center",
@@ -513,7 +619,7 @@ export default function StartWorkoutScreen() {
 
         <Text
           style={{
-            color: "#888",
+            color: theme.colors.textMuted,
             fontSize: 14,
             marginTop: 8,
             textAlign: "center",
@@ -525,7 +631,7 @@ export default function StartWorkoutScreen() {
 
         <Text
           style={{
-            color: "#666",
+            color: theme.colors.textFaint,
             fontSize: 13,
             marginTop: 22,
             textAlign: "center",
@@ -539,79 +645,81 @@ export default function StartWorkoutScreen() {
           onPress={() => router.back()}
           style={{
             marginTop: 30,
-            backgroundColor: "#fff",
+            backgroundColor: theme.colors.primary,
             paddingHorizontal: 22,
             paddingVertical: 12,
             borderRadius: 999,
           }}
         >
-          <Text style={{ fontWeight: "800" }}>Go Back</Text>
+          <Text style={{ fontWeight: "800", color: theme.colors.textInverse }}>
+            Go Back
+          </Text>
         </Pressable>
       </View>
     );
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#F7F7F7" }}>
+    <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
+      <Stack.Screen
+        options={{
+          headerShown: true,
+          headerShadowVisible: false,
+          headerBackVisible: false,
+          headerTitle: "",
+          headerStyle: {
+            backgroundColor: theme.colors.surface,
+          },
+          headerTintColor: theme.colors.text,
+          headerLeft: () => (
+            <Pressable
+              onPress={handleClosePress}
+              style={{
+                width: 42,
+                height: 42,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <X size={30} color={theme.colors.text} />
+            </Pressable>
+          ),
+        }}
+      />
+
       <ScrollView
-        contentContainerStyle={{ padding: 16, paddingBottom: 120 }}
+        contentContainerStyle={{ padding: 16, paddingBottom: 20 }}
         showsVerticalScrollIndicator={false}
       >
-        <View
-          style={{
-            marginTop: 48,
-            flexDirection: "row",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
-          <View>
-            <Text style={{ fontSize: 28, fontWeight: "800" }}>
-              Start Workout
-            </Text>
-            <Text style={{ color: "#666", marginTop: 4 }}>
-              {todaySplit.label}
-            </Text>
-          </View>
-
-          <Pressable
-            onPress={() => router.back()}
-            style={{
-              backgroundColor: "#fff",
-              paddingHorizontal: 14,
-              paddingVertical: 10,
-              borderRadius: 999,
-              borderWidth: 1,
-              borderColor: "#eee",
-            }}
-          >
-            <Text style={{ fontWeight: "800" }}>Cancel</Text>
-          </Pressable>
-        </View>
-
         {todayWorkout ? (
           <View
             style={{
-              backgroundColor: "#FFF4E5",
+              backgroundColor: theme.colors.primarySoft,
               borderRadius: 16,
               padding: 16,
               marginTop: 18,
               borderWidth: 1,
-              borderColor: "#FFE0AD",
+              borderColor: theme.colors.primary,
             }}
           >
-            <Text style={{ fontWeight: "900", color: "#9A5A00" }}>
+            <Text style={{ fontWeight: "900", color: theme.colors.primary }}>
               ⚠️ Already logged today
             </Text>
 
-            <Text style={{ color: "#9A5A00", marginTop: 6, fontWeight: "700" }}>
+            <Text
+              style={{
+                color: theme.colors.primary,
+                marginTop: 6,
+                fontWeight: "700",
+              }}
+            >
               {formatWorkoutType(todayWorkout.workout_type)}
               {todayWorkout.duration_minutes
                 ? ` • ${todayWorkout.duration_minutes} min`
                 : ""}
             </Text>
 
-            <Text style={{ color: "#7A5A22", marginTop: 6 }}>
+            <Text style={{ color: theme.colors.primary, marginTop: 6 }}>
               You can still start another session, but recovery is part of
               progress.
             </Text>
@@ -620,19 +728,21 @@ export default function StartWorkoutScreen() {
 
         <View
           style={{
-            backgroundColor: isPaused ? "#333" : "#111",
+            backgroundColor: isPaused
+              ? theme.colors.warning
+              : theme.colors.primary,
             borderRadius: 20,
             padding: 18,
             marginTop: 20,
           }}
         >
-          <Text style={{ color: "#aaa" }}>
+          <Text style={{ color: theme.colors.textInverse }}>
             Current Session {isPaused ? "• Paused" : ""}
           </Text>
 
           <Text
             style={{
-              color: "#fff",
+              color: theme.colors.textInverse,
               fontSize: 34,
               fontWeight: "900",
               marginTop: 6,
@@ -641,13 +751,19 @@ export default function StartWorkoutScreen() {
             {formatDuration(elapsedSeconds)}
           </Text>
 
-          <Text style={{ color: "#bbb", marginTop: 8 }}>
+          <Text style={{ color: theme.colors.textInverse, marginTop: 8 }}>
             {todaySplit.label} • {sets.length} sets •{" "}
             {totalVolume.toLocaleString()} kg volume
           </Text>
 
           {isPaused ? (
-            <Text style={{ color: "#ddd", marginTop: 10, fontWeight: "700" }}>
+            <Text
+              style={{
+                color: theme.colors.text,
+                marginTop: 10,
+                fontWeight: "700",
+              }}
+            >
               Workout is paused. Timer and rest countdown are frozen.
             </Text>
           ) : null}
@@ -656,21 +772,21 @@ export default function StartWorkoutScreen() {
         {isResting ? (
           <View
             style={{
-              backgroundColor: "#FFF4E5",
+              backgroundColor: theme.colors.primarySoft,
               borderRadius: 16,
               padding: 16,
               marginTop: 14,
               borderWidth: 1,
-              borderColor: "#FFE0AD",
+              borderColor: theme.colors.primary,
             }}
           >
-            <Text style={{ fontWeight: "900", color: "#9A5A00" }}>
+            <Text style={{ fontWeight: "900", color: theme.colors.primary }}>
               ⏱️ Rest timer active {isPaused ? "• Paused" : ""}
             </Text>
 
             <Text
               style={{
-                color: "#9A5A00",
+                color: theme.colors.primary,
                 marginTop: 6,
                 fontSize: 28,
                 fontWeight: "900",
@@ -679,7 +795,7 @@ export default function StartWorkoutScreen() {
               {formatRest(restRemaining)}
             </Text>
 
-            <Text style={{ color: "#7A5A22", marginTop: 6 }}>
+            <Text style={{ color: theme.colors.primary, marginTop: 6 }}>
               Another set cannot start until the timer is finished.
             </Text>
           </View>
@@ -690,7 +806,7 @@ export default function StartWorkoutScreen() {
             onPress={startSession}
             disabled={loading || exercises.length === 0}
             style={{
-              backgroundColor: "#111",
+              backgroundColor: theme.colors.primary,
               borderRadius: 18,
               padding: 18,
               alignItems: "center",
@@ -698,7 +814,13 @@ export default function StartWorkoutScreen() {
               opacity: loading || exercises.length === 0 ? 0.5 : 1,
             }}
           >
-            <Text style={{ color: "#fff", fontSize: 16, fontWeight: "800" }}>
+            <Text
+              style={{
+                color: theme.colors.textInverse,
+                fontSize: 16,
+                fontWeight: "800",
+              }}
+            >
               Start Workout
             </Text>
           </Pressable>
@@ -709,18 +831,24 @@ export default function StartWorkoutScreen() {
               disabled={saving}
               style={{
                 flex: 1,
-                backgroundColor: isPaused ? "#111" : "#fff",
+                backgroundColor: isPaused
+                  ? theme.colors.primary
+                  : theme.colors.surface,
                 borderRadius: 18,
                 padding: 18,
                 alignItems: "center",
                 borderWidth: 1,
-                borderColor: isPaused ? "#111" : "#ddd",
+                borderColor: isPaused
+                  ? theme.colors.primary
+                  : theme.colors.border,
                 opacity: saving ? 0.6 : 1,
               }}
             >
               <Text
                 style={{
-                  color: isPaused ? "#fff" : "#111",
+                  color: isPaused
+                    ? theme.colors.textInverse
+                    : theme.colors.text,
                   fontSize: 16,
                   fontWeight: "800",
                 }}
@@ -734,39 +862,57 @@ export default function StartWorkoutScreen() {
               disabled={saving}
               style={{
                 flex: 1,
-                backgroundColor: "#D11",
+                backgroundColor: theme.colors.danger,
                 borderRadius: 18,
                 padding: 18,
                 alignItems: "center",
                 opacity: saving ? 0.6 : 1,
               }}
             >
-              <Text style={{ color: "#fff", fontSize: 16, fontWeight: "800" }}>
+              <Text
+                style={{
+                  color: theme.colors.textInverse,
+                  fontSize: 16,
+                  fontWeight: "800",
+                }}
+              >
                 {saving ? "Saving..." : "End Workout"}
               </Text>
             </Pressable>
           </View>
         )}
 
-        <Text style={{ fontSize: 18, fontWeight: "800", marginTop: 24 }}>
+        <Text
+          style={{
+            fontSize: 18,
+            fontWeight: "800",
+            marginTop: 24,
+            color: theme.colors.text,
+          }}
+        >
           Today&apos;s Exercises
         </Text>
 
         {loading ? (
-          <ActivityIndicator style={{ marginTop: 20 }} />
+          <ActivityIndicator
+            color={theme.colors.primary}
+            style={{ marginTop: 20 }}
+          />
         ) : exercises.length === 0 ? (
           <View
             style={{
-              backgroundColor: "#fff",
+              backgroundColor: theme.colors.surface,
               borderRadius: 16,
               padding: 16,
               borderWidth: 1,
-              borderColor: "#eee",
+              borderColor: theme.colors.border,
               marginTop: 10,
             }}
           >
-            <Text style={{ fontWeight: "800" }}>No exercises found</Text>
-            <Text style={{ color: "#666", marginTop: 6 }}>
+            <Text style={{ fontWeight: "800", color: theme.colors.text }}>
+              No exercises found
+            </Text>
+            <Text style={{ color: theme.colors.textMuted, marginTop: 6 }}>
               Go to setup and add exercises for this workout day.
             </Text>
           </View>
@@ -797,21 +943,29 @@ export default function StartWorkoutScreen() {
                   onPress={() => openExercise(item)}
                   style={{
                     width: 200,
-                    backgroundColor: "#fff",
+                    backgroundColor: theme.colors.surface,
                     borderRadius: 16,
                     padding: 14,
                     borderWidth: 1,
-                    borderColor: isDisabledByRest ? "#FFE0AD" : "#eee",
+                    borderColor: isDisabledByRest
+                      ? theme.colors.primary
+                      : theme.colors.border,
                     opacity: isDisabled ? 0.5 : 1,
                   }}
                 >
-                  <Text style={{ fontSize: 16, fontWeight: "800" }}>
+                  <Text
+                    style={{
+                      fontSize: 16,
+                      fontWeight: "800",
+                      color: theme.colors.text,
+                    }}
+                  >
                     {item.name}
                   </Text>
 
                   <Text
                     style={{
-                      color: "#666",
+                      color: theme.colors.textMuted,
                       marginTop: 6,
                       textTransform: "capitalize",
                     }}
@@ -821,7 +975,7 @@ export default function StartWorkoutScreen() {
 
                   <Text
                     style={{
-                      color: "#666",
+                      color: theme.colors.textMuted,
                       marginTop: 6,
                       fontSize: 12,
                     }}
@@ -833,15 +987,25 @@ export default function StartWorkoutScreen() {
                     style={{
                       marginTop: 10,
                       borderTopWidth: 1,
-                      borderTopColor: "#eee",
+                      borderTopColor: theme.colors.border,
                       paddingTop: 8,
                     }}
                   >
-                    <Text style={{ fontWeight: "700" }}>
+                    <Text
+                      style={{
+                        fontWeight: "700",
+                        color: theme.colors.text,
+                      }}
+                    >
                       {exerciseSets.length} sets
                     </Text>
 
-                    <Text style={{ color: "#666", fontSize: 12 }}>
+                    <Text
+                      style={{
+                        color: theme.colors.textMuted,
+                        fontSize: 12,
+                      }}
+                    >
                       {volume.toLocaleString()} kg
                     </Text>
                   </View>
@@ -851,23 +1015,32 @@ export default function StartWorkoutScreen() {
           />
         )}
 
-        <Text style={{ fontSize: 18, fontWeight: "800", marginTop: 18 }}>
+        <Text
+          style={{
+            fontSize: 18,
+            fontWeight: "800",
+            marginTop: 18,
+            color: theme.colors.text,
+          }}
+        >
           Logged Sets
         </Text>
 
         {sets.length === 0 ? (
           <View
             style={{
-              backgroundColor: "#fff",
+              backgroundColor: theme.colors.surface,
               borderRadius: 16,
               padding: 16,
               borderWidth: 1,
-              borderColor: "#eee",
+              borderColor: theme.colors.border,
               marginTop: 10,
             }}
           >
-            <Text style={{ fontWeight: "800" }}>No sets yet</Text>
-            <Text style={{ color: "#666", marginTop: 6 }}>
+            <Text style={{ fontWeight: "800", color: theme.colors.text }}>
+              No sets yet
+            </Text>
+            <Text style={{ color: theme.colors.textMuted, marginTop: 6 }}>
               Start the workout, tap an exercise, then complete Set 1.
             </Text>
           </View>
@@ -877,11 +1050,11 @@ export default function StartWorkoutScreen() {
               <View
                 key={set.local_id}
                 style={{
-                  backgroundColor: "#fff",
+                  backgroundColor: theme.colors.surface,
                   borderRadius: 16,
                   padding: 14,
                   borderWidth: 1,
-                  borderColor: "#eee",
+                  borderColor: theme.colors.border,
                   marginBottom: 10,
                 }}
               >
@@ -893,18 +1066,33 @@ export default function StartWorkoutScreen() {
                   }}
                 >
                   <View style={{ flex: 1 }}>
-                    <Text style={{ fontWeight: "800" }}>
+                    <Text
+                      style={{
+                        fontWeight: "800",
+                        color: theme.colors.text,
+                      }}
+                    >
                       {set.exercise_name}
                     </Text>
 
-                    <Text style={{ color: "#666", marginTop: 4 }}>
+                    <Text
+                      style={{
+                        color: theme.colors.textMuted,
+                        marginTop: 4,
+                      }}
+                    >
                       Set {set.set_number} • {set.reps} reps × {set.weight_kg}{" "}
                       kg
                     </Text>
                   </View>
 
                   <Pressable onPress={() => removeSet(set.local_id)}>
-                    <Text style={{ color: "#D11", fontWeight: "800" }}>
+                    <Text
+                      style={{
+                        color: theme.colors.danger,
+                        fontWeight: "800",
+                      }}
+                    >
                       Remove
                     </Text>
                   </Pressable>
@@ -914,7 +1102,14 @@ export default function StartWorkoutScreen() {
           </View>
         )}
 
-        <Text style={{ fontSize: 18, fontWeight: "800", marginTop: 14 }}>
+        <Text
+          style={{
+            fontSize: 18,
+            fontWeight: "800",
+            marginTop: 14,
+            color: theme.colors.text,
+          }}
+        >
           Notes
         </Text>
 
@@ -922,16 +1117,18 @@ export default function StartWorkoutScreen() {
           value={notes}
           onChangeText={setNotes}
           placeholder="Energy, fatigue, form notes..."
+          placeholderTextColor={theme.colors.textFaint}
           multiline
           style={{
-            backgroundColor: "#fff",
+            backgroundColor: theme.colors.surface,
             borderRadius: 16,
             padding: 14,
             borderWidth: 1,
-            borderColor: "#eee",
+            borderColor: theme.colors.border,
             marginTop: 10,
             minHeight: 90,
             textAlignVertical: "top",
+            color: theme.colors.text,
           }}
         />
       </ScrollView>
@@ -948,6 +1145,38 @@ export default function StartWorkoutScreen() {
         onClose={() => setModalVisible(false)}
         onCompleteSet={completeSetFromModal}
         onSkipRest={finishRest}
+      />
+
+      <ThemedAlert
+        visible={alertOpen}
+        title={alertTitle}
+        message={alertMessage}
+        confirmText={alertConfirmText}
+        cancelText={alertCancelText}
+        danger={alertDanger}
+        onClose={() => setAlertOpen(false)}
+        onConfirm={() => {
+          setAlertOpen(false);
+
+          if (alertOnConfirm) {
+            alertOnConfirm();
+          }
+        }}
+      />
+
+      <ThemedAlert
+        visible={closeAlertVisible}
+        title={isPaused ? "Workout is paused" : "Workout in progress"}
+        message={
+          isPaused
+            ? "You have a paused workout session. Closing this screen will discard the current session and unsaved sets."
+            : "You have an active workout session. Closing this screen will discard the current session and unsaved sets."
+        }
+        cancelText="Stay"
+        confirmText="Discard"
+        danger
+        onClose={() => setCloseAlertVisible(false)}
+        onConfirm={confirmCloseSession}
       />
     </View>
   );

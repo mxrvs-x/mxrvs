@@ -6,7 +6,6 @@ import { ChevronDown, X } from "lucide-react-native";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   Text,
@@ -594,7 +593,7 @@ export default function SearchFoodDetailScreen() {
           headerShown: true,
           headerShadowVisible: false,
           headerTitle: "",
-
+          headerBackVisible: false,
           headerStyle: {
             backgroundColor: theme.colors.surface,
           },
@@ -618,7 +617,7 @@ export default function SearchFoodDetailScreen() {
       <ScrollView
         ref={scrollRef}
         style={{ flex: 1, backgroundColor: theme.colors.background }}
-        contentContainerStyle={{ padding: 18, paddingBottom: 180 }}
+        contentContainerStyle={{ padding: 18, paddingBottom: 20 }}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="interactive"
       >

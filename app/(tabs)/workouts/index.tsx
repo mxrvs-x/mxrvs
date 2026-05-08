@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { useTheme } from "@/lib/theme";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import {
@@ -98,6 +99,7 @@ function formatWorkoutType(type: WorkoutType) {
 
 export default function WorkoutIndexScreen() {
   const router = useRouter();
+  const theme = useTheme();
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -190,6 +192,12 @@ export default function WorkoutIndexScreen() {
   }, []);
 
   useFocusEffect(
+  useCallback(() => {
+    theme.setSessionTheme(todaySplit.type);
+  }, [todaySplit.type]),
+);
+
+  useFocusEffect(
     useCallback(() => {
       loadWorkoutData();
     }, []),
@@ -197,34 +205,43 @@ export default function WorkoutIndexScreen() {
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: "#F7F7F7" }}
+      style={{ flex: 1, backgroundColor: theme.colors.background }}
       contentContainerStyle={{ padding: 16, paddingBottom: 120 }}
       showsVerticalScrollIndicator={false}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
       }
     >
-      <Text style={{ fontSize: 28, fontWeight: "800", marginTop: 48 }}>
+      <Text
+        style={{
+          fontSize: 28,
+          fontWeight: "800",
+          marginTop: 48,
+          color: theme.colors.text,
+        }}
+      >
         Workout
       </Text>
 
-      <Text style={{ color: "#666", marginTop: 4 }}>
+      <Text style={{ color: theme.colors.textMuted, marginTop: 4 }}>
         PPL / UL strength tracking
       </Text>
 
       <View
         style={{
           marginTop: 20,
-          backgroundColor: "#111",
+          backgroundColor: theme.colors.primary,
           borderRadius: 20,
           padding: 18,
         }}
       >
-        <Text style={{ color: "#aaa", fontSize: 13 }}>{"Today's Split"}</Text>
+        <Text style={{ color: theme.colors.textInverse, fontSize: 13 }}>
+          {"Today's Split"}
+        </Text>
 
         <Text
           style={{
-            color: "#fff",
+            color: theme.colors.textInverse,
             fontSize: 26,
             fontWeight: "800",
             marginTop: 6,
@@ -233,7 +250,7 @@ export default function WorkoutIndexScreen() {
           {todaySplit.emoji} {todaySplit.label}
         </Text>
 
-        <Text style={{ color: "#bbb", marginTop: 8 }}>
+        <Text style={{ color: theme.colors.textInverse, marginTop: 8 }}>
           {todaySplit.type === "rest"
             ? "Recovery day. Keep it light, walk, stretch, or rest fully."
             : "Log your sets, reps, weight, and rest time."}
@@ -243,26 +260,32 @@ export default function WorkoutIndexScreen() {
       {todayWorkout && (
         <View
           style={{
-            backgroundColor: "#FFF4E5",
+            backgroundColor: theme.colors.primarySoft,
             borderRadius: 16,
             padding: 16,
             marginTop: 14,
             borderWidth: 1,
-            borderColor: "#FFE0AD",
+            borderColor: theme.colors.primary,
           }}
         >
-          <Text style={{ fontWeight: "900", color: "#9A5A00" }}>
+          <Text style={{ fontWeight: "900", color: theme.colors.primary }}>
             ⚠️ Already logged today
           </Text>
 
-          <Text style={{ color: "#9A5A00", marginTop: 6, fontWeight: "700" }}>
+          <Text
+            style={{
+              color: theme.colors.primary,
+              marginTop: 6,
+              fontWeight: "700",
+            }}
+          >
             {formatWorkoutType(todayWorkout.workout_type)}
             {todayWorkout.duration_minutes
               ? ` • ${todayWorkout.duration_minutes} min`
               : ""}
           </Text>
 
-          <Text style={{ color: "#7A5A22", marginTop: 6 }}>
+          <Text style={{ color: theme.colors.primary, marginTop: 6 }}>
             You’ve already completed today’s session. You can still train again,
             but rest and recovery are also important.
           </Text>
@@ -271,19 +294,36 @@ export default function WorkoutIndexScreen() {
 
       <View style={{ flexDirection: "row", gap: 12, marginTop: 14 }}>
         <Pressable
-          onPress={() => router.push("/workouts/setup")}
+          onPress={() =>
+            router.push({
+              pathname: "/workouts/setup",
+              params: {
+                split: todaySplit.type,
+              },
+            } as any)
+          }
           style={{
             flex: 1,
-            backgroundColor: "#fff",
+            backgroundColor: theme.colors.surface,
             borderRadius: 16,
             padding: 16,
             borderWidth: 1,
-            borderColor: "#eee",
+            borderColor: theme.colors.border,
           }}
         >
           <Text style={{ fontSize: 22 }}>⚙️</Text>
-          <Text style={{ fontWeight: "800", marginTop: 8 }}>Setup</Text>
-          <Text style={{ color: "#666", marginTop: 4 }}>
+
+          <Text
+            style={{
+              fontWeight: "800",
+              marginTop: 8,
+              color: theme.colors.text,
+            }}
+          >
+            Setup
+          </Text>
+
+          <Text style={{ color: theme.colors.textMuted, marginTop: 4 }}>
             {exerciseCount} exercises
           </Text>
         </Pressable>
@@ -292,16 +332,28 @@ export default function WorkoutIndexScreen() {
           onPress={() => router.push("/workouts/start")}
           style={{
             flex: 1,
-            backgroundColor: todayWorkout ? "#333" : "#111",
+            backgroundColor: todayWorkout
+              ? theme.colors.surfaceAlt
+              : theme.colors.primary,
             borderRadius: 16,
             padding: 16,
+            borderWidth: todayWorkout ? 1 : 0,
+            borderColor: todayWorkout ? theme.colors.border : "transparent",
           }}
         >
-          <Text style={{ fontSize: 22, color: "#fff" }}>
+          <Text style={{ fontSize: 22 }}>
             {todaySplit.type === "rest" ? "😴" : "🏋️"}
           </Text>
 
-          <Text style={{ color: "#fff", fontWeight: "800", marginTop: 8 }}>
+          <Text
+            style={{
+              color: todayWorkout
+                ? theme.colors.text
+                : theme.colors.textInverse,
+              fontWeight: "800",
+              marginTop: 8,
+            }}
+          >
             {todaySplit.type === "rest"
               ? "Rest Day"
               : todayWorkout
@@ -309,7 +361,14 @@ export default function WorkoutIndexScreen() {
                 : "Start Workout"}
           </Text>
 
-          <Text style={{ color: "#bbb", marginTop: 4 }}>
+          <Text
+            style={{
+              color: todayWorkout
+                ? theme.colors.textMuted
+                : theme.colors.textInverse,
+              marginTop: 4,
+            }}
+          >
             {todaySplit.type === "rest"
               ? "Recovery screen"
               : todayWorkout
@@ -328,27 +387,49 @@ export default function WorkoutIndexScreen() {
           alignItems: "center",
         }}
       >
-        <Text style={{ fontSize: 18, fontWeight: "800" }}>Recent Workouts</Text>
+        <Text
+          style={{
+            fontSize: 18,
+            fontWeight: "800",
+            color: theme.colors.text,
+          }}
+        >
+          Recent Workouts
+        </Text>
 
-        <Pressable onPress={() => router.push("/workouts/history")}>
-          <Text style={{ color: "#111", fontWeight: "900" }}>View All</Text>
+        <Pressable
+          onPress={() =>
+            router.push({
+              pathname: "/workouts/history",
+              params: {
+                split: todaySplit.type,
+              },
+            } as any)
+          }
+        >
+          <Text style={{ color: theme.colors.primary, fontWeight: "900" }}>
+            View All
+          </Text>
         </Pressable>
       </View>
 
       {loading ? (
-        <ActivityIndicator />
+        <ActivityIndicator color={theme.colors.primary} />
       ) : recentWorkouts.length === 0 ? (
         <View
           style={{
-            backgroundColor: "#fff",
+            backgroundColor: theme.colors.surface,
             borderRadius: 18,
             padding: 18,
             borderWidth: 1,
-            borderColor: "#eee",
+            borderColor: theme.colors.border,
           }}
         >
-          <Text style={{ fontWeight: "700" }}>No workouts yet</Text>
-          <Text style={{ color: "#666", marginTop: 6 }}>
+          <Text style={{ fontWeight: "700", color: theme.colors.text }}>
+            No workouts yet
+          </Text>
+
+          <Text style={{ color: theme.colors.textMuted, marginTop: 6 }}>
             Start logging to see your progress.
           </Text>
         </View>
@@ -362,15 +443,18 @@ export default function WorkoutIndexScreen() {
               onPress={() =>
                 router.push({
                   pathname: "/workouts/[id]",
-                  params: { id: item.id },
+                  params: {
+                    id: item.id,
+                    split: item.workout_type,
+                  },
                 } as any)
               }
               style={{
-                backgroundColor: "#fff",
+                backgroundColor: theme.colors.surface,
                 borderRadius: 16,
                 padding: 14,
                 borderWidth: 1,
-                borderColor: "#eee",
+                borderColor: theme.colors.border,
                 marginBottom: 10,
               }}
             >
@@ -382,11 +466,17 @@ export default function WorkoutIndexScreen() {
                 }}
               >
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontWeight: "800", fontSize: 16 }}>
+                  <Text
+                    style={{
+                      fontWeight: "800",
+                      fontSize: 16,
+                      color: theme.colors.text,
+                    }}
+                  >
                     {formatWorkoutType(item.workout_type)}
                   </Text>
 
-                  <Text style={{ color: "#666", marginTop: 4 }}>
+                  <Text style={{ color: theme.colors.textMuted, marginTop: 4 }}>
                     {formatDate(item.workout_date)}
                     {item.duration_minutes
                       ? ` • ${item.duration_minutes} min`
@@ -394,7 +484,14 @@ export default function WorkoutIndexScreen() {
                   </Text>
                 </View>
 
-                <Text style={{ color: "#777", fontWeight: "800" }}>View</Text>
+                <Text
+                  style={{
+                    color: theme.colors.primary,
+                    fontWeight: "800",
+                  }}
+                >
+                  View
+                </Text>
               </View>
 
               <View
@@ -413,7 +510,7 @@ export default function WorkoutIndexScreen() {
               </View>
 
               {item.notes ? (
-                <Text style={{ marginTop: 8, color: "#444" }}>
+                <Text style={{ marginTop: 8, color: theme.colors.textMuted }}>
                   {item.notes}
                 </Text>
               ) : null}
@@ -426,17 +523,24 @@ export default function WorkoutIndexScreen() {
 }
 
 function MiniStat({ label, value }: { label: string; value: string }) {
+  const theme = useTheme();
+
   return (
     <View
       style={{
-        backgroundColor: "#f4f4f4",
+        backgroundColor: theme.colors.surfaceAlt,
         borderRadius: 10,
         paddingVertical: 6,
         paddingHorizontal: 8,
       }}
     >
-      <Text style={{ fontSize: 11, color: "#777" }}>{label}</Text>
-      <Text style={{ fontWeight: "900" }}>{value}</Text>
+      <Text style={{ fontSize: 11, color: theme.colors.textMuted }}>
+        {label}
+      </Text>
+
+      <Text style={{ fontWeight: "900", color: theme.colors.text }}>
+        {value}
+      </Text>
     </View>
   );
 }

@@ -1,12 +1,16 @@
-import { useLocalSearchParams } from "expo-router";
+import { useTheme } from "@/lib/theme";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { ChevronDown, ChevronUp, X } from "lucide-react-native";
 import { useEffect, useMemo, useState } from "react";
 import {
-    ActivityIndicator,
-    Pressable,
-    ScrollView,
-    Text,
-    View,
+  ActivityIndicator,
+  Dimensions,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
 } from "react-native";
+import Svg, { Circle } from "react-native-svg";
 
 type Nutrient = {
   nutrient?: {
@@ -179,6 +183,10 @@ function formatNumber(value?: number | null) {
 export default function UsdaFoodDetailScreen() {
   const { fdcId } = useLocalSearchParams<{ fdcId: string }>();
 
+  const router = useRouter();
+  const theme = useTheme();
+  const screenWidth = Dimensions.get("window").width;
+
   const [food, setFood] = useState<FoodDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState("");
@@ -246,147 +254,486 @@ export default function UsdaFoodDetailScreen() {
 
   if (loading) {
     return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-        <ActivityIndicator />
-        <Text style={{ marginTop: 12, color: "#666" }}>Loading food...</Text>
-      </View>
+      <>
+        <Stack.Screen
+          options={{
+            headerShown: true,
+            headerShadowVisible: false,
+            headerTitle: "",
+            headerBackVisible: false,
+            headerStyle: {
+              backgroundColor: theme.colors.surface,
+            },
+            headerLeft: () => (
+              <View
+                style={{
+                  width: screenWidth - 18,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  paddingTop: 20,
+                  gap: 8,
+                }}
+              >
+                <Pressable
+                  onPress={() => router.back()}
+                  style={{
+                    width: 42,
+                    height: 42,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <X size={30} color={theme.colors.text} />
+                </Pressable>
+              </View>
+            ),
+            headerRight: () => null,
+          }}
+        />
+
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: theme.colors.background,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <ActivityIndicator color={theme.colors.primary} />
+          <Text style={{ marginTop: 12, color: theme.colors.textMuted }}>
+            Loading food...
+          </Text>
+        </View>
+      </>
     );
   }
 
   if (!food) {
     return (
-      <View style={{ flex: 1, padding: 24 }}>
-        <Text>{status || "Food not found."}</Text>
-      </View>
+      <>
+        <Stack.Screen
+          options={{
+            headerShown: true,
+            headerShadowVisible: false,
+            headerTitle: "",
+            headerBackVisible: false,
+            headerStyle: {
+              backgroundColor: theme.colors.surface,
+            },
+            headerLeft: () => (
+              <View
+                style={{
+                  width: screenWidth - 18,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  paddingTop: 20,
+                  gap: 8,
+                }}
+              >
+                <Pressable
+                  onPress={() => router.back()}
+                  style={{
+                    width: 42,
+                    height: 42,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <X size={30} color={theme.colors.text} />
+                </Pressable>
+              </View>
+            ),
+            headerRight: () => null,
+          }}
+        />
+
+        <View
+          style={{
+            flex: 1,
+            padding: 24,
+            backgroundColor: theme.colors.background,
+          }}
+        >
+          <Text style={{ color: theme.colors.text }}>
+            {status || "Food not found."}
+          </Text>
+        </View>
+      </>
     );
   }
 
   return (
-    <ScrollView
-      style={{ flex: 1 }}
-      contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
+    <>
+      <Stack.Screen
+        options={{
+          headerShown: true,
+          headerShadowVisible: false,
+          headerTitle: "",
+          headerBackVisible: false,
+          headerStyle: {
+            backgroundColor: theme.colors.surface,
+          },
+
+          headerLeft: () => (
+            <View
+              style={{
+                width: screenWidth - 18,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <Pressable
+                onPress={() => router.back()}
+                style={{
+                  width: 42,
+                  height: 42,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <X size={30} color={theme.colors.text} />
+              </Pressable>
+            </View>
+          ),
+
+          headerRight: () => null,
+        }}
+      />
+
+      <ScrollView
+        style={{ flex: 1, backgroundColor: theme.colors.background }}
+        contentContainerStyle={{ padding: 20, paddingBottom: 20 }}
+        showsVerticalScrollIndicator={false}
+      >
+        <Text
+          style={{
+            fontSize: 26,
+            fontWeight: "900",
+            color: theme.colors.text,
+          }}
+        >
+          {food.description}
+        </Text>
+
+        <Text style={{ marginTop: 4, color: theme.colors.textMuted }}>
+          {food.dataType}
+        </Text>
+
+        {!!food.brandOwner && (
+          <Text style={{ marginTop: 4, color: theme.colors.textMuted }}>
+            {food.brandOwner}
+          </Text>
+        )}
+
+        {!!food.brandName && (
+          <Text style={{ marginTop: 4, color: theme.colors.textMuted }}>
+            {food.brandName}
+          </Text>
+        )}
+
+        {food.servingSize ? (
+          <Text style={{ marginTop: 12, color: theme.colors.textFaint }}>
+            Serving: {food.servingSize} {food.servingSizeUnit}
+          </Text>
+        ) : (
+          <Text style={{ marginTop: 12, color: theme.colors.textFaint }}>
+            Nutrition values are usually per 100g
+          </Text>
+        )}
+
+        <MacroDistributionChart macros={sections.macros} theme={theme} />
+
+        <NutritionCard title="Macros" theme={theme}>
+          {sections.macros.map((item) => (
+            <NutritionRow
+              key={`${item.id}-${item.name}`}
+              label={item.name}
+              value={item.value}
+              unit={item.unit}
+              theme={theme}
+            />
+          ))}
+        </NutritionCard>
+
+        <NutritionCard title="Extra Nutrition" theme={theme}>
+          {sections.extraNutrition.map((item) => (
+            <NutritionRow
+              key={`${item.id}-${item.name}`}
+              label={item.name}
+              value={item.value}
+              unit={item.unit}
+              theme={theme}
+            />
+          ))}
+        </NutritionCard>
+
+        <Pressable
+          onPress={() => setShowFullNutrition((prev) => !prev)}
+          style={{
+            marginTop: 20,
+            padding: 16,
+            borderRadius: 16,
+            backgroundColor: theme.colors.primary,
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+          }}
+        >
+          {showFullNutrition ? (
+            <ChevronUp size={18} color={theme.colors.textInverse} />
+          ) : (
+            <ChevronDown size={18} color={theme.colors.textInverse} />
+          )}
+
+          <Text
+            style={{
+              color: theme.colors.textInverse,
+              textAlign: "center",
+              fontWeight: "900",
+            }}
+          >
+            {showFullNutrition ? "Hide Full Nutrition" : "Show Full Nutrition"}
+          </Text>
+        </Pressable>
+
+        {showFullNutrition ? (
+          <>
+            <NutritionCard title="Fat Breakdown" theme={theme}>
+              {sections.fats.map((item) => (
+                <NutritionRow
+                  key={`${item.id}-${item.name}`}
+                  label={item.name}
+                  value={item.value}
+                  unit={item.unit}
+                  theme={theme}
+                />
+              ))}
+            </NutritionCard>
+
+            <NutritionCard title="Protein / Amino Acids" theme={theme}>
+              {sections.protein.map((item) => (
+                <NutritionRow
+                  key={`${item.id}-${item.name}`}
+                  label={item.name}
+                  value={item.value}
+                  unit={item.unit}
+                  theme={theme}
+                />
+              ))}
+            </NutritionCard>
+
+            <NutritionCard title="Micros / Other Nutrients" theme={theme}>
+              {sections.micros.map((item, index) => (
+                <NutritionRow
+                  key={`${item.id ?? item.name}-${index}`}
+                  label={item.name}
+                  value={item.value}
+                  unit={item.unit}
+                  theme={theme}
+                />
+              ))}
+            </NutritionCard>
+          </>
+        ) : null}
+      </ScrollView>
+    </>
+  );
+}
+
+function MacroDistributionChart({
+  macros,
+  theme,
+}: {
+  macros: NormalizedNutrient[];
+  theme: ReturnType<typeof useTheme>;
+}) {
+  const calories = macros.find((item) => item.name === "Calories")?.value ?? 0;
+  const proteinG = macros.find((item) => item.name === "Protein")?.value ?? 0;
+  const carbsG = macros.find((item) => item.name === "Carbs")?.value ?? 0;
+  const fatG = macros.find((item) => item.name === "Fat")?.value ?? 0;
+
+  const proteinCalories = proteinG * 4;
+  const carbsCalories = carbsG * 4;
+  const fatCalories = fatG * 9;
+
+  const totalMacroCalories = proteinCalories + carbsCalories + fatCalories;
+
+  const proteinPercent =
+    totalMacroCalories > 0 ? (proteinCalories / totalMacroCalories) * 100 : 0;
+  const carbsPercent =
+    totalMacroCalories > 0 ? (carbsCalories / totalMacroCalories) * 100 : 0;
+  const fatPercent =
+    totalMacroCalories > 0 ? (fatCalories / totalMacroCalories) * 100 : 0;
+
+  const size = 120;
+  const strokeWidth = 18;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+
+  let currentOffset = 0;
+
+  const segments = [
+    {
+      label: "Protein",
+      grams: proteinG,
+      percent: proteinPercent,
+      color: theme.colors.protein,
+    },
+    {
+      label: "Net Carbs",
+      grams: carbsG,
+      percent: carbsPercent,
+      color: theme.colors.carbs,
+    },
+    {
+      label: "Fat",
+      grams: fatG,
+      percent: fatPercent,
+      color: theme.colors.fat,
+    },
+  ];
+
+  return (
+    <View
+      style={{
+        marginTop: 16,
+        padding: 18,
+        borderRadius: 22,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        backgroundColor: theme.colors.surface,
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 18,
+      }}
     >
-      <Text style={{ fontSize: 26, fontWeight: "800" }}>
-        {food.description}
-      </Text>
-
-      <Text style={{ marginTop: 4, color: "#666" }}>{food.dataType}</Text>
-
-      {!!food.brandOwner && (
-        <Text style={{ marginTop: 4, color: "#666" }}>{food.brandOwner}</Text>
-      )}
-
-      {!!food.brandName && (
-        <Text style={{ marginTop: 4, color: "#666" }}>{food.brandName}</Text>
-      )}
-
-      {food.servingSize ? (
-        <Text style={{ marginTop: 12, color: "#999" }}>
-          Serving: {food.servingSize} {food.servingSizeUnit}
-        </Text>
-      ) : (
-        <Text style={{ marginTop: 12, color: "#999" }}>
-          Nutrition values are usually per 100g
-        </Text>
-      )}
-
-      <NutritionCard title="Macros">
-        {sections.macros.map((item) => (
-          <NutritionRow
-            key={`${item.id}-${item.name}`}
-            label={item.name}
-            value={item.value}
-            unit={item.unit}
-          />
-        ))}
-      </NutritionCard>
-
-      <NutritionCard title="Extra Nutrition">
-        {sections.extraNutrition.map((item) => (
-          <NutritionRow
-            key={`${item.id}-${item.name}`}
-            label={item.name}
-            value={item.value}
-            unit={item.unit}
-          />
-        ))}
-      </NutritionCard>
-
-      <Pressable
-        onPress={() => setShowFullNutrition((prev) => !prev)}
+      <View
         style={{
-          marginTop: 20,
-          padding: 16,
-          borderRadius: 12,
-          backgroundColor: "#000",
+          width: size,
+          height: size,
+          alignItems: "center",
+          justifyContent: "center",
         }}
       >
-        <Text style={{ color: "#fff", textAlign: "center", fontWeight: "800" }}>
-          {showFullNutrition ? "Hide Full Nutrition" : "Show Full Nutrition"}
-        </Text>
-      </Pressable>
+        <Svg width={size} height={size}>
+          <Circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke={theme.colors.border}
+            strokeWidth={strokeWidth}
+            fill="transparent"
+          />
 
-      {showFullNutrition ? (
-        <>
-          <NutritionCard title="Fat Breakdown">
-            {sections.fats.map((item) => (
-              <NutritionRow
-                key={`${item.id}-${item.name}`}
-                label={item.name}
-                value={item.value}
-                unit={item.unit}
-              />
-            ))}
-          </NutritionCard>
+          {segments.map((segment) => {
+            const dashLength = (circumference * segment.percent) / 100;
+            const dashOffset = -currentOffset;
 
-          <NutritionCard title="Protein / Amino Acids">
-            {sections.protein.map((item) => (
-              <NutritionRow
-                key={`${item.id}-${item.name}`}
-                label={item.name}
-                value={item.value}
-                unit={item.unit}
-              />
-            ))}
-          </NutritionCard>
+            currentOffset += dashLength;
 
-          <NutritionCard title="Micros / Other Nutrients">
-            {sections.micros.map((item, index) => (
-              <NutritionRow
-                key={`${item.id ?? item.name}-${index}`}
-                label={item.name}
-                value={item.value}
-                unit={item.unit}
+            return (
+              <Circle
+                key={segment.label}
+                cx={size / 2}
+                cy={size / 2}
+                r={radius}
+                stroke={segment.color}
+                strokeWidth={strokeWidth}
+                fill="transparent"
+                strokeDasharray={`${dashLength} ${circumference - dashLength}`}
+                strokeDashoffset={dashOffset}
+                strokeLinecap="butt"
+                rotation="-90"
+                originX={size / 2}
+                originY={size / 2}
               />
-            ))}
-          </NutritionCard>
-        </>
-      ) : null}
-    </ScrollView>
+            );
+          })}
+        </Svg>
+
+        <View
+          style={{
+            position: "absolute",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Text
+            style={{
+              color: theme.colors.text,
+              fontSize: 20,
+              fontWeight: "900",
+            }}
+          >
+            {formatNumber(calories)}
+          </Text>
+
+          <Text
+            style={{
+              color: theme.colors.textMuted,
+              fontSize: 16,
+              fontWeight: "700",
+            }}
+          >
+            kcal
+          </Text>
+        </View>
+      </View>
+
+      <View style={{ flex: 1, gap: 12 }}>
+        {segments.map((segment) => (
+          <Text
+            key={segment.label}
+            style={{
+              color: segment.color,
+              fontSize: 14,
+              fontWeight: "900",
+            }}
+          >
+            {segment.label} ({formatNumber(segment.percent)}%) -{" "}
+            <Text style={{ color: theme.colors.text }}>
+              {formatNumber(segment.grams)}g
+            </Text>
+          </Text>
+        ))}
+      </View>
+    </View>
   );
 }
 
 function NutritionCard({
   title,
   children,
+  theme,
 }: {
   title: string;
   children: React.ReactNode;
+  theme: ReturnType<typeof useTheme>;
 }) {
   return (
     <View
       style={{
         marginTop: 16,
         padding: 16,
-        borderRadius: 12,
+        borderRadius: 18,
         borderWidth: 1,
-        borderColor: "#ddd",
-        backgroundColor: "#fff",
+        borderColor: theme.colors.border,
+        backgroundColor: theme.colors.surface,
       }}
     >
-      <Text style={{ fontSize: 18, fontWeight: "700", marginBottom: 12 }}>
+      <Text
+        style={{
+          fontSize: 18,
+          fontWeight: "900",
+          marginBottom: 12,
+          color: theme.colors.text,
+        }}
+      >
         {title}
       </Text>
+
       {children}
     </View>
   );
@@ -396,24 +743,40 @@ function NutritionRow({
   label,
   value,
   unit,
+  theme,
 }: {
   label: string;
   value?: number | null;
   unit: string;
+  theme: ReturnType<typeof useTheme>;
 }) {
   return (
     <View
       style={{
-        paddingVertical: 8,
+        paddingVertical: 9,
         flexDirection: "row",
         justifyContent: "space-between",
         borderBottomWidth: 1,
-        borderColor: "#eee",
+        borderColor: theme.colors.border,
         gap: 12,
       }}
     >
-      <Text style={{ color: "#666", flex: 1 }}>{label}</Text>
-      <Text style={{ fontWeight: "700" }}>
+      <Text
+        style={{
+          color: theme.colors.textMuted,
+          flex: 1,
+          fontWeight: "700",
+        }}
+      >
+        {label}
+      </Text>
+
+      <Text
+        style={{
+          fontWeight: "900",
+          color: theme.colors.text,
+        }}
+      >
         {formatNumber(value)} {unit}
       </Text>
     </View>

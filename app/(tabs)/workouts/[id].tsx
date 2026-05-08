@@ -1,12 +1,19 @@
 import { supabase } from "@/lib/supabase";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useTheme } from "@/lib/theme";
 import {
-    ActivityIndicator,
-    FlatList,
-    Pressable,
-    Text,
-    View,
+  Stack,
+  useFocusEffect,
+  useLocalSearchParams,
+  useRouter,
+} from "expo-router";
+import { X } from "lucide-react-native";
+import { useCallback, useState } from "react";
+import {
+  ActivityIndicator,
+  FlatList,
+  Pressable,
+  Text,
+  View,
 } from "react-native";
 
 type WorkoutType = "push" | "pull" | "legs" | "upper" | "lower" | "rest";
@@ -41,6 +48,17 @@ type DisplaySet = WorkoutSet & {
   muscle_group: string | null;
 };
 
+function isWorkoutType(value?: string | string[]): value is WorkoutType {
+  return (
+    value === "push" ||
+    value === "pull" ||
+    value === "legs" ||
+    value === "upper" ||
+    value === "lower" ||
+    value === "rest"
+  );
+}
+
 function formatWorkoutType(type: WorkoutType) {
   const labels: Record<WorkoutType, string> = {
     push: "Push",
@@ -73,7 +91,18 @@ function formatRest(seconds: number | null) {
 
 export default function WorkoutDetailsScreen() {
   const router = useRouter();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const theme = useTheme();
+
+  const params = useLocalSearchParams<{
+    id: string;
+    split?: WorkoutType;
+  }>();
+
+  const { id } = params;
+
+  const currentSplit: WorkoutType = isWorkoutType(params.split)
+    ? params.split
+    : "push";
 
   const [loading, setLoading] = useState(true);
   const [workout, setWorkout] = useState<Workout | null>(null);
@@ -82,6 +111,10 @@ export default function WorkoutDetailsScreen() {
   const totalVolume = sets.reduce((sum, set) => {
     return sum + (Number(set.reps) || 0) * (Number(set.weight_kg) || 0);
   }, 0);
+
+  function handleClosePress() {
+    router.back();
+  }
 
   async function loadWorkoutDetails() {
     if (!id) return;
@@ -107,6 +140,8 @@ export default function WorkoutDetailsScreen() {
       setLoading(false);
       return;
     }
+
+    const currentWorkout = workoutData as Workout;
 
     const workoutSets = (setData || []) as WorkoutSet[];
     const exerciseIds = Array.from(
@@ -134,25 +169,58 @@ export default function WorkoutDetailsScreen() {
       };
     });
 
-    setWorkout(workoutData as Workout);
+    setWorkout(currentWorkout);
     setSets(mappedSets);
     setLoading(false);
   }
 
-  useEffect(() => {
-    loadWorkoutDetails();
-  }, [id]);
+  useFocusEffect(
+    useCallback(() => {
+      theme.setSessionTheme(currentSplit);
+      loadWorkoutDetails();
+
+      return () => {
+        theme.setSessionTheme("default");
+      };
+    }, [id, currentSplit]),
+  );
 
   if (loading) {
     return (
       <View
         style={{
           flex: 1,
-          backgroundColor: "#F7F7F7",
+          backgroundColor: theme.colors.background,
           justifyContent: "center",
         }}
       >
-        <ActivityIndicator />
+        <Stack.Screen
+          options={{
+            headerShown: true,
+            headerShadowVisible: false,
+            headerBackVisible: false,
+            headerTitle: "",
+            headerStyle: {
+              backgroundColor: theme.colors.surface,
+            },
+            headerTintColor: theme.colors.text,
+            headerLeft: () => (
+              <Pressable
+                onPress={handleClosePress}
+                style={{
+                  width: 42,
+                  height: 42,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <X size={30} color={theme.colors.text} />
+              </Pressable>
+            ),
+          }}
+        />
+
+        <ActivityIndicator color={theme.colors.primary} />
       </View>
     );
   }
@@ -162,204 +230,286 @@ export default function WorkoutDetailsScreen() {
       <View
         style={{
           flex: 1,
-          backgroundColor: "#F7F7F7",
+          backgroundColor: theme.colors.background,
           justifyContent: "center",
           alignItems: "center",
           padding: 24,
         }}
       >
-        <Text style={{ fontSize: 18, fontWeight: "900" }}>
+        <Stack.Screen
+          options={{
+            headerShown: true,
+            headerShadowVisible: false,
+            headerBackVisible: false,
+            headerTitle: "",
+            headerStyle: {
+              backgroundColor: theme.colors.surface,
+            },
+            headerTintColor: theme.colors.text,
+            headerLeft: () => (
+              <Pressable
+                onPress={handleClosePress}
+                style={{
+                  width: 42,
+                  height: 42,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <X size={30} color={theme.colors.text} />
+              </Pressable>
+            ),
+          }}
+        />
+
+        <Text
+          style={{
+            fontSize: 18,
+            fontWeight: "900",
+            color: theme.colors.text,
+          }}
+        >
           Workout not found
         </Text>
 
         <Pressable
-          onPress={() => router.back()}
+          onPress={handleClosePress}
           style={{
             marginTop: 18,
-            backgroundColor: "#111",
+            backgroundColor: theme.colors.primary,
             paddingHorizontal: 20,
             paddingVertical: 12,
             borderRadius: 999,
           }}
         >
-          <Text style={{ color: "#fff", fontWeight: "900" }}>Go Back</Text>
+          <Text style={{ color: theme.colors.textInverse, fontWeight: "900" }}>
+            Go Back
+          </Text>
         </Pressable>
       </View>
     );
   }
 
   return (
-    <FlatList
-      style={{ flex: 1, backgroundColor: "#F7F7F7" }}
-      data={sets}
-      keyExtractor={(item) => item.id}
-      contentContainerStyle={{ padding: 16, paddingBottom: 90 }}
-      ListHeaderComponent={
-        <View>
-          <View
-            style={{
-              marginTop: 48,
-              flexDirection: "row",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: 12,
-            }}
-          >
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 28, fontWeight: "900" }}>
-                {formatWorkoutType(workout.workout_type)}
+    <>
+      <Stack.Screen
+        options={{
+          headerShown: true,
+          headerShadowVisible: false,
+          headerBackVisible: false,
+          headerTitle: "",
+          headerStyle: {
+            backgroundColor: theme.colors.surface,
+          },
+          headerTintColor: theme.colors.text,
+          headerLeft: () => (
+            <Pressable
+              onPress={handleClosePress}
+              style={{
+                width: 42,
+                height: 42,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <X size={30} color={theme.colors.text} />
+            </Pressable>
+          ),
+        }}
+      />
+
+      <FlatList
+        style={{ flex: 1, backgroundColor: theme.colors.background }}
+        data={sets}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={{ padding: 16, paddingBottom: 90 }}
+        ListHeaderComponent={
+          <View>
+            <View
+              style={{
+                marginTop: 24,
+                flexDirection: "row",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 12,
+              }}
+            >
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={{
+                    fontSize: 28,
+                    fontWeight: "900",
+                    color: theme.colors.text,
+                  }}
+                >
+                  {formatWorkoutType(workout.workout_type)}
+                </Text>
+
+                <Text style={{ color: theme.colors.textMuted, marginTop: 4 }}>
+                  {formatDate(workout.workout_date)}
+                </Text>
+              </View>
+            </View>
+
+            <View
+              style={{
+                backgroundColor: theme.colors.primary,
+                borderRadius: 20,
+                padding: 18,
+                marginTop: 20,
+              }}
+            >
+              <Text style={{ color: theme.colors.textInverse }}>
+                Session Summary
               </Text>
 
-              <Text style={{ color: "#666", marginTop: 4 }}>
-                {formatDate(workout.workout_date)}
+              <Text
+                style={{
+                  color: theme.colors.textInverse,
+                  fontSize: 34,
+                  fontWeight: "900",
+                  marginTop: 6,
+                }}
+              >
+                {(totalVolume || 0).toLocaleString()} kg
+              </Text>
+
+              <Text style={{ color: theme.colors.textInverse, marginTop: 8 }}>
+                {sets.length} sets • {workout.duration_minutes || 0} min
               </Text>
             </View>
 
-            <Pressable
-              onPress={() => router.back()}
-              style={{
-                backgroundColor: "#fff",
-                paddingHorizontal: 14,
-                paddingVertical: 10,
-                borderRadius: 999,
-                borderWidth: 1,
-                borderColor: "#eee",
-              }}
-            >
-              <Text style={{ fontWeight: "900" }}>Back</Text>
-            </Pressable>
-          </View>
+            {workout.notes ? (
+              <View
+                style={{
+                  backgroundColor: theme.colors.surface,
+                  borderRadius: 16,
+                  padding: 16,
+                  marginTop: 14,
+                  borderWidth: 1,
+                  borderColor: theme.colors.border,
+                }}
+              >
+                <Text
+                  style={{
+                    fontWeight: "900",
+                    color: theme.colors.text,
+                  }}
+                >
+                  Notes
+                </Text>
 
-          <View
-            style={{
-              backgroundColor: "#111",
-              borderRadius: 20,
-              padding: 18,
-              marginTop: 20,
-            }}
-          >
-            <Text style={{ color: "#aaa" }}>Session Summary</Text>
+                <Text style={{ color: theme.colors.textMuted, marginTop: 6 }}>
+                  {workout.notes}
+                </Text>
+              </View>
+            ) : null}
 
             <Text
               style={{
-                color: "#fff",
-                fontSize: 34,
+                fontSize: 18,
                 fontWeight: "900",
-                marginTop: 6,
+                marginTop: 24,
+                marginBottom: 10,
+                color: theme.colors.text,
               }}
             >
-              {(totalVolume || 0).toLocaleString()} kg
-            </Text>
-
-            <Text style={{ color: "#bbb", marginTop: 8 }}>
-              {sets.length} sets • {workout.duration_minutes || 0} min
+              Sets
             </Text>
           </View>
-
-          {workout.notes ? (
-            <View
-              style={{
-                backgroundColor: "#fff",
-                borderRadius: 16,
-                padding: 16,
-                marginTop: 14,
-                borderWidth: 1,
-                borderColor: "#eee",
-              }}
-            >
-              <Text style={{ fontWeight: "900" }}>Notes</Text>
-              <Text style={{ color: "#555", marginTop: 6 }}>
-                {workout.notes}
-              </Text>
-            </View>
-          ) : null}
-
-          <Text
+        }
+        ListEmptyComponent={
+          <View
             style={{
-              fontSize: 18,
-              fontWeight: "900",
-              marginTop: 24,
+              backgroundColor: theme.colors.surface,
+              borderRadius: 16,
+              padding: 20,
+              alignItems: "center",
+              borderWidth: 1,
+              borderColor: theme.colors.border,
+            }}
+          >
+            <Text style={{ color: theme.colors.textMuted }}>
+              No sets found.
+            </Text>
+          </View>
+        }
+        renderItem={({ item }) => (
+          <View
+            style={{
+              backgroundColor: theme.colors.surface,
+              borderRadius: 16,
+              padding: 14,
+              borderWidth: 1,
+              borderColor: theme.colors.border,
               marginBottom: 10,
             }}
           >
-            Sets
-          </Text>
-        </View>
-      }
-      ListEmptyComponent={
-        <View
-          style={{
-            backgroundColor: "#fff",
-            borderRadius: 16,
-            padding: 20,
-            alignItems: "center",
-          }}
-        >
-          <Text style={{ color: "#777" }}>No sets found.</Text>
-        </View>
-      }
-      renderItem={({ item }) => (
-        <View
-          style={{
-            backgroundColor: "#fff",
-            borderRadius: 16,
-            padding: 14,
-            borderWidth: 1,
-            borderColor: "#eee",
-            marginBottom: 10,
-          }}
-        >
-          <Text style={{ fontWeight: "900", fontSize: 16 }}>
-            {item.exercise_name}
-          </Text>
+            <Text
+              style={{
+                fontWeight: "900",
+                fontSize: 16,
+                color: theme.colors.text,
+              }}
+            >
+              {item.exercise_name}
+            </Text>
 
-          <Text
-            style={{
-              color: "#666",
-              marginTop: 2,
-              textTransform: "capitalize",
-            }}
-          >
-            {item.muscle_group || "No muscle group"}
-          </Text>
+            <Text
+              style={{
+                color: theme.colors.textMuted,
+                marginTop: 2,
+                textTransform: "capitalize",
+              }}
+            >
+              {item.muscle_group || "No muscle group"}
+            </Text>
 
-          <View
-            style={{
-              flexDirection: "row",
-              marginTop: 12,
-              gap: 10,
-              flexWrap: "wrap",
-            }}
-          >
-            <MiniStat label="Set" value={`${item.set_number}`} />
-            <MiniStat label="Reps" value={`${item.reps}`} />
-            <MiniStat label="Weight" value={`${item.weight_kg} kg`} />
-            <MiniStat
-              label="Volume"
-              value={`${(
-                Number(item.reps || 0) * Number(item.weight_kg || 0)
-              ).toLocaleString()} kg`}
-            />
-            <MiniStat label="Rest" value={formatRest(item.rest_seconds)} />
+            <View
+              style={{
+                flexDirection: "row",
+                marginTop: 12,
+                gap: 10,
+                flexWrap: "wrap",
+              }}
+            >
+              <MiniStat label="Set" value={`${item.set_number}`} />
+              <MiniStat label="Reps" value={`${item.reps}`} />
+              <MiniStat label="Weight" value={`${item.weight_kg} kg`} />
+              <MiniStat
+                label="Volume"
+                value={`${(
+                  Number(item.reps || 0) * Number(item.weight_kg || 0)
+                ).toLocaleString()} kg`}
+              />
+              <MiniStat label="Rest" value={formatRest(item.rest_seconds)} />
+            </View>
           </View>
-        </View>
-      )}
-    />
+        )}
+      />
+    </>
   );
 }
 
 function MiniStat({ label, value }: { label: string; value: string }) {
+  const theme = useTheme();
+
   return (
     <View
       style={{
-        backgroundColor: "#f4f4f4",
+        backgroundColor: theme.colors.surfaceAlt,
         borderRadius: 10,
         paddingVertical: 6,
         paddingHorizontal: 8,
       }}
     >
-      <Text style={{ fontSize: 11, color: "#777" }}>{label}</Text>
-      <Text style={{ fontWeight: "900" }}>{value}</Text>
+      <Text style={{ fontSize: 11, color: theme.colors.textMuted }}>
+        {label}
+      </Text>
+
+      <Text style={{ fontWeight: "900", color: theme.colors.text }}>
+        {value}
+      </Text>
     </View>
   );
 }

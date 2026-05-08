@@ -513,6 +513,7 @@ export default function AddFoodScreen() {
         options={{
           headerShown: true,
           headerShadowVisible: false,
+          headerBackVisible: false,
           headerTitle: "",
           headerStyle: {
             backgroundColor: theme.colors.surface,

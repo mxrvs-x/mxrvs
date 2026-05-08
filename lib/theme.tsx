@@ -1,5 +1,15 @@
-import React, { createContext, useContext } from "react";
+import { usePathname } from "expo-router";
+import React, { createContext, useContext, useMemo, useState } from "react";
 import { useColorScheme } from "react-native";
+
+export type SessionThemeKey =
+  | "default"
+  | "push"
+  | "pull"
+  | "legs"
+  | "upper"
+  | "lower"
+  | "rest";
 
 const shared = {
   spacing: {
@@ -34,9 +44,39 @@ const shared = {
   },
 };
 
+const sessionColors: Record<SessionThemeKey, string> = {
+  default: "#16A34A",
+  push: "#EF4444",
+  pull: "#3B82F6",
+  legs: "#A855F7",
+  upper: "#F97316",
+  lower: "#22C55E",
+  rest: "#6B7280",
+};
+
+const sessionSoftColors: Record<SessionThemeKey, string> = {
+  default: "#DCFCE7",
+  push: "#FEE2E2",
+  pull: "#DBEAFE",
+  legs: "#F3E8FF",
+  upper: "#FFEDD5",
+  lower: "#DCFCE7",
+  rest: "#E5E7EB",
+};
+
+const sessionDarkColors: Record<SessionThemeKey, string> = {
+  default: "#052E16",
+  push: "#450A0A",
+  pull: "#172554",
+  legs: "#3B0764",
+  upper: "#431407",
+  lower: "#052E16",
+  rest: "#111827",
+};
+
 export const darkTheme = {
   ...shared,
-  mode: "dark",
+  mode: "dark" as const,
   colors: {
     primary: "#16A34A",
     primaryDark: "#052E16",
@@ -92,11 +132,11 @@ export const darkTheme = {
       elevation: 4,
     },
   },
-} as const;
+};
 
 export const lightTheme = {
   ...shared,
-  mode: "light",
+  mode: "light" as const,
   colors: {
     primary: "#16A34A",
     primaryDark: "#052E16",
@@ -152,19 +192,98 @@ export const lightTheme = {
       elevation: 2,
     },
   },
-} as const;
+};
 
-export type AppTheme = typeof lightTheme | typeof darkTheme;
+type ThemeColors = Record<keyof typeof lightTheme.colors, string>;
 
-const ThemeContext = createContext<AppTheme>(lightTheme);
+export type BaseTheme = Omit<typeof lightTheme, "colors" | "mode"> & {
+  mode: "light" | "dark";
+  colors: ThemeColors;
+};
+
+export type AppTheme = BaseTheme & {
+  sessionTheme: SessionThemeKey;
+  setSessionTheme: (session: SessionThemeKey) => void;
+};
+
+const ThemeContext = createContext<AppTheme>({
+  ...lightTheme,
+  colors: lightTheme.colors,
+  sessionTheme: "default",
+  setSessionTheme: () => {},
+});
+
+function applySessionTheme(
+  baseTheme: BaseTheme,
+  sessionTheme: SessionThemeKey,
+  shouldApplySessionTheme: boolean,
+): AppTheme {
+  if (!shouldApplySessionTheme || sessionTheme === "default") {
+    return {
+      ...baseTheme,
+      sessionTheme,
+      setSessionTheme: () => {},
+    };
+  }
+
+  const primary = sessionColors[sessionTheme];
+  const primarySoft = sessionSoftColors[sessionTheme];
+  const primaryDark = sessionDarkColors[sessionTheme];
+
+  return {
+    ...baseTheme,
+    sessionTheme,
+    setSessionTheme: () => {},
+
+    colors: {
+      ...baseTheme.colors,
+
+      primary,
+      primarySoft,
+      primaryDark,
+
+      activeDay: primary,
+      selectedDay: primary,
+
+      accent: primary,
+      accentSoft: primarySoft,
+    },
+  };
+}
 
 export function AppThemeProvider({ children }: { children: React.ReactNode }) {
   const scheme = useColorScheme();
-  const theme: AppTheme = scheme === "dark" ? darkTheme : lightTheme;
+  const pathname = usePathname();
 
-  return (
-    <ThemeContext.Provider value={theme}>{children}</ThemeContext.Provider>
-  );
+  const [sessionTheme, setSessionTheme] = useState<SessionThemeKey>("default");
+
+  const shouldApplySessionTheme = pathname.startsWith("/workouts");
+
+  const baseTheme: BaseTheme =
+    scheme === "dark"
+      ? {
+          ...darkTheme,
+          colors: darkTheme.colors,
+        }
+      : {
+          ...lightTheme,
+          colors: lightTheme.colors,
+        };
+
+  const theme = useMemo<AppTheme>(() => {
+    const themed = applySessionTheme(
+      baseTheme,
+      sessionTheme,
+      shouldApplySessionTheme,
+    );
+
+    return {
+      ...themed,
+      setSessionTheme,
+    };
+  }, [baseTheme, sessionTheme, shouldApplySessionTheme]);
+
+  return React.createElement(ThemeContext.Provider, { value: theme }, children);
 }
 
 export function useTheme() {
