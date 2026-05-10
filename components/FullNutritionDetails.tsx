@@ -1,3 +1,4 @@
+import { useTheme } from "@/lib/theme";
 import { Modal, Pressable, ScrollView, Text, View } from "react-native";
 
 export type NutritionTotals = {
@@ -25,12 +26,17 @@ export default function FullNutritionDetails({
   onClose: () => void;
   totals: NutritionTotals;
 }) {
+  const theme = useTheme();
+
   return (
     <Modal visible={visible} animationType="fade" transparent>
       <View
         style={{
           flex: 1,
-          backgroundColor: "rgba(0,0,0,0.35)",
+          backgroundColor:
+            theme.mode === "dark"
+              ? "rgba(0,0,0,0.65)"
+              : "rgba(15,23,42,0.35)",
           justifyContent: "center",
           alignItems: "center",
           padding: 20,
@@ -52,29 +58,45 @@ export default function FullNutritionDetails({
             width: "100%",
             maxWidth: 420,
             maxHeight: "75%",
-            backgroundColor: "#fff",
-            borderRadius: 24,
+            backgroundColor: theme.colors.surface,
+            borderRadius: theme.radius.xl,
             overflow: "hidden",
-            elevation: 12,
+            borderWidth: 1,
+            borderColor: theme.colors.border,
             zIndex: 10,
+            ...theme.shadow.card,
           }}
         >
           <View
             style={{
               padding: 20,
               borderBottomWidth: 1,
-              borderBottomColor: "#eee",
+              borderBottomColor: theme.colors.border,
               flexDirection: "row",
               justifyContent: "space-between",
               alignItems: "center",
             }}
           >
-            <Text style={{ fontSize: 22, fontWeight: "900" }}>
+            <Text
+              style={{
+                fontSize: 22,
+                fontWeight: "900",
+                color: theme.colors.text,
+              }}
+            >
               Full Nutrition
             </Text>
 
             <Pressable onPress={onClose}>
-              <Text style={{ fontSize: 16, fontWeight: "900" }}>Close</Text>
+              <Text
+                style={{
+                  fontSize: 16,
+                  fontWeight: "900",
+                  color: theme.colors.primary,
+                }}
+              >
+                Close
+              </Text>
             </Pressable>
           </View>
 
@@ -151,11 +173,13 @@ export default function FullNutritionDetails({
 }
 
 function SectionTitle({ title }: { title: string }) {
+  const theme = useTheme();
+
   return (
     <Text
       style={{
         fontSize: 13,
-        color: "#888",
+        color: theme.colors.textFaint,
         fontWeight: "900",
         marginTop: 16,
         marginBottom: 8,
@@ -168,6 +192,8 @@ function SectionTitle({ title }: { title: string }) {
 }
 
 function NutrientRow({ label, value }: { label: string; value: string }) {
+  const theme = useTheme();
+
   return (
     <View
       style={{
@@ -175,11 +201,22 @@ function NutrientRow({ label, value }: { label: string; value: string }) {
         justifyContent: "space-between",
         paddingVertical: 12,
         borderBottomWidth: 1,
-        borderBottomColor: "#eee",
+        borderBottomColor: theme.colors.border,
       }}
     >
-      <Text style={{ color: "#555", fontSize: 16 }}>{label}</Text>
-      <Text style={{ fontWeight: "900", fontSize: 16 }}>{value}</Text>
+      <Text style={{ color: theme.colors.textMuted, fontSize: 16 }}>
+        {label}
+      </Text>
+
+      <Text
+        style={{
+          fontWeight: "900",
+          fontSize: 16,
+          color: theme.colors.text,
+        }}
+      >
+        {value}
+      </Text>
     </View>
   );
 }

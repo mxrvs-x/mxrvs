@@ -1,13 +1,16 @@
-import { AppTheme, useTheme } from "@/lib/theme";
+import ThemedAlert from "@/components/ThemedAlert";
 import { requestFitnessPermissions } from "@/lib/appPermissions";
 import { isOnline, saveOfflineCardioSession } from "@/lib/offlineCardio";
 import { supabase } from "@/lib/supabase";
+import { AppTheme, useTheme } from "@/lib/theme";
 import * as Location from "expo-location";
-import { useRouter, Stack } from "expo-router";
 import { Pedometer } from "expo-sensors";
-import { useEffect, useRef, useState } from "react";
+import { Stack, useRouter } from "expo-router";
+import * as TaskManager from "expo-task-manager";
+import { X } from "lucide-react-native";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import {
-  Alert,
+  AppState,
   Modal,
   Pressable,
   ScrollView,
@@ -16,7 +19,6 @@ import {
   View,
 } from "react-native";
 import MapView, { Marker, Polyline, Region } from "react-native-maps";
-import { X } from "lucide-react-native";
 
 type WalkSource = "outdoor" | "treadmill";
 
@@ -26,8 +28,191 @@ type RoutePoint = {
   timestamp: number;
 };
 
+type WalkSession = {
+  walkSource: WalkSource;
+  tracking: boolean;
+  isPaused: boolean;
+  mockMode: boolean;
+  startedAtMs: number | null;
+  activeMs: number;
+  seconds: number;
+  steps: number;
+  gpsDistanceKm: number;
+  route: RoutePoint[];
+  region: Region | null;
+  gpsAccuracy: number | null;
+  gpsReady: boolean;
+};
+
 const MALE_WALK_STRIDE_M = 0.78;
 const USE_MOCK_WHEN_PERMISSION_DENIED = true;
+const WALK_LOCATION_TASK = "active-walk-location-task";
+
+const initialWalkSession: WalkSession = {
+  walkSource: "outdoor",
+  tracking: false,
+  isPaused: false,
+  mockMode: false,
+  startedAtMs: null,
+  activeMs: 0,
+  seconds: 0,
+  steps: 0,
+  gpsDistanceKm: 0,
+  route: [],
+  region: null,
+  gpsAccuracy: null,
+  gpsReady: false,
+};
+
+let walkSession: WalkSession = initialWalkSession;
+const walkSubscribers = new Set<() => void>();
+
+let timerRef: ReturnType<typeof setInterval> | null = null;
+let mockRef: ReturnType<typeof setInterval> | null = null;
+let watchRef: Location.LocationSubscription | null = null;
+let pedometerRef: Pedometer.Subscription | null = null;
+
+let lastPointRef: RoutePoint | null = null;
+let lastRawStepsRef = 0;
+
+function getWalkSession() {
+  return walkSession;
+}
+
+function subscribeWalkSession(callback: () => void) {
+  walkSubscribers.add(callback);
+  return () => walkSubscribers.delete(callback);
+}
+
+function setWalkSession(
+  updater: Partial<WalkSession> | ((current: WalkSession) => WalkSession),
+) {
+  walkSession =
+    typeof updater === "function"
+      ? updater(walkSession)
+      : { ...walkSession, ...updater };
+
+  walkSubscribers.forEach((callback) => callback());
+}
+
+function useWalkSession() {
+  return useSyncExternalStore(
+    subscribeWalkSession,
+    getWalkSession,
+    getWalkSession,
+  );
+}
+
+function elapsedSeconds(session = walkSession) {
+  if (!session.tracking) return session.seconds;
+
+  if (session.isPaused || !session.startedAtMs) {
+    return Math.floor(session.activeMs / 1000);
+  }
+
+  return Math.floor(
+    (session.activeMs + Date.now() - session.startedAtMs) / 1000,
+  );
+}
+
+function calculateDistanceKm(a: RoutePoint, b: RoutePoint) {
+  const R = 6371;
+  const dLat = ((b.latitude - a.latitude) * Math.PI) / 180;
+  const dLon = ((b.longitude - a.longitude) * Math.PI) / 180;
+
+  const lat1 = (a.latitude * Math.PI) / 180;
+  const lat2 = (b.latitude * Math.PI) / 180;
+
+  const x =
+    Math.sin(dLat / 2) ** 2 +
+    Math.sin(dLon / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
+
+  const c = 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+
+  return R * c;
+}
+
+function isGpsReliable(accuracy: number | null) {
+  if (!accuracy) return false;
+  return accuracy <= 30;
+}
+
+function handleLocationUpdate(location: Location.LocationObject) {
+  const current = getWalkSession();
+
+  if (!current.tracking || current.walkSource !== "outdoor") return;
+
+  const accuracy = location.coords.accuracy ?? null;
+
+  const point: RoutePoint = {
+    latitude: location.coords.latitude,
+    longitude: location.coords.longitude,
+    timestamp: location.timestamp,
+  };
+
+  if (lastPointRef && point.timestamp <= lastPointRef.timestamp) {
+    return;
+  }
+
+  const region: Region = {
+    latitude: point.latitude,
+    longitude: point.longitude,
+    latitudeDelta: 0.005,
+    longitudeDelta: 0.005,
+  };
+
+  if (current.isPaused) {
+    lastPointRef = point;
+
+    setWalkSession({
+      gpsAccuracy: accuracy,
+      gpsReady: isGpsReliable(accuracy),
+      region,
+      seconds: elapsedSeconds(),
+    });
+
+    return;
+  }
+
+  const lastPoint = lastPointRef;
+  let addedKm = 0;
+
+  if (lastPoint && isGpsReliable(accuracy)) {
+    const distance = calculateDistanceKm(lastPoint, point);
+
+    if (distance > 0.001 && distance < 0.05) {
+      addedKm = distance;
+    }
+  }
+
+  lastPointRef = point;
+
+  setWalkSession((prev) => ({
+    ...prev,
+    gpsAccuracy: accuracy,
+    gpsReady: isGpsReliable(accuracy),
+    region,
+    route: [...prev.route, point],
+    gpsDistanceKm: prev.gpsDistanceKm + addedKm,
+    seconds: elapsedSeconds(prev),
+  }));
+}
+
+if (!TaskManager.isTaskDefined(WALK_LOCATION_TASK)) {
+  TaskManager.defineTask(WALK_LOCATION_TASK, async ({ data, error }) => {
+    if (error) {
+      console.log("Background walk location error:", error);
+      return;
+    }
+
+    const locations = (data as { locations?: Location.LocationObject[] })
+      ?.locations;
+
+    if (!locations?.length) return;
+
+    locations.forEach(handleLocationUpdate);
+  });
+}
 
 async function getUserWeight() {
   const {
@@ -47,6 +232,91 @@ async function getUserWeight() {
   return Number(data.weight_kg);
 }
 
+function startTimer() {
+  if (timerRef) clearInterval(timerRef);
+
+  timerRef = setInterval(() => {
+    const current = getWalkSession();
+
+    if (!current.tracking) return;
+
+    setWalkSession({
+      seconds: elapsedSeconds(current),
+    });
+  }, 1000);
+}
+
+async function startBackgroundLocation() {
+  const current = getWalkSession();
+
+  if (current.walkSource !== "outdoor") return;
+
+  const backgroundPermission =
+    await Location.requestBackgroundPermissionsAsync();
+
+  if (backgroundPermission.status !== "granted") return;
+
+  const alreadyStarted = await Location.hasStartedLocationUpdatesAsync(
+    WALK_LOCATION_TASK,
+  ).catch(() => false);
+
+  if (alreadyStarted) return;
+
+  await Location.startLocationUpdatesAsync(WALK_LOCATION_TASK, {
+    accuracy: Location.Accuracy.Highest,
+    timeInterval: 1000,
+    distanceInterval: 1,
+    pausesUpdatesAutomatically: false,
+    showsBackgroundLocationIndicator: true,
+    foregroundService: {
+      notificationTitle: "Walk active",
+      notificationBody: "Tracking your walk in the background.",
+    },
+  });
+}
+
+async function stopBackgroundLocation() {
+  const started = await Location.hasStartedLocationUpdatesAsync(
+    WALK_LOCATION_TASK,
+  ).catch(() => false);
+
+  if (started) {
+    await Location.stopLocationUpdatesAsync(WALK_LOCATION_TASK);
+  }
+}
+
+function stopWatchers() {
+  watchRef?.remove();
+  watchRef = null;
+
+  pedometerRef?.remove();
+  pedometerRef = null;
+
+  if (timerRef) {
+    clearInterval(timerRef);
+    timerRef = null;
+  }
+
+  if (mockRef) {
+    clearInterval(mockRef);
+    mockRef = null;
+  }
+
+  void stopBackgroundLocation();
+}
+
+function resetSession() {
+  const currentSource = getWalkSession().walkSource;
+
+  setWalkSession({
+    ...initialWalkSession,
+    walkSource: currentSource,
+  });
+
+  lastRawStepsRef = 0;
+  lastPointRef = null;
+}
+
 export default function WalkScreen() {
   const theme = useTheme();
   const Text = (props: any) => (
@@ -54,47 +324,36 @@ export default function WalkScreen() {
   );
 
   const router = useRouter();
+  const session = useWalkSession();
 
-  const [walkSource, setWalkSource] = useState<WalkSource>("outdoor");
-  const [tracking, setTracking] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
-  const [mockMode, setMockMode] = useState(false);
-
-  const [seconds, setSeconds] = useState(0);
-  const [steps, setSteps] = useState(0);
   const [bodyWeight, setBodyWeight] = useState(70);
-  const [gpsDistanceKm, setGpsDistanceKm] = useState(0);
-  const [route, setRoute] = useState<RoutePoint[]>([]);
-  const [region, setRegion] = useState<Region | null>(null);
-
-  const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
-  const [gpsReady, setGpsReady] = useState(false);
-
   const [finishModalVisible, setFinishModalVisible] = useState(false);
   const [manualDistanceKm, setManualDistanceKm] = useState("");
   const [notes, setNotes] = useState("");
+  const [discardAlertVisible, setDiscardAlertVisible] = useState(false);
 
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const mockRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const watchRef = useRef<Location.LocationSubscription | null>(null);
-  const pedometerRef = useRef<Pedometer.Subscription | null>(null);
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [alertTitle, setAlertTitle] = useState("");
+  const [alertMessage, setAlertMessage] = useState("");
+  const [alertConfirmText, setAlertConfirmText] = useState("OK");
+  const [alertCancelText, setAlertCancelText] = useState<string | undefined>();
+  const [alertDanger, setAlertDanger] = useState(false);
+  const [alertOnConfirm, setAlertOnConfirm] = useState<
+    (() => void) | undefined
+  >();
 
-  const lastPointRef = useRef<RoutePoint | null>(null);
-  const pausedRef = useRef(false);
-  const lastRawStepsRef = useRef(0);
-
-  const stepDistanceKm = (steps * MALE_WALK_STRIDE_M) / 1000;
+  const stepDistanceKm = (session.steps * MALE_WALK_STRIDE_M) / 1000;
 
   const displayDistanceKm =
-    walkSource === "outdoor" ? gpsDistanceKm : stepDistanceKm;
+    session.walkSource === "outdoor" ? session.gpsDistanceKm : stepDistanceKm;
 
-  useEffect(() => {
-    pausedRef.current = isPaused;
-  }, [isPaused]);
-
-  useEffect(() => {
-    return () => stopWatchers();
-  }, []);
+  const hasUnsavedSession =
+    session.tracking ||
+    finishModalVisible ||
+    session.seconds > 0 ||
+    session.steps > 0 ||
+    session.gpsDistanceKm > 0 ||
+    session.route.length > 0;
 
   useEffect(() => {
     async function loadWeight() {
@@ -106,7 +365,26 @@ export default function WalkScreen() {
   }, []);
 
   useEffect(() => {
-    if (walkSource !== "outdoor") return;
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active" && getWalkSession().tracking) {
+        setWalkSession({
+          seconds: elapsedSeconds(),
+        });
+        startTimer();
+      }
+    });
+
+    return () => subscription.remove();
+  }, []);
+
+  useEffect(() => {
+    if (session.tracking && !timerRef) {
+      startTimer();
+    }
+  }, [session.tracking]);
+
+  useEffect(() => {
+    if (session.walkSource !== "outdoor" || session.tracking) return;
 
     async function initLocation() {
       const permission = await Location.requestForegroundPermissionsAsync();
@@ -116,62 +394,64 @@ export default function WalkScreen() {
         accuracy: Location.Accuracy.Balanced,
       });
 
-      setRegion({
-        latitude: current.coords.latitude,
-        longitude: current.coords.longitude,
-        latitudeDelta: 0.005,
-        longitudeDelta: 0.005,
+      setWalkSession({
+        region: {
+          latitude: current.coords.latitude,
+          longitude: current.coords.longitude,
+          latitudeDelta: 0.005,
+          longitudeDelta: 0.005,
+        },
       });
     }
 
     initLocation();
-  }, [walkSource]);
+  }, [session.walkSource, session.tracking]);
 
-  function stopWatchers() {
-    watchRef.current?.remove();
-    watchRef.current = null;
-
-    pedometerRef.current?.remove();
-    pedometerRef.current = null;
-
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-
-    if (mockRef.current) {
-      clearInterval(mockRef.current);
-      mockRef.current = null;
-    }
+  function showAlert({
+    title,
+    message,
+    confirmText = "OK",
+    cancelText,
+    danger = false,
+    onConfirm,
+  }: {
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    danger?: boolean;
+    onConfirm?: () => void;
+  }) {
+    setAlertTitle(title);
+    setAlertMessage(message);
+    setAlertConfirmText(confirmText);
+    setAlertCancelText(cancelText);
+    setAlertDanger(danger);
+    setAlertOnConfirm(() => onConfirm);
+    setAlertOpen(true);
   }
 
-  function resetSession() {
-    setSeconds(0);
-    setSteps(0);
-    setGpsDistanceKm(0);
-    setRoute([]);
-    setGpsAccuracy(null);
-    setGpsReady(false);
+  function handleClosePress() {
+    if (hasUnsavedSession) {
+      setDiscardAlertVisible(true);
+      return;
+    }
+
+    router.back();
+  }
+
+  function confirmDiscardWalk() {
+    stopWatchers();
+    setDiscardAlertVisible(false);
+    setFinishModalVisible(false);
     setManualDistanceKm("");
     setNotes("");
-    setMockMode(false);
-    setIsPaused(false);
-
-    pausedRef.current = false;
-    lastRawStepsRef.current = 0;
-    lastPointRef.current = null;
+    resetSession();
+    router.back();
   }
 
-  function togglePauseWalk() {
-    if (!tracking) return;
-    setIsPaused((current) => !current);
-  }
-
-  function startTimer() {
-    timerRef.current = setInterval(() => {
-      if (pausedRef.current) return;
-      setSeconds((prev) => prev + 1);
-    }, 1000);
+  function dismissFinishModal() {
+    setFinishModalVisible(false);
   }
 
   function formatTime(totalSeconds: number) {
@@ -186,43 +466,25 @@ export default function WalkScreen() {
     return `${m}:${String(s).padStart(2, "0")}`;
   }
 
-  function calculateDistanceKm(a: RoutePoint, b: RoutePoint) {
-    const R = 6371;
-    const dLat = ((b.latitude - a.latitude) * Math.PI) / 180;
-    const dLon = ((b.longitude - a.longitude) * Math.PI) / 180;
-
-    const lat1 = (a.latitude * Math.PI) / 180;
-    const lat2 = (b.latitude * Math.PI) / 180;
-
-    const x =
-      Math.sin(dLat / 2) ** 2 +
-      Math.sin(dLon / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
-
-    const c = 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
-
-    return R * c;
-  }
-
-  function isGpsReliable(accuracy: number | null) {
-    if (!accuracy) return false;
-    return accuracy <= 30;
-  }
-
   function gpsStatusText() {
-    if (isPaused) return "Walk paused";
-    if (mockMode) return "Mock GPS active";
-    if (walkSource !== "outdoor") return "GPS disabled";
-    if (!gpsAccuracy) return "Waiting for GPS...";
-    if (gpsAccuracy <= 15) return `GPS good • ±${Math.round(gpsAccuracy)}m`;
-    if (gpsAccuracy <= 30) return `GPS okay • ±${Math.round(gpsAccuracy)}m`;
-    return `GPS weak • ±${Math.round(gpsAccuracy)}m`;
+    if (session.isPaused) return "Walk paused";
+    if (session.mockMode) return "Mock GPS active";
+    if (session.walkSource !== "outdoor") return "GPS disabled";
+    if (!session.gpsAccuracy) return "Waiting for GPS...";
+    if (session.gpsAccuracy <= 15) {
+      return `GPS good • ±${Math.round(session.gpsAccuracy)}m`;
+    }
+    if (session.gpsAccuracy <= 30) {
+      return `GPS okay • ±${Math.round(session.gpsAccuracy)}m`;
+    }
+    return `GPS weak • ±${Math.round(session.gpsAccuracy)}m`;
   }
 
   function paceText(distanceKm = displayDistanceKm) {
-    if (distanceKm <= 0 || seconds <= 0) return "—";
-    if (seconds < 10 || distanceKm < 0.005) return "—";
+    if (distanceKm <= 0 || session.seconds <= 0) return "—";
+    if (session.seconds < 10 || distanceKm < 0.005) return "—";
 
-    const pace = seconds / 60 / distanceKm;
+    const pace = session.seconds / 60 / distanceKm;
     const min = Math.floor(pace);
     const sec = Math.round((pace - min) * 60);
 
@@ -230,8 +492,8 @@ export default function WalkScreen() {
   }
 
   function speedKmh(distanceKm = displayDistanceKm) {
-    if (!distanceKm || seconds <= 0) return "0.0";
-    return (distanceKm / (seconds / 3600)).toFixed(1);
+    if (!distanceKm || session.seconds <= 0) return "0.0";
+    return (distanceKm / (session.seconds / 3600)).toFixed(1);
   }
 
   function estimateCalories(distanceKm = displayDistanceKm) {
@@ -239,29 +501,61 @@ export default function WalkScreen() {
   }
 
   function distanceQualityText() {
-    if (isPaused) {
+    if (session.isPaused) {
       return "Paused. Duration, distance, pace, steps, and route are currently frozen.";
     }
 
-    if (mockMode) {
+    if (session.mockMode) {
       return "Mock mode is active. Good for testing UI, Supabase saving, and analytics.";
     }
 
-    if (walkSource === "treadmill") {
+    if (session.walkSource === "treadmill") {
       return "Distance estimated from steps. You can correct it before saving.";
     }
 
-    if (!gpsReady) {
+    if (!session.gpsReady) {
       return "GPS is weak. Distance may be inaccurate.";
     }
 
     return "GPS distance is active.";
   }
 
+  function togglePauseWalk() {
+    const current = getWalkSession();
+
+    if (!current.tracking) return;
+
+    if (current.isPaused) {
+      setFinishModalVisible(false);
+      setWalkSession({
+        isPaused: false,
+        startedAtMs: Date.now(),
+      });
+      return;
+    }
+
+    const activeMs =
+      current.activeMs +
+      (current.startedAtMs ? Date.now() - current.startedAtMs : 0);
+
+    setWalkSession({
+      isPaused: true,
+      activeMs,
+      startedAtMs: null,
+      seconds: Math.floor(activeMs / 1000),
+    });
+  }
+
   function startMockWalk() {
     resetSession();
-    setTracking(true);
-    setMockMode(true);
+
+    setWalkSession({
+      tracking: true,
+      mockMode: true,
+      startedAtMs: Date.now(),
+      activeMs: 0,
+      seconds: 0,
+    });
 
     let mockSteps = 0;
     let mockDistance = 0;
@@ -272,47 +566,53 @@ export default function WalkScreen() {
       timestamp: Date.now(),
     };
 
-    setRoute([startPoint]);
-    lastPointRef.current = startPoint;
+    lastPointRef = startPoint;
 
-    setRegion({
-      latitude: startPoint.latitude,
-      longitude: startPoint.longitude,
-      latitudeDelta: 0.005,
-      longitudeDelta: 0.005,
+    setWalkSession({
+      route: [startPoint],
+      region: {
+        latitude: startPoint.latitude,
+        longitude: startPoint.longitude,
+        latitudeDelta: 0.005,
+        longitudeDelta: 0.005,
+      },
     });
 
     startTimer();
 
-    mockRef.current = setInterval(() => {
-      if (pausedRef.current) return;
+    mockRef = setInterval(() => {
+      const current = getWalkSession();
+
+      if (current.isPaused) return;
 
       mockSteps += Math.floor(2 + Math.random() * 2);
       mockDistance = (mockSteps * MALE_WALK_STRIDE_M) / 1000;
 
-      setSteps(mockSteps);
+      const update: Partial<WalkSession> = {
+        steps: mockSteps,
+        seconds: elapsedSeconds(),
+      };
 
-      if (walkSource === "outdoor") {
-        setGpsDistanceKm(mockDistance);
-
+      if (current.walkSource === "outdoor") {
         const newPoint: RoutePoint = {
           latitude: startPoint.latitude + mockDistance / 111,
           longitude: startPoint.longitude,
           timestamp: Date.now(),
         };
 
-        setRoute((prev) => [...prev, newPoint]);
-
-        setRegion({
+        update.gpsDistanceKm = mockDistance;
+        update.route = [...current.route, newPoint];
+        update.region = {
           latitude: newPoint.latitude,
           longitude: newPoint.longitude,
           latitudeDelta: 0.005,
           longitudeDelta: 0.005,
-        });
-
-        setGpsAccuracy(10);
-        setGpsReady(true);
+        };
+        update.gpsAccuracy = 10;
+        update.gpsReady = true;
       }
+
+      setWalkSession(update);
     }, 1000);
   }
 
@@ -328,24 +628,36 @@ export default function WalkScreen() {
       return;
     }
 
+    const currentSource = getWalkSession().walkSource;
+
     resetSession();
-    setTracking(true);
+
+    setWalkSession({
+      walkSource: currentSource,
+      tracking: true,
+      startedAtMs: Date.now(),
+      activeMs: 0,
+      seconds: 0,
+    });
 
     startTimer();
 
-    pedometerRef.current = Pedometer.watchStepCount((result) => {
+    pedometerRef = Pedometer.watchStepCount((result) => {
       const rawSteps = result.steps;
-      const previousRawSteps = lastRawStepsRef.current;
+      const previousRawSteps = lastRawStepsRef;
       const delta = Math.max(0, rawSteps - previousRawSteps);
 
-      lastRawStepsRef.current = rawSteps;
+      lastRawStepsRef = rawSteps;
 
-      if (pausedRef.current) return;
+      if (getWalkSession().isPaused) return;
 
-      setSteps((prev) => prev + delta);
+      setWalkSession((prev) => ({
+        ...prev,
+        steps: prev.steps + delta,
+      }));
     });
 
-    if (walkSource === "treadmill") return;
+    if (currentSource === "treadmill") return;
 
     const current = await Location.getCurrentPositionAsync({
       accuracy: Location.Accuracy.Highest,
@@ -359,98 +671,78 @@ export default function WalkScreen() {
 
     const accuracy = current.coords.accuracy ?? null;
 
-    setGpsAccuracy(accuracy);
-    setGpsReady(isGpsReliable(accuracy));
-    setRoute([firstPoint]);
-    lastPointRef.current = firstPoint;
+    lastPointRef = firstPoint;
 
-    setRegion({
-      latitude: firstPoint.latitude,
-      longitude: firstPoint.longitude,
-      latitudeDelta: 0.005,
-      longitudeDelta: 0.005,
+    setWalkSession({
+      gpsAccuracy: accuracy,
+      gpsReady: isGpsReliable(accuracy),
+      route: [firstPoint],
+      region: {
+        latitude: firstPoint.latitude,
+        longitude: firstPoint.longitude,
+        latitudeDelta: 0.005,
+        longitudeDelta: 0.005,
+      },
     });
 
-    watchRef.current = await Location.watchPositionAsync(
+    void startBackgroundLocation();
+
+    watchRef = await Location.watchPositionAsync(
       {
         accuracy: Location.Accuracy.Highest,
         timeInterval: 1000,
         distanceInterval: 1,
       },
-      (location) => {
-        const accuracy = location.coords.accuracy ?? null;
-
-        const point: RoutePoint = {
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
-          timestamp: location.timestamp,
-        };
-
-        setGpsAccuracy(accuracy);
-        setGpsReady(isGpsReliable(accuracy));
-
-        setRegion({
-          latitude: point.latitude,
-          longitude: point.longitude,
-          latitudeDelta: 0.005,
-          longitudeDelta: 0.005,
-        });
-
-        if (pausedRef.current) {
-          lastPointRef.current = point;
-          return;
-        }
-
-        setRoute((prev) => [...prev, point]);
-
-        const lastPoint = lastPointRef.current;
-
-        if (lastPoint && isGpsReliable(accuracy)) {
-          const addedKm = calculateDistanceKm(lastPoint, point);
-
-          if (addedKm > 0.001 && addedKm < 0.05) {
-            setGpsDistanceKm((prev) => prev + addedKm);
-          }
-        }
-
-        lastPointRef.current = point;
-      },
+      handleLocationUpdate,
     );
   }
 
   function stopWalking() {
-    stopWatchers();
-    setTracking(false);
-    setIsPaused(false);
-    pausedRef.current = false;
+    const current = getWalkSession();
+
+    const activeMs =
+      current.isPaused || !current.startedAtMs
+        ? current.activeMs
+        : current.activeMs + Date.now() - current.startedAtMs;
+
+    const finalSeconds = Math.floor(activeMs / 1000);
+
+    setWalkSession({
+      tracking: true,
+      isPaused: true,
+      startedAtMs: null,
+      activeMs,
+      seconds: finalSeconds,
+    });
 
     const finalDistance =
-      walkSource === "treadmill" ? stepDistanceKm : gpsDistanceKm;
+      current.walkSource === "treadmill"
+        ? (current.steps * MALE_WALK_STRIDE_M) / 1000
+        : current.gpsDistanceKm;
 
     setManualDistanceKm(finalDistance.toFixed(2));
     setFinishModalVisible(true);
   }
 
-  function discardWalk() {
-    stopWatchers();
-    setTracking(false);
-    setFinishModalVisible(false);
-    resetSession();
-  }
-
   async function saveWalk() {
+    const current = getWalkSession();
     const finalDistanceKm = Number(manualDistanceKm || displayDistanceKm);
 
-    if (seconds < 10) {
-      Alert.alert("Too short", "Walk must be at least 10 seconds.");
+    if (current.seconds < 10) {
+      showAlert({
+        title: "Too short",
+        message: "Walk must be at least 10 seconds.",
+        danger: true,
+      });
       return;
     }
 
     if (!finalDistanceKm || finalDistanceKm <= 0) {
-      Alert.alert(
-        "Missing distance",
-        "Enter or confirm your walking distance.",
-      );
+      showAlert({
+        title: "Missing distance",
+        message: "Enter or confirm your walking distance.",
+        danger: true,
+      });
       return;
     }
 
@@ -460,19 +752,21 @@ export default function WalkScreen() {
 
     if (!user) return;
 
+    stopWatchers();
+
     const payload = {
       user_id: user.id,
       session_date: new Date().toISOString().split("T")[0],
       cardio_type: "walking" as const,
-      cardio_source: walkSource,
+      cardio_source: current.walkSource,
       distance_km: Number(finalDistanceKm.toFixed(3)),
-      duration_seconds: seconds,
-      steps,
+      duration_seconds: current.seconds,
+      steps: current.steps,
       calories_burned: estimateCalories(finalDistanceKm),
       avg_heart_rate: null,
       notes: notes || null,
-      route: walkSource === "outdoor" ? route : null,
-      is_mock: mockMode,
+      route: current.walkSource === "outdoor" ? current.route : null,
+      is_mock: current.mockMode,
       created_at: new Date().toISOString(),
     };
 
@@ -485,18 +779,15 @@ export default function WalkScreen() {
       });
 
       setFinishModalVisible(false);
+      setManualDistanceKm("");
+      setNotes("");
       resetSession();
 
-      Alert.alert(
-        "Saved Offline",
-        "Your walk will sync when internet is back.",
-        [
-          {
-            text: "OK",
-            onPress: () => router.back(),
-          },
-        ],
-      );
+      showAlert({
+        title: "Saved Offline",
+        message: "Your walk will sync when internet is back.",
+        onConfirm: () => router.back(),
+      });
 
       return;
     }
@@ -512,32 +803,66 @@ export default function WalkScreen() {
       });
 
       setFinishModalVisible(false);
+      setManualDistanceKm("");
+      setNotes("");
       resetSession();
 
-      Alert.alert(
-        "Saved Offline",
-        "Could not upload now, so your walk was saved offline.",
-        [
-          {
-            text: "OK",
-            onPress: () => router.back(),
-          },
-        ],
-      );
+      showAlert({
+        title: "Saved Offline",
+        message: "Could not upload now, so your walk was saved offline.",
+        onConfirm: () => router.back(),
+      });
 
       return;
     }
 
     setFinishModalVisible(false);
+    setManualDistanceKm("");
+    setNotes("");
     resetSession();
 
-    Alert.alert("Saved", "Walk saved successfully.", [
-      {
-        text: "OK",
-        onPress: () => router.back(),
-      },
-    ]);
+    showAlert({
+      title: "Saved",
+      message: "Walk saved successfully.",
+      onConfirm: () => router.back(),
+    });
   }
+
+  const themedAlert = (
+    <ThemedAlert
+      visible={alertOpen}
+      title={alertTitle}
+      message={alertMessage}
+      confirmText={alertConfirmText}
+      cancelText={alertCancelText}
+      danger={alertDanger}
+      onClose={() => setAlertOpen(false)}
+      onConfirm={() => {
+        setAlertOpen(false);
+
+        if (alertOnConfirm) {
+          alertOnConfirm();
+        }
+      }}
+    />
+  );
+
+  const discardAlert = (
+    <ThemedAlert
+      visible={discardAlertVisible}
+      title="Discard walk?"
+      message={
+        session.tracking
+          ? "You have an active walk session. Leaving now will stop tracking and discard this walk."
+          : "You have an unsaved walk session. Leaving now will discard it."
+      }
+      cancelText="Stay"
+      confirmText="Discard"
+      danger
+      onClose={() => setDiscardAlertVisible(false)}
+      onConfirm={confirmDiscardWalk}
+    />
+  );
 
   return (
     <>
@@ -552,7 +877,7 @@ export default function WalkScreen() {
           },
           headerLeft: () => (
             <Pressable
-              onPress={() => router.back()}
+              onPress={handleClosePress}
               style={{
                 width: 46,
                 height: 46,
@@ -565,6 +890,7 @@ export default function WalkScreen() {
           ),
         }}
       />
+
       <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
         <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 20 }}>
           <Text style={{ fontSize: 30, fontWeight: "900" }}>Walk</Text>
@@ -572,7 +898,7 @@ export default function WalkScreen() {
             Outdoor GPS walk or treadmill/home walk.
           </Text>
 
-          {mockMode && (
+          {session.mockMode && (
             <View
               style={{
                 marginTop: 16,
@@ -601,24 +927,24 @@ export default function WalkScreen() {
             </View>
           )}
 
-          {!tracking ? (
+          {!session.tracking ? (
             <View style={{ flexDirection: "row", gap: 12, marginTop: 20 }}>
               <SourceButton
                 theme={theme}
                 label="Outdoor"
-                active={walkSource === "outdoor"}
-                onPress={() => setWalkSource("outdoor")}
+                active={session.walkSource === "outdoor"}
+                onPress={() => setWalkSession({ walkSource: "outdoor" })}
               />
               <SourceButton
                 theme={theme}
                 label="Treadmill/Home"
-                active={walkSource === "treadmill"}
-                onPress={() => setWalkSource("treadmill")}
+                active={session.walkSource === "treadmill"}
+                onPress={() => setWalkSession({ walkSource: "treadmill" })}
               />
             </View>
           ) : null}
 
-          {walkSource === "outdoor" ? (
+          {session.walkSource === "outdoor" ? (
             <View
               style={{
                 marginTop: 20,
@@ -638,29 +964,29 @@ export default function WalkScreen() {
                 <MapView
                   style={{ flex: 1 }}
                   region={
-                    region || {
+                    session.region || {
                       latitude: 14.5995,
                       longitude: 120.9842,
                       latitudeDelta: 0.05,
                       longitudeDelta: 0.05,
                     }
                   }
-                  showsUserLocation={!mockMode}
-                  followsUserLocation={!mockMode}
+                  showsUserLocation={!session.mockMode}
+                  followsUserLocation={!session.mockMode}
                 >
-                  {route.length > 0 && (
+                  {session.route.length > 0 && (
                     <Marker
                       coordinate={{
-                        latitude: route[0].latitude,
-                        longitude: route[0].longitude,
+                        latitude: session.route[0].latitude,
+                        longitude: session.route[0].longitude,
                       }}
                       title="Start"
                     />
                   )}
 
-                  {route.length > 1 && (
+                  {session.route.length > 1 && (
                     <Polyline
-                      coordinates={route.map((p) => ({
+                      coordinates={session.route.map((p) => ({
                         latitude: p.latitude,
                         longitude: p.longitude,
                       }))}
@@ -675,7 +1001,7 @@ export default function WalkScreen() {
                   marginTop: 10,
                   textAlign: "center",
                   color:
-                    gpsReady || mockMode || isPaused
+                    session.gpsReady || session.mockMode || session.isPaused
                       ? theme.colors.text
                       : theme.colors.textFaint,
                   fontWeight: "800",
@@ -696,12 +1022,12 @@ export default function WalkScreen() {
             }}
           >
             <Text style={{ color: theme.colors.textFaint, fontWeight: "800" }}>
-              {walkSource === "outdoor"
+              {session.walkSource === "outdoor"
                 ? "OUTDOOR WALK"
                 : "TREADMILL / HOME WALK"}
             </Text>
 
-            {isPaused && (
+            {session.isPaused && (
               <Text
                 style={{
                   marginTop: 12,
@@ -718,7 +1044,7 @@ export default function WalkScreen() {
             )}
 
             <Text style={{ fontSize: 64, fontWeight: "900", marginTop: 16 }}>
-              {formatTime(seconds)}
+              {formatTime(session.seconds)}
             </Text>
 
             <Text style={{ color: theme.colors.textFaint }}>Duration</Text>
@@ -733,7 +1059,7 @@ export default function WalkScreen() {
             </View>
 
             <View style={{ flexDirection: "row", gap: 12, marginTop: 12 }}>
-              <StatBox theme={theme} label="Steps" value={`${steps}`} />
+              <StatBox theme={theme} label="Steps" value={`${session.steps}`} />
               <StatBox
                 theme={theme}
                 label="Speed"
@@ -766,7 +1092,7 @@ export default function WalkScreen() {
             </Text>
           </View>
 
-          {!tracking ? (
+          {!session.tracking ? (
             <Pressable
               onPress={startWalking}
               style={{
@@ -792,7 +1118,7 @@ export default function WalkScreen() {
               <Pressable
                 onPress={togglePauseWalk}
                 style={{
-                  backgroundColor: isPaused
+                  backgroundColor: session.isPaused
                     ? theme.colors.text
                     : theme.colors.surface,
                   padding: 18,
@@ -804,12 +1130,14 @@ export default function WalkScreen() {
               >
                 <Text
                   style={{
-                    color: isPaused ? theme.colors.surface : theme.colors.text,
+                    color: session.isPaused
+                      ? theme.colors.surface
+                      : theme.colors.text,
                     fontSize: 17,
                     fontWeight: "900",
                   }}
                 >
-                  {isPaused ? "Resume Walk" : "Pause Walk"}
+                  {session.isPaused ? "Resume Walk" : "Pause Walk"}
                 </Text>
               </Pressable>
 
@@ -832,40 +1160,31 @@ export default function WalkScreen() {
                   Stop
                 </Text>
               </Pressable>
-
-              <Pressable
-                onPress={discardWalk}
-                style={{
-                  backgroundColor: theme.colors.surfaceAlt,
-                  padding: 18,
-                  borderRadius: 18,
-                  alignItems: "center",
-                }}
-              >
-                <Text
-                  style={{
-                    color: theme.colors.text,
-                    fontSize: 17,
-                    fontWeight: "900",
-                  }}
-                >
-                  Discard
-                </Text>
-              </Pressable>
             </View>
           )}
         </ScrollView>
 
-        <Modal visible={finishModalVisible} animationType="slide" transparent>
-          <View
+        <Modal
+          visible={finishModalVisible}
+          animationType="slide"
+          transparent
+          allowSwipeDismissal
+          onRequestClose={dismissFinishModal}
+          onDismiss={dismissFinishModal}
+        >
+          <Pressable
+            onPress={dismissFinishModal}
             style={{
               flex: 1,
               backgroundColor:
-                theme.mode === "dark" ? "rgba(0,0,0,0.65)" : "rgba(0,0,0,0.35)",
+                theme.mode === "dark"
+                  ? "rgba(0,0,0,0.65)"
+                  : "rgba(0,0,0,0.35)",
               justifyContent: "flex-end",
             }}
           >
-            <View
+            <Pressable
+              onPress={(event) => event.stopPropagation()}
               style={{
                 backgroundColor: theme.colors.surface,
                 borderTopLeftRadius: 24,
@@ -883,10 +1202,12 @@ export default function WalkScreen() {
 
               <View style={{ marginTop: 18 }}>
                 <Text style={{ fontWeight: "800" }}>Final Distance (km)</Text>
+
                 <TextInput
                   value={manualDistanceKm}
                   onChangeText={setManualDistanceKm}
                   placeholder="e.g. 1.25"
+                  placeholderTextColor={theme.colors.textFaint}
                   keyboardType="numeric"
                   style={{
                     marginTop: 8,
@@ -894,8 +1215,11 @@ export default function WalkScreen() {
                     borderColor: theme.colors.border,
                     borderRadius: 14,
                     padding: 14,
+                    color: theme.colors.text,
+                    backgroundColor: theme.colors.surfaceAlt,
                   }}
                 />
+
                 <Text style={{ color: theme.colors.textFaint, marginTop: 8 }}>
                   Outdoor uses GPS estimate. Treadmill/home uses step estimate.
                   You can edit it.
@@ -906,9 +1230,13 @@ export default function WalkScreen() {
                 <StatBox
                   theme={theme}
                   label="Time"
-                  value={formatTime(seconds)}
+                  value={formatTime(session.seconds)}
                 />
-                <StatBox theme={theme} label="Steps" value={`${steps}`} />
+                <StatBox
+                  theme={theme}
+                  label="Steps"
+                  value={`${session.steps}`}
+                />
               </View>
 
               <View style={{ flexDirection: "row", gap: 12, marginTop: 12 }}>
@@ -930,10 +1258,12 @@ export default function WalkScreen() {
 
               <View style={{ marginTop: 18 }}>
                 <Text style={{ fontWeight: "800" }}>Notes</Text>
+
                 <TextInput
                   value={notes}
                   onChangeText={setNotes}
                   placeholder="Optional"
+                  placeholderTextColor={theme.colors.textFaint}
                   multiline
                   style={{
                     marginTop: 8,
@@ -943,6 +1273,8 @@ export default function WalkScreen() {
                     padding: 14,
                     minHeight: 80,
                     textAlignVertical: "top",
+                    color: theme.colors.text,
+                    backgroundColor: theme.colors.surfaceAlt,
                   }}
                 />
               </View>
@@ -957,29 +1289,19 @@ export default function WalkScreen() {
                   alignItems: "center",
                 }}
               >
-                <Text
-                  style={{ color: theme.colors.surface, fontWeight: "900" }}
-                >
+                <Text style={{ color: theme.colors.surface, fontWeight: "900" }}>
                   Save Walk
                 </Text>
               </Pressable>
+            </Pressable>
 
-              <Pressable
-                onPress={discardWalk}
-                style={{
-                  padding: 16,
-                  alignItems: "center",
-                }}
-              >
-                <Text
-                  style={{ color: theme.colors.textMuted, fontWeight: "800" }}
-                >
-                  Discard
-                </Text>
-              </Pressable>
-            </View>
-          </View>
+            {themedAlert}
+            {discardAlert}
+          </Pressable>
         </Modal>
+
+        {!finishModalVisible ? themedAlert : null}
+        {!finishModalVisible ? discardAlert : null}
       </View>
     </>
   );
@@ -1041,6 +1363,7 @@ function StatBox({
       <RNText style={{ color: theme.colors.textFaint, fontSize: 12 }}>
         {label}
       </RNText>
+
       <RNText
         style={{
           color: theme.colors.text,

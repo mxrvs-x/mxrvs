@@ -5,9 +5,16 @@ import { useTheme } from "@/lib/theme";
 import { Audio } from "expo-av";
 import { Stack, useFocusEffect, useRouter } from "expo-router";
 import { X } from "lucide-react-native";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   ActivityIndicator,
+  AppState,
   FlatList,
   Pressable,
   ScrollView,
@@ -46,6 +53,20 @@ type LocalSet = {
   rest_seconds: string;
 };
 
+type WorkoutSession = {
+  sessionStarted: boolean;
+  isPaused: boolean;
+  startedAtMs: number | null;
+  activeMs: number;
+  elapsedSeconds: number;
+  sets: LocalSet[];
+  notes: string;
+  isResting: boolean;
+  restRemaining: number;
+  restExerciseId: string | null;
+  restEndsAtMs: number | null;
+};
+
 const WEEK_SPLIT = [
   { day: "Sunday", type: "rest" as WorkoutType, label: "Rest" },
   { day: "Monday", type: "push" as WorkoutType, label: "Push" },
@@ -60,12 +81,132 @@ const WEEK_SPLIT = [
   },
 ];
 
+const initialWorkoutSession: WorkoutSession = {
+  sessionStarted: false,
+  isPaused: false,
+  startedAtMs: null,
+  activeMs: 0,
+  elapsedSeconds: 0,
+  sets: [],
+  notes: "",
+  isResting: false,
+  restRemaining: 0,
+  restExerciseId: null,
+  restEndsAtMs: null,
+};
+
+let workoutSession: WorkoutSession = initialWorkoutSession;
+const workoutSubscribers = new Set<() => void>();
+let workoutTimerRef: ReturnType<typeof setInterval> | null = null;
+let restAlertPlayedForEndAt: number | null = null;
+
+function getWorkoutSession() {
+  return workoutSession;
+}
+
+function subscribeWorkoutSession(callback: () => void) {
+  workoutSubscribers.add(callback);
+  return () => workoutSubscribers.delete(callback);
+}
+
+function setWorkoutSession(
+  updater:
+    | Partial<WorkoutSession>
+    | ((current: WorkoutSession) => WorkoutSession),
+) {
+  workoutSession =
+    typeof updater === "function"
+      ? updater(workoutSession)
+      : { ...workoutSession, ...updater };
+
+  workoutSubscribers.forEach((callback) => callback());
+}
+
+function useWorkoutSession() {
+  return useSyncExternalStore(
+    subscribeWorkoutSession,
+    getWorkoutSession,
+    getWorkoutSession,
+  );
+}
+
 function getTodaySplit() {
   return WEEK_SPLIT[new Date().getDay()];
 }
 
 function getTodayDateString() {
   return new Date().toISOString().split("T")[0];
+}
+
+function getElapsedSeconds(session = workoutSession) {
+  if (!session.sessionStarted) return session.elapsedSeconds;
+
+  if (session.isPaused || !session.startedAtMs) {
+    return Math.floor(session.activeMs / 1000);
+  }
+
+  return Math.floor(
+    (session.activeMs + Date.now() - session.startedAtMs) / 1000,
+  );
+}
+
+function getRestRemaining(session = workoutSession) {
+  if (!session.isResting) return 0;
+  if (session.isPaused || !session.restEndsAtMs) return session.restRemaining;
+
+  return Math.max(0, Math.ceil((session.restEndsAtMs - Date.now()) / 1000));
+}
+
+function startWorkoutTicker(onRestComplete?: () => void) {
+  if (workoutTimerRef) clearInterval(workoutTimerRef);
+
+  workoutTimerRef = setInterval(() => {
+    const current = getWorkoutSession();
+
+    if (!current.sessionStarted) return;
+
+    const elapsedSeconds = getElapsedSeconds(current);
+    const restRemaining = getRestRemaining(current);
+
+    if (
+      current.isResting &&
+      !current.isPaused &&
+      restRemaining <= 0 &&
+      current.restEndsAtMs &&
+      restAlertPlayedForEndAt !== current.restEndsAtMs
+    ) {
+      restAlertPlayedForEndAt = current.restEndsAtMs;
+
+      setWorkoutSession({
+        elapsedSeconds,
+        isResting: false,
+        restRemaining: 0,
+        restExerciseId: null,
+        restEndsAtMs: null,
+      });
+
+      onRestComplete?.();
+      return;
+    }
+
+    setWorkoutSession({
+      elapsedSeconds,
+      restRemaining,
+    });
+  }, 1000);
+}
+
+function stopWorkoutTicker() {
+  if (workoutTimerRef) {
+    clearInterval(workoutTimerRef);
+    workoutTimerRef = null;
+  }
+}
+
+function resetWorkoutSession() {
+  stopWorkoutTicker();
+  restAlertPlayedForEndAt = null;
+  setWorkoutSession(initialWorkoutSession);
 }
 
 function formatDuration(totalSeconds: number) {
@@ -105,6 +246,7 @@ export default function StartWorkoutScreen() {
   const router = useRouter();
   const theme = useTheme();
   const todaySplit = useMemo(() => getTodaySplit(), []);
+  const session = useWorkoutSession();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -120,24 +262,12 @@ export default function StartWorkoutScreen() {
     (() => void) | undefined
   >();
 
-  const [sessionStarted, setSessionStarted] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
-
   const [todayWorkout, setTodayWorkout] = useState<Workout | null>(null);
-
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [activeExercise, setActiveExercise] = useState<Exercise | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
 
-  const [sets, setSets] = useState<LocalSet[]>([]);
-  const [notes, setNotes] = useState("");
-
-  const [isResting, setIsResting] = useState(false);
-  const [restRemaining, setRestRemaining] = useState(0);
-  const [restExerciseId, setRestExerciseId] = useState<string | null>(null);
-
-  const totalVolume = sets.reduce((sum, set) => {
+  const totalVolume = session.sets.reduce((sum, set) => {
     const reps = Number(set.reps) || 0;
     const weight = Number(set.weight_kg) || 0;
     return sum + reps * weight;
@@ -251,9 +381,23 @@ export default function StartWorkoutScreen() {
       return;
     }
 
-    setElapsedSeconds(0);
-    setIsPaused(false);
-    setSessionStarted(true);
+    restAlertPlayedForEndAt = null;
+
+    setWorkoutSession({
+      sessionStarted: true,
+      isPaused: false,
+      startedAtMs: Date.now(),
+      activeMs: 0,
+      elapsedSeconds: 0,
+      sets: [],
+      notes: "",
+      isResting: false,
+      restRemaining: 0,
+      restExerciseId: null,
+      restEndsAtMs: null,
+    });
+
+    startWorkoutTicker(playRestCompleteAlert);
   }
 
   function startSession() {
@@ -280,13 +424,39 @@ export default function StartWorkoutScreen() {
   }
 
   function togglePauseWorkout() {
-    if (!sessionStarted || saving) return;
+    const current = getWorkoutSession();
 
-    setIsPaused((current) => !current);
+    if (!current.sessionStarted || saving) return;
+
+    if (current.isPaused) {
+      setWorkoutSession({
+        isPaused: false,
+        startedAtMs: Date.now(),
+        restEndsAtMs: current.isResting
+          ? Date.now() + current.restRemaining * 1000
+          : null,
+      });
+      return;
+    }
+
+    const activeMs =
+      current.activeMs +
+      (current.startedAtMs ? Date.now() - current.startedAtMs : 0);
+
+    setWorkoutSession({
+      isPaused: true,
+      startedAtMs: null,
+      activeMs,
+      elapsedSeconds: Math.floor(activeMs / 1000),
+      restRemaining: getRestRemaining(current),
+      restEndsAtMs: null,
+    });
   }
 
   function openExercise(exercise: Exercise) {
-    if (!sessionStarted) {
+    const current = getWorkoutSession();
+
+    if (!current.sessionStarted) {
       showAlert({
         title: "Start workout",
         message: "Tap Start Workout first.",
@@ -294,7 +464,7 @@ export default function StartWorkoutScreen() {
       return;
     }
 
-    if (isPaused) {
+    if (current.isPaused) {
       showAlert({
         title: "Workout paused",
         message: "Resume the workout before logging sets.",
@@ -302,11 +472,11 @@ export default function StartWorkoutScreen() {
       return;
     }
 
-    if (isResting && restExerciseId !== exercise.id) {
+    if (current.isResting && current.restExerciseId !== exercise.id) {
       showAlert({
         title: "Rest timer active",
         message: `Please wait ${formatRest(
-          restRemaining,
+          current.restRemaining,
         )} before starting another set.`,
       });
       return;
@@ -317,7 +487,10 @@ export default function StartWorkoutScreen() {
   }
 
   function getNextSetNumber(exerciseId: string) {
-    return sets.filter((set) => set.exercise_id === exerciseId).length + 1;
+    return (
+      getWorkoutSession().sets.filter((set) => set.exercise_id === exerciseId)
+        .length + 1
+    );
   }
 
   function completeSetFromModal(set: {
@@ -328,60 +501,79 @@ export default function StartWorkoutScreen() {
     weight_kg: string;
     rest_seconds: string;
   }) {
-    setSets((current) => [
-      ...current,
-      {
-        local_id: `${set.exercise_id}-${set.set_number}-${Date.now()}`,
-        exercise_id: set.exercise_id,
-        exercise_name: set.exercise_name,
-        set_number: set.set_number,
-        reps: set.reps,
-        weight_kg: set.weight_kg,
-        rest_seconds: set.rest_seconds,
-      },
-    ]);
-
     const rest = Number(set.rest_seconds) || 90;
+    const restEndsAtMs = Date.now() + rest * 1000;
 
-    setRestExerciseId(set.exercise_id);
-    setRestRemaining(rest);
-    setIsResting(true);
+    restAlertPlayedForEndAt = null;
+
+    setWorkoutSession((current) => ({
+      ...current,
+      sets: [
+        ...current.sets,
+        {
+          local_id: `${set.exercise_id}-${set.set_number}-${Date.now()}`,
+          exercise_id: set.exercise_id,
+          exercise_name: set.exercise_name,
+          set_number: set.set_number,
+          reps: set.reps,
+          weight_kg: set.weight_kg,
+          rest_seconds: set.rest_seconds,
+        },
+      ],
+      restExerciseId: set.exercise_id,
+      restRemaining: rest,
+      isResting: true,
+      restEndsAtMs,
+    }));
   }
 
   function finishRest() {
-    setIsResting(false);
-    setRestRemaining(0);
-    setRestExerciseId(null);
+    setWorkoutSession({
+      isResting: false,
+      restRemaining: 0,
+      restExerciseId: null,
+      restEndsAtMs: null,
+    });
   }
 
   function removeSet(localId: string) {
-    setSets((current) => {
-      const target = current.find((set) => set.local_id === localId);
-      const filtered = current.filter((set) => set.local_id !== localId);
+    setWorkoutSession((current) => {
+      const target = current.sets.find((set) => set.local_id === localId);
+      const filtered = current.sets.filter((set) => set.local_id !== localId);
 
-      if (!target) return filtered;
+      if (!target) {
+        return {
+          ...current,
+          sets: filtered,
+        };
+      }
 
       const sameExerciseSets = filtered.filter(
         (set) => set.exercise_id === target.exercise_id,
       );
 
-      return filtered.map((set) => {
-        if (set.exercise_id !== target.exercise_id) return set;
+      return {
+        ...current,
+        sets: filtered.map((set) => {
+          if (set.exercise_id !== target.exercise_id) return set;
 
-        const index = sameExerciseSets.findIndex(
-          (item) => item.local_id === set.local_id,
-        );
+          const index = sameExerciseSets.findIndex(
+            (item) => item.local_id === set.local_id,
+          );
 
-        return {
-          ...set,
-          set_number: index + 1,
-        };
-      });
+          return {
+            ...set,
+            set_number: index + 1,
+          };
+        }),
+      };
     });
   }
 
   async function endAndSaveWorkout() {
-    if (sets.length === 0) {
+    const current = getWorkoutSession();
+
+    if (current.sets.length === 0) {
       showAlert({
         title: "No sets",
         message: "Log at least one set before ending workout.",
@@ -390,7 +582,7 @@ export default function StartWorkoutScreen() {
     }
 
     const exercisesWithoutSets = exercises.filter((exercise) => {
-      return !sets.some((set) => set.exercise_id === exercise.id);
+      return !current.sets.some((set) => set.exercise_id === exercise.id);
     });
 
     if (exercisesWithoutSets.length > 0) {
@@ -422,10 +614,24 @@ export default function StartWorkoutScreen() {
   }
 
   async function saveWorkout() {
+    const current = getWorkoutSession();
+    const finalElapsedSeconds = getElapsedSeconds(current);
+
     setSaving(true);
-    setSessionStarted(false);
-    setIsPaused(false);
-    finishRest();
+
+    setWorkoutSession({
+      sessionStarted: false,
+      isPaused: false,
+      startedAtMs: null,
+      activeMs: finalElapsedSeconds * 1000,
+      elapsedSeconds: finalElapsedSeconds,
+      isResting: false,
+      restRemaining: 0,
+      restExerciseId: null,
+      restEndsAtMs: null,
+    });
+
+    stopWorkoutTicker();
 
     const {
       data: { user },
@@ -436,7 +642,7 @@ export default function StartWorkoutScreen() {
       return;
     }
 
-    const durationMinutes = Math.max(1, Math.round(elapsedSeconds / 60));
+    const durationMinutes = Math.max(1, Math.round(finalElapsedSeconds / 60));
 
     const { data: workout, error: workoutError } = await supabase
       .from("workouts")
@@ -444,7 +650,7 @@ export default function StartWorkoutScreen() {
         user_id: user.id,
         workout_type: todaySplit.type,
         duration_minutes: durationMinutes,
-        notes: notes.trim() || null,
+        notes: current.notes.trim() || null,
       })
       .select("id")
       .single();
@@ -460,7 +666,7 @@ export default function StartWorkoutScreen() {
       return;
     }
 
-    const rows = sets.map((set) => ({
+    const rows = current.sets.map((set) => ({
       user_id: user.id,
       workout_id: workout.id,
       exercise_id: set.exercise_id,
@@ -486,6 +692,7 @@ export default function StartWorkoutScreen() {
     }
 
     setSaving(false);
+    resetWorkoutSession();
 
     showAlert({
       title: "Workout saved",
@@ -496,7 +703,7 @@ export default function StartWorkoutScreen() {
   }
 
   function handleClosePress() {
-    if (sessionStarted || isPaused) {
+    if (session.sessionStarted || session.isPaused) {
       setCloseAlertVisible(true);
       return;
     }
@@ -507,9 +714,7 @@ export default function StartWorkoutScreen() {
   function confirmCloseSession() {
     setCloseAlertVisible(false);
     setModalVisible(false);
-    setSessionStarted(false);
-    setIsPaused(false);
-    finishRest();
+    resetWorkoutSession();
     router.back();
   }
 
@@ -530,30 +735,43 @@ export default function StartWorkoutScreen() {
   }, []);
 
   useEffect(() => {
-    if (!sessionStarted || isPaused) return;
-
-    const interval = setInterval(() => {
-      setElapsedSeconds((current) => current + 1);
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [sessionStarted, isPaused]);
+    if (session.sessionStarted && !workoutTimerRef) {
+      startWorkoutTicker(playRestCompleteAlert);
+    }
+  }, [session.sessionStarted]);
 
   useEffect(() => {
-    if (!isResting || isPaused) return;
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state !== "active") return;
 
-    if (restRemaining <= 0) {
-      finishRest();
-      playRestCompleteAlert();
-      return;
-    }
+      const current = getWorkoutSession();
 
-    const timer = setTimeout(() => {
-      setRestRemaining((current) => current - 1);
-    }, 1000);
+      if (!current.sessionStarted) return;
 
-    return () => clearTimeout(timer);
-  }, [isResting, restRemaining, isPaused]);
+      const restRemaining = getRestRemaining(current);
+
+      if (
+        current.isResting &&
+        !current.isPaused &&
+        restRemaining <= 0 &&
+        current.restEndsAtMs &&
+        restAlertPlayedForEndAt !== current.restEndsAtMs
+      ) {
+        restAlertPlayedForEndAt = current.restEndsAtMs;
+        finishRest();
+        void playRestCompleteAlert();
+      } else {
+        setWorkoutSession({
+          elapsedSeconds: getElapsedSeconds(current),
+          restRemaining,
+        });
+      }
+
+      startWorkoutTicker(playRestCompleteAlert);
+    });
+
+    return () => subscription.remove();
+  }, []);
 
   if (todaySplit.type === "rest") {
     return (
@@ -713,7 +931,7 @@ export default function StartWorkoutScreen() {
 
         <View
           style={{
-            backgroundColor: isPaused
+            backgroundColor: session.isPaused
               ? theme.colors.warning
               : theme.colors.primary,
             borderRadius: 20,
@@ -722,7 +940,7 @@ export default function StartWorkoutScreen() {
           }}
         >
           <Text style={{ color: theme.colors.textInverse }}>
-            Current Session {isPaused ? "• Paused" : ""}
+            Current Session {session.isPaused ? "• Paused" : ""}
           </Text>
 
           <Text
@@ -733,15 +951,15 @@ export default function StartWorkoutScreen() {
               marginTop: 6,
             }}
           >
-            {formatDuration(elapsedSeconds)}
+            {formatDuration(session.elapsedSeconds)}
           </Text>
 
           <Text style={{ color: theme.colors.textInverse, marginTop: 8 }}>
-            {todaySplit.label} • {sets.length} sets •{" "}
+            {todaySplit.label} • {session.sets.length} sets •{" "}
             {totalVolume.toLocaleString()} kg volume
           </Text>
 
-          {isPaused ? (
+          {session.isPaused ? (
             <Text
               style={{
                 color: theme.colors.text,
@@ -754,7 +972,7 @@ export default function StartWorkoutScreen() {
           ) : null}
         </View>
 
-        {isResting ? (
+        {session.isResting ? (
           <View
             style={{
               backgroundColor: theme.colors.primarySoft,
@@ -766,7 +984,7 @@ export default function StartWorkoutScreen() {
             }}
           >
             <Text style={{ fontWeight: "900", color: theme.colors.primary }}>
-              ⏱️ Rest timer active {isPaused ? "• Paused" : ""}
+              ⏱️ Rest timer active {session.isPaused ? "• Paused" : ""}
             </Text>
 
             <Text
@@ -777,7 +995,7 @@ export default function StartWorkoutScreen() {
                 fontWeight: "900",
               }}
             >
-              {formatRest(restRemaining)}
+              {formatRest(session.restRemaining)}
             </Text>
 
             <Text style={{ color: theme.colors.primary, marginTop: 6 }}>
@@ -786,7 +1004,7 @@ export default function StartWorkoutScreen() {
           </View>
         ) : null}
 
-        {!sessionStarted ? (
+        {!session.sessionStarted ? (
           <Pressable
             onPress={startSession}
             disabled={loading || exercises.length === 0}
@@ -816,14 +1034,14 @@ export default function StartWorkoutScreen() {
               disabled={saving}
               style={{
                 flex: 1,
-                backgroundColor: isPaused
+                backgroundColor: session.isPaused
                   ? theme.colors.primary
                   : theme.colors.surface,
                 borderRadius: 18,
                 padding: 18,
                 alignItems: "center",
                 borderWidth: 1,
-                borderColor: isPaused
+                borderColor: session.isPaused
                   ? theme.colors.primary
                   : theme.colors.border,
                 opacity: saving ? 0.6 : 1,
@@ -831,14 +1049,14 @@ export default function StartWorkoutScreen() {
             >
               <Text
                 style={{
-                  color: isPaused
+                  color: session.isPaused
                     ? theme.colors.textInverse
                     : theme.colors.text,
                   fontSize: 16,
                   fontWeight: "800",
                 }}
               >
-                {isPaused ? "Resume" : "Pause"}
+                {session.isPaused ? "Resume" : "Pause"}
               </Text>
             </Pressable>
 
@@ -910,7 +1128,7 @@ export default function StartWorkoutScreen() {
             style={{ marginTop: 10 }}
             contentContainerStyle={{ gap: 12 }}
             renderItem={({ item }) => {
-              const exerciseSets = sets.filter(
+              const exerciseSets = session.sets.filter(
                 (set) => set.exercise_id === item.id,
               );
 
@@ -920,8 +1138,9 @@ export default function StartWorkoutScreen() {
                 );
               }, 0);
 
-              const isDisabledByRest = isResting && restExerciseId !== item.id;
-              const isDisabled = isDisabledByRest || isPaused;
+              const isDisabledByRest =
+                session.isResting && session.restExerciseId !== item.id;
+              const isDisabled = isDisabledByRest || session.isPaused;
 
               return (
                 <Pressable
@@ -1011,7 +1230,7 @@ export default function StartWorkoutScreen() {
           Logged Sets
         </Text>
 
-        {sets.length === 0 ? (
+        {session.sets.length === 0 ? (
           <View
             style={{
               backgroundColor: theme.colors.surface,
@@ -1031,7 +1250,7 @@ export default function StartWorkoutScreen() {
           </View>
         ) : (
           <View style={{ marginTop: 10 }}>
-            {sets.map((set) => (
+            {session.sets.map((set) => (
               <View
                 key={set.local_id}
                 style={{
@@ -1099,8 +1318,8 @@ export default function StartWorkoutScreen() {
         </Text>
 
         <TextInput
-          value={notes}
-          onChangeText={setNotes}
+          value={session.notes}
+          onChangeText={(notes) => setWorkoutSession({ notes })}
           placeholder="Energy, fatigue, form notes..."
           placeholderTextColor={theme.colors.textFaint}
           multiline
@@ -1124,8 +1343,8 @@ export default function StartWorkoutScreen() {
         startingSetNumber={
           activeExercise ? getNextSetNumber(activeExercise.id) : 1
         }
-        isResting={isResting}
-        restRemaining={restRemaining}
+        isResting={session.isResting}
+        restRemaining={session.restRemaining}
         nextSetNumber={activeExercise ? getNextSetNumber(activeExercise.id) : 1}
         onClose={() => setModalVisible(false)}
         onCompleteSet={completeSetFromModal}
@@ -1151,9 +1370,9 @@ export default function StartWorkoutScreen() {
 
       <ThemedAlert
         visible={closeAlertVisible}
-        title={isPaused ? "Workout is paused" : "Workout in progress"}
+        title={session.isPaused ? "Workout is paused" : "Workout in progress"}
         message={
-          isPaused
+          session.isPaused
             ? "You have a paused workout session. Closing this screen will discard the current session and unsaved sets."
             : "You have an active workout session. Closing this screen will discard the current session and unsaved sets."
         }

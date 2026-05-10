@@ -1,13 +1,14 @@
+import { useTheme } from "@/lib/theme";
 import { useEffect, useState } from "react";
 import {
-    ActivityIndicator,
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    Pressable,
-    Text,
-    TextInput,
-    View,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
 
 type Props = {
@@ -31,6 +32,8 @@ export default function EditProfileModal({
   onClose,
   onSave,
 }: Props) {
+  const theme = useTheme();
+
   const [displayName, setDisplayName] = useState(initialDisplayName);
   const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState("");
@@ -49,23 +52,41 @@ export default function EditProfileModal({
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={{
           flex: 1,
-          backgroundColor: "rgba(0,0,0,0.35)",
+          backgroundColor:
+            theme.mode === "dark"
+              ? "rgba(0,0,0,0.65)"
+              : "rgba(15,23,42,0.35)",
           justifyContent: "center",
           padding: 20,
         }}
       >
         <View
           style={{
-            backgroundColor: "#fff",
-            borderRadius: 24,
+            backgroundColor: theme.colors.surface,
+            borderRadius: theme.radius.xl,
             padding: 20,
+            borderWidth: 1,
+            borderColor: theme.colors.border,
+            ...theme.shadow.card,
           }}
         >
-          <Text style={{ fontSize: 22, fontWeight: "900", color: "#111827" }}>
+          <Text
+            style={{
+              fontSize: 22,
+              fontWeight: "900",
+              color: theme.colors.text,
+            }}
+          >
             Edit Profile
           </Text>
 
-          <Text style={{ marginTop: 6, color: "#6B7280", lineHeight: 20 }}>
+          <Text
+            style={{
+              marginTop: 6,
+              color: theme.colors.textMuted,
+              lineHeight: 20,
+            }}
+          >
             Update your display name, email, or password.
           </Text>
 
@@ -100,14 +121,17 @@ export default function EditProfileModal({
               style={{
                 flex: 1,
                 height: 50,
-                borderRadius: 16,
-                backgroundColor: "#F3F4F6",
+                borderRadius: theme.radius.lg,
+                backgroundColor: theme.colors.surfaceAlt,
                 justifyContent: "center",
                 alignItems: "center",
                 marginRight: 10,
+                borderWidth: 1,
+                borderColor: theme.colors.border,
+                opacity: saving ? 0.7 : 1,
               }}
             >
-              <Text style={{ color: "#111827", fontWeight: "800" }}>
+              <Text style={{ color: theme.colors.text, fontWeight: "800" }}>
                 Cancel
               </Text>
             </Pressable>
@@ -124,16 +148,25 @@ export default function EditProfileModal({
               style={{
                 flex: 1,
                 height: 50,
-                borderRadius: 16,
-                backgroundColor: saving ? "#9CA3AF" : "#111827",
+                borderRadius: theme.radius.lg,
+                backgroundColor: saving
+                  ? theme.colors.textFaint
+                  : theme.colors.primary,
                 justifyContent: "center",
                 alignItems: "center",
               }}
             >
               {saving ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color={theme.colors.textInverse} />
               ) : (
-                <Text style={{ color: "#fff", fontWeight: "800" }}>Save</Text>
+                <Text
+                  style={{
+                    color: theme.colors.textInverse,
+                    fontWeight: "800",
+                  }}
+                >
+                  Save
+                </Text>
               )}
             </Pressable>
           </View>
@@ -141,7 +174,7 @@ export default function EditProfileModal({
           <Text
             style={{
               marginTop: 12,
-              color: "#6B7280",
+              color: theme.colors.textMuted,
               fontSize: 12,
               lineHeight: 18,
             }}
@@ -172,9 +205,17 @@ function FormInput({
   keyboardType?: "default" | "email-address";
   autoCapitalize?: "none" | "sentences" | "words" | "characters";
 }) {
+  const theme = useTheme();
+
   return (
     <View style={{ marginTop: 16 }}>
-      <Text style={{ color: "#6B7280", fontSize: 12, marginBottom: 8 }}>
+      <Text
+        style={{
+          color: theme.colors.textMuted,
+          fontSize: 12,
+          marginBottom: 8,
+        }}
+      >
         {label}
       </Text>
 
@@ -185,15 +226,17 @@ function FormInput({
         secureTextEntry={secureTextEntry}
         keyboardType={keyboardType || "default"}
         autoCapitalize={autoCapitalize || "sentences"}
-        placeholderTextColor="#9CA3AF"
+        placeholderTextColor={theme.colors.textFaint}
         style={{
           minHeight: 50,
           paddingHorizontal: 14,
-          borderRadius: 14,
-          backgroundColor: "#F3F4F6",
-          color: "#111827",
+          borderRadius: theme.radius.lg,
+          backgroundColor: theme.colors.surfaceAlt,
+          color: theme.colors.text,
           fontSize: 15,
           fontWeight: "700",
+          borderWidth: 1,
+          borderColor: theme.colors.border,
         }}
       />
     </View>

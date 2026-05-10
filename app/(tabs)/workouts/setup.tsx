@@ -20,6 +20,7 @@ import {
 } from "react-native";
 
 type MovementType = "push" | "pull" | "legs" | "upper" | "lower";
+type SetupThemeType = MovementType | "rest";
 
 type Exercise = {
   id: string;
@@ -55,6 +56,27 @@ const EMPTY_FORM: ExerciseForm = {
   is_compound: false,
 };
 
+function isSetupThemeType(value: unknown): value is SetupThemeType {
+  return (
+    value === "push" ||
+    value === "pull" ||
+    value === "legs" ||
+    value === "upper" ||
+    value === "lower" ||
+    value === "rest"
+  );
+}
+
+function isMovementType(value: unknown): value is MovementType {
+  return (
+    value === "push" ||
+    value === "pull" ||
+    value === "legs" ||
+    value === "upper" ||
+    value === "lower"
+  );
+}
+
 export default function WorkoutSetupScreen() {
   const router = useRouter();
   const theme = useTheme();
@@ -80,17 +102,17 @@ export default function WorkoutSetupScreen() {
     (() => void) | undefined
   >();
 
-  const params = useLocalSearchParams<{ split?: MovementType }>();
+  const params = useLocalSearchParams<{ split?: SetupThemeType }>();
 
-  const initialSplit: MovementType =
-    params.split === "push" ||
-    params.split === "pull" ||
-    params.split === "legs" ||
-    params.split === "upper" ||
-    params.split === "lower"
-      ? params.split
-      : "push";
-  const [filter, setFilter] = useState<"all" | MovementType>(initialSplit);
+  const routeSplit: SetupThemeType = isSetupThemeType(params.split)
+    ? params.split
+    : "push";
+
+  const initialFilter: MovementType = isMovementType(routeSplit)
+    ? routeSplit
+    : "push";
+
+  const [filter, setFilter] = useState<"all" | MovementType>(initialFilter);
 
   const filteredExercises = useMemo(() => {
     let nextExercises = exercises;
@@ -298,12 +320,12 @@ export default function WorkoutSetupScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      theme.setSessionTheme(filter === "all" ? initialSplit : filter);
+      theme.setSessionTheme(routeSplit);
 
       return () => {
         theme.setSessionTheme("default");
       };
-    }, [filter, initialSplit]),
+    }, [routeSplit, theme.setSessionTheme]),
   );
 
   useEffect(() => {

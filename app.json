@@ -5,6 +5,12 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "scheme": "mxrvs",
+    "icon": "./assets/mxrvs.png",
+    "splash": {
+      "image": "./assets/mxrvs.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
@@ -16,10 +22,15 @@
         "ACTIVITY_RECOGNITION",
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION"
-      ]
+      ],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/mxrvs.png",
+        "backgroundColor": "#ffffff"
+      }
     },
     "web": {
-      "output": "static"
+      "output": "static",
+      "favicon": "./assets/mxrvs.png"
     },
     "plugins": [
       "expo-router",

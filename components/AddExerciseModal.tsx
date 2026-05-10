@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import {
-    Modal,
-    Pressable,
-    ScrollView,
-    Text,
-    TextInput,
-    View,
+  Modal,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
+import { useTheme } from "@/lib/theme";
 
 type MovementType = "push" | "pull" | "legs" | "upper" | "lower";
 
@@ -43,6 +44,7 @@ export default function AddExerciseModal({
   onClose,
   onSave,
 }: Props) {
+  const theme = useTheme();
   const [localForm, setLocalForm] = useState(form);
 
   useEffect(() => {
@@ -54,7 +56,8 @@ export default function AddExerciseModal({
       <View
         style={{
           flex: 1,
-          backgroundColor: "rgba(0,0,0,0.35)",
+          backgroundColor:
+            theme.mode === "dark" ? "rgba(0,0,0,0.65)" : "rgba(15,23,42,0.35)",
           justifyContent: "center",
           alignItems: "center",
           padding: 18,
@@ -65,9 +68,12 @@ export default function AddExerciseModal({
             width: "100%",
             maxWidth: 420,
             maxHeight: "90%",
-            backgroundColor: "#fff",
-            borderRadius: 24,
+            backgroundColor: theme.colors.surface,
+            borderRadius: theme.radius.xl,
             padding: 20,
+            borderWidth: 1,
+            borderColor: theme.colors.border,
+            ...theme.shadow.card,
           }}
         >
           <ScrollView showsVerticalScrollIndicator={false}>
@@ -78,17 +84,25 @@ export default function AddExerciseModal({
                 justifyContent: "space-between",
               }}
             >
-              <Text style={{ fontSize: 22, fontWeight: "900" }}>
+              <Text
+                style={{
+                  fontSize: 22,
+                  fontWeight: "900",
+                  color: theme.colors.text,
+                }}
+              >
                 {localForm.id ? "Edit Exercise" : "Add Exercise"}
               </Text>
-
-              <Pressable onPress={onClose}>
-                <Text style={{ fontWeight: "800" }}>Close</Text>
-              </Pressable>
             </View>
 
             {/* NAME */}
-            <Text style={{ fontWeight: "700", marginTop: 18 }}>
+            <Text
+              style={{
+                fontWeight: "700",
+                marginTop: 18,
+                color: theme.colors.text,
+              }}
+            >
               Exercise Name
             </Text>
 
@@ -96,16 +110,26 @@ export default function AddExerciseModal({
               value={localForm.name}
               onChangeText={(v) => setLocalForm({ ...localForm, name: v })}
               placeholder="Bench Press"
+              placeholderTextColor={theme.colors.textFaint}
               style={{
-                backgroundColor: "#F7F7F7",
-                borderRadius: 14,
+                backgroundColor: theme.colors.surfaceAlt,
+                borderRadius: theme.radius.lg,
                 padding: 14,
                 marginTop: 8,
+                color: theme.colors.text,
+                borderWidth: 1,
+                borderColor: theme.colors.border,
               }}
             />
 
             {/* WORKOUT TYPE */}
-            <Text style={{ fontWeight: "700", marginTop: 18 }}>
+            <Text
+              style={{
+                fontWeight: "700",
+                marginTop: 18,
+                color: theme.colors.text,
+              }}
+            >
               Workout Type
             </Text>
 
@@ -129,13 +153,21 @@ export default function AddExerciseModal({
                     style={{
                       paddingHorizontal: 12,
                       paddingVertical: 8,
-                      borderRadius: 999,
-                      backgroundColor: active ? "#111" : "#F1F1F1",
+                      borderRadius: theme.radius.pill,
+                      backgroundColor: active
+                        ? theme.colors[type]
+                        : theme.colors.surfaceAlt,
+                      borderWidth: 1,
+                      borderColor: active
+                        ? theme.colors[type]
+                        : theme.colors.border,
                     }}
                   >
                     <Text
                       style={{
-                        color: active ? "#fff" : "#111",
+                        color: active
+                          ? theme.colors.textInverse
+                          : theme.colors.text,
                         fontWeight: "800",
                         textTransform: "capitalize",
                       }}
@@ -148,7 +180,13 @@ export default function AddExerciseModal({
             </View>
 
             {/* MUSCLE GROUP */}
-            <Text style={{ fontWeight: "700", marginTop: 18 }}>
+            <Text
+              style={{
+                fontWeight: "700",
+                marginTop: 18,
+                color: theme.colors.text,
+              }}
+            >
               Muscle Group
             </Text>
 
@@ -172,13 +210,21 @@ export default function AddExerciseModal({
                     style={{
                       paddingHorizontal: 12,
                       paddingVertical: 8,
-                      borderRadius: 999,
-                      backgroundColor: active ? "#111" : "#F1F1F1",
+                      borderRadius: theme.radius.pill,
+                      backgroundColor: active
+                        ? theme.colors.primary
+                        : theme.colors.surfaceAlt,
+                      borderWidth: 1,
+                      borderColor: active
+                        ? theme.colors.primary
+                        : theme.colors.border,
                     }}
                   >
                     <Text
                       style={{
-                        color: active ? "#fff" : "#111",
+                        color: active
+                          ? theme.colors.textInverse
+                          : theme.colors.text,
                         fontWeight: "800",
                         textTransform: "capitalize",
                       }}
@@ -191,7 +237,13 @@ export default function AddExerciseModal({
             </View>
 
             {/* TYPE */}
-            <Text style={{ fontWeight: "700", marginTop: 18 }}>
+            <Text
+              style={{
+                fontWeight: "700",
+                marginTop: 18,
+                color: theme.colors.text,
+              }}
+            >
               Exercise Type
             </Text>
 
@@ -203,14 +255,22 @@ export default function AddExerciseModal({
                 style={{
                   flex: 1,
                   padding: 14,
-                  borderRadius: 14,
-                  backgroundColor: localForm.is_compound ? "#111" : "#F1F1F1",
+                  borderRadius: theme.radius.lg,
+                  backgroundColor: localForm.is_compound
+                    ? theme.colors.primary
+                    : theme.colors.surfaceAlt,
                   alignItems: "center",
+                  borderWidth: 1,
+                  borderColor: localForm.is_compound
+                    ? theme.colors.primary
+                    : theme.colors.border,
                 }}
               >
                 <Text
                   style={{
-                    color: localForm.is_compound ? "#fff" : "#111",
+                    color: localForm.is_compound
+                      ? theme.colors.textInverse
+                      : theme.colors.text,
                     fontWeight: "800",
                   }}
                 >
@@ -225,14 +285,22 @@ export default function AddExerciseModal({
                 style={{
                   flex: 1,
                   padding: 14,
-                  borderRadius: 14,
-                  backgroundColor: !localForm.is_compound ? "#111" : "#F1F1F1",
+                  borderRadius: theme.radius.lg,
+                  backgroundColor: !localForm.is_compound
+                    ? theme.colors.primary
+                    : theme.colors.surfaceAlt,
                   alignItems: "center",
+                  borderWidth: 1,
+                  borderColor: !localForm.is_compound
+                    ? theme.colors.primary
+                    : theme.colors.border,
                 }}
               >
                 <Text
                   style={{
-                    color: !localForm.is_compound ? "#fff" : "#111",
+                    color: !localForm.is_compound
+                      ? theme.colors.textInverse
+                      : theme.colors.text,
                     fontWeight: "800",
                   }}
                 >
@@ -247,13 +315,22 @@ export default function AddExerciseModal({
                 onPress={onClose}
                 style={{
                   flex: 1,
-                  backgroundColor: "#F1F1F1",
-                  borderRadius: 16,
+                  backgroundColor: theme.colors.surfaceAlt,
+                  borderRadius: theme.radius.lg,
                   padding: 16,
                   alignItems: "center",
+                  borderWidth: 1,
+                  borderColor: theme.colors.border,
                 }}
               >
-                <Text style={{ fontWeight: "800" }}>Cancel</Text>
+                <Text
+                  style={{
+                    fontWeight: "800",
+                    color: theme.colors.text,
+                  }}
+                >
+                  Cancel
+                </Text>
               </Pressable>
 
               <Pressable
@@ -261,14 +338,19 @@ export default function AddExerciseModal({
                 disabled={saving}
                 style={{
                   flex: 1,
-                  backgroundColor: "#111",
-                  borderRadius: 16,
+                  backgroundColor: theme.colors.primary,
+                  borderRadius: theme.radius.lg,
                   padding: 16,
                   alignItems: "center",
                   opacity: saving ? 0.6 : 1,
                 }}
               >
-                <Text style={{ color: "#fff", fontWeight: "800" }}>
+                <Text
+                  style={{
+                    color: theme.colors.textInverse,
+                    fontWeight: "800",
+                  }}
+                >
                   {saving ? "Saving..." : "Save"}
                 </Text>
               </Pressable>

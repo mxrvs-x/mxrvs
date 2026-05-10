@@ -1,13 +1,16 @@
-import { AppTheme, useTheme } from "@/lib/theme";
+import ThemedAlert from "@/components/ThemedAlert";
 import { requestFitnessPermissions } from "@/lib/appPermissions";
 import { isOnline, saveOfflineCardioSession } from "@/lib/offlineCardio";
 import { supabase } from "@/lib/supabase";
+import { AppTheme, useTheme } from "@/lib/theme";
 import * as Location from "expo-location";
-import { useRouter, Stack } from "expo-router";
 import { Pedometer } from "expo-sensors";
-import { useEffect, useRef, useState } from "react";
+import { Stack, useRouter } from "expo-router";
+import * as TaskManager from "expo-task-manager";
+import { X } from "lucide-react-native";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import {
-  Alert,
+  AppState,
   Modal,
   Pressable,
   ScrollView,
@@ -16,7 +19,6 @@ import {
   View,
 } from "react-native";
 import MapView, { Marker, Polyline, Region } from "react-native-maps";
-import { X } from "lucide-react-native";
 
 type RunSource = "outdoor" | "treadmill";
 
@@ -26,8 +28,192 @@ type RoutePoint = {
   timestamp: number;
 };
 
+type RunSession = {
+  runSource: RunSource;
+  tracking: boolean;
+  isPaused: boolean;
+  mockMode: boolean;
+  startedAtMs: number | null;
+  activeMs: number;
+  seconds: number;
+  steps: number;
+  gpsDistanceKm: number;
+  route: RoutePoint[];
+  region: Region | null;
+  gpsAccuracy: number | null;
+  gpsReady: boolean;
+};
+
 const RUN_STRIDE_M = 1.25;
 const USE_MOCK_WHEN_PERMISSION_DENIED = true;
+const RUN_LOCATION_TASK = "active-run-location-task";
+
+const initialRunSession: RunSession = {
+  runSource: "outdoor",
+  tracking: false,
+  isPaused: false,
+  mockMode: false,
+  startedAtMs: null,
+  activeMs: 0,
+  seconds: 0,
+  steps: 0,
+  gpsDistanceKm: 0,
+  route: [],
+  region: null,
+  gpsAccuracy: null,
+  gpsReady: false,
+};
+
+let runSession: RunSession = initialRunSession;
+const runSubscribers = new Set<() => void>();
+
+let timerRef: ReturnType<typeof setInterval> | null = null;
+let mockRef: ReturnType<typeof setInterval> | null = null;
+let watchRef: Location.LocationSubscription | null = null;
+let pedometerRef: Pedometer.Subscription | null = null;
+
+let lastPointRef: RoutePoint | null = null;
+let lastRawStepsRef = 0;
+
+function getRunSession() {
+  return runSession;
+}
+
+function subscribeRunSession(callback: () => void) {
+  runSubscribers.add(callback);
+  return () => runSubscribers.delete(callback);
+}
+
+function setRunSession(
+  updater: Partial<RunSession> | ((current: RunSession) => RunSession),
+) {
+  runSession =
+    typeof updater === "function"
+      ? updater(runSession)
+      : { ...runSession, ...updater };
+
+  runSubscribers.forEach((callback) => callback());
+}
+
+function useRunSession() {
+  return useSyncExternalStore(
+    subscribeRunSession,
+    getRunSession,
+    getRunSession,
+  );
+}
+
+function elapsedSeconds(session = runSession) {
+  if (!session.tracking) return session.seconds;
+
+  if (session.isPaused || !session.startedAtMs) {
+    return Math.floor(session.activeMs / 1000);
+  }
+
+  return Math.floor(
+    (session.activeMs + Date.now() - session.startedAtMs) / 1000,
+  );
+}
+
+function calculateDistanceKm(a: RoutePoint, b: RoutePoint) {
+  const R = 6371;
+
+  const dLat = ((b.latitude - a.latitude) * Math.PI) / 180;
+  const dLon = ((b.longitude - a.longitude) * Math.PI) / 180;
+
+  const lat1 = (a.latitude * Math.PI) / 180;
+  const lat2 = (b.latitude * Math.PI) / 180;
+
+  const x =
+    Math.sin(dLat / 2) ** 2 +
+    Math.sin(dLon / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
+
+  const c = 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+
+  return R * c;
+}
+
+function isGpsReliable(accuracy: number | null) {
+  if (!accuracy) return false;
+  return accuracy <= 25;
+}
+
+function handleLocationUpdate(location: Location.LocationObject) {
+  const current = getRunSession();
+
+  if (!current.tracking || current.runSource !== "outdoor") return;
+
+  const accuracy = location.coords.accuracy ?? null;
+
+  const point: RoutePoint = {
+    latitude: location.coords.latitude,
+    longitude: location.coords.longitude,
+    timestamp: location.timestamp,
+  };
+
+  if (lastPointRef && point.timestamp <= lastPointRef.timestamp) {
+    return;
+  }
+
+  const region: Region = {
+    latitude: point.latitude,
+    longitude: point.longitude,
+    latitudeDelta: 0.005,
+    longitudeDelta: 0.005,
+  };
+
+  if (current.isPaused) {
+    lastPointRef = point;
+
+    setRunSession({
+      gpsAccuracy: accuracy,
+      gpsReady: isGpsReliable(accuracy),
+      region,
+      seconds: elapsedSeconds(),
+    });
+
+    return;
+  }
+
+  const lastPoint = lastPointRef;
+  let addedKm = 0;
+
+  if (lastPoint && isGpsReliable(accuracy)) {
+    const distance = calculateDistanceKm(lastPoint, point);
+
+    if (distance > 0.001 && distance < 0.08) {
+      addedKm = distance;
+    }
+  }
+
+  lastPointRef = point;
+
+  setRunSession((prev) => ({
+    ...prev,
+    gpsAccuracy: accuracy,
+    gpsReady: isGpsReliable(accuracy),
+    region,
+    route: [...prev.route, point],
+    gpsDistanceKm: prev.gpsDistanceKm + addedKm,
+    seconds: elapsedSeconds(prev),
+  }));
+}
+
+if (!TaskManager.isTaskDefined(RUN_LOCATION_TASK)) {
+  TaskManager.defineTask(RUN_LOCATION_TASK, async ({ data, error }) => {
+    if (error) {
+      console.log("Background location error:", error);
+      return;
+    }
+
+    const locations = (data as { locations?: Location.LocationObject[] })
+      ?.locations;
+
+    if (!locations?.length) return;
+
+    locations.forEach(handleLocationUpdate);
+  });
+}
 
 async function getUserWeight() {
   const {
@@ -47,6 +233,91 @@ async function getUserWeight() {
   return Number(data.weight_kg);
 }
 
+function startTimer() {
+  if (timerRef) clearInterval(timerRef);
+
+  timerRef = setInterval(() => {
+    const current = getRunSession();
+
+    if (!current.tracking) return;
+
+    setRunSession({
+      seconds: elapsedSeconds(current),
+    });
+  }, 1000);
+}
+
+async function startBackgroundLocation() {
+  const current = getRunSession();
+
+  if (current.runSource !== "outdoor") return;
+
+  const backgroundPermission =
+    await Location.requestBackgroundPermissionsAsync();
+
+  if (backgroundPermission.status !== "granted") return;
+
+  const alreadyStarted = await Location.hasStartedLocationUpdatesAsync(
+    RUN_LOCATION_TASK,
+  ).catch(() => false);
+
+  if (alreadyStarted) return;
+
+  await Location.startLocationUpdatesAsync(RUN_LOCATION_TASK, {
+    accuracy: Location.Accuracy.Highest,
+    timeInterval: 1000,
+    distanceInterval: 1,
+    pausesUpdatesAutomatically: false,
+    showsBackgroundLocationIndicator: true,
+    foregroundService: {
+      notificationTitle: "Run active",
+      notificationBody: "Tracking your run in the background.",
+    },
+  });
+}
+
+async function stopBackgroundLocation() {
+  const started = await Location.hasStartedLocationUpdatesAsync(
+    RUN_LOCATION_TASK,
+  ).catch(() => false);
+
+  if (started) {
+    await Location.stopLocationUpdatesAsync(RUN_LOCATION_TASK);
+  }
+}
+
+function stopWatchers() {
+  watchRef?.remove();
+  watchRef = null;
+
+  pedometerRef?.remove();
+  pedometerRef = null;
+
+  if (timerRef) {
+    clearInterval(timerRef);
+    timerRef = null;
+  }
+
+  if (mockRef) {
+    clearInterval(mockRef);
+    mockRef = null;
+  }
+
+  void stopBackgroundLocation();
+}
+
+function resetSession() {
+  const currentSource = getRunSession().runSource;
+
+  setRunSession({
+    ...initialRunSession,
+    runSource: currentSource,
+  });
+
+  lastRawStepsRef = 0;
+  lastPointRef = null;
+}
+
 export default function RunScreen() {
   const theme = useTheme();
   const Text = (props: any) => (
@@ -54,43 +325,36 @@ export default function RunScreen() {
   );
 
   const router = useRouter();
-
-  const [runSource, setRunSource] = useState<RunSource>("outdoor");
-  const [tracking, setTracking] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
-  const [mockMode, setMockMode] = useState(false);
+  const session = useRunSession();
 
   const [bodyWeight, setBodyWeight] = useState(70);
-  const [seconds, setSeconds] = useState(0);
-  const [steps, setSteps] = useState(0);
-  const [gpsDistanceKm, setGpsDistanceKm] = useState(0);
-  const [route, setRoute] = useState<RoutePoint[]>([]);
-  const [region, setRegion] = useState<Region | null>(null);
-
-  const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
-  const [gpsReady, setGpsReady] = useState(false);
-
   const [finishModalVisible, setFinishModalVisible] = useState(false);
   const [manualDistanceKm, setManualDistanceKm] = useState("");
   const [notes, setNotes] = useState("");
+  const [discardAlertVisible, setDiscardAlertVisible] = useState(false);
 
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const mockRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const watchRef = useRef<Location.LocationSubscription | null>(null);
-  const pedometerRef = useRef<Pedometer.Subscription | null>(null);
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [alertTitle, setAlertTitle] = useState("");
+  const [alertMessage, setAlertMessage] = useState("");
+  const [alertConfirmText, setAlertConfirmText] = useState("OK");
+  const [alertCancelText, setAlertCancelText] = useState<string | undefined>();
+  const [alertDanger, setAlertDanger] = useState(false);
+  const [alertOnConfirm, setAlertOnConfirm] = useState<
+    (() => void) | undefined
+  >();
 
-  const lastPointRef = useRef<RoutePoint | null>(null);
-  const pausedRef = useRef(false);
-  const lastRawStepsRef = useRef(0);
-
-  const stepDistanceKm = (steps * RUN_STRIDE_M) / 1000;
+  const stepDistanceKm = (session.steps * RUN_STRIDE_M) / 1000;
 
   const displayDistanceKm =
-    runSource === "outdoor" ? gpsDistanceKm : stepDistanceKm;
+    session.runSource === "outdoor" ? session.gpsDistanceKm : stepDistanceKm;
 
-  useEffect(() => {
-    pausedRef.current = isPaused;
-  }, [isPaused]);
+  const hasUnsavedSession =
+    session.tracking ||
+    finishModalVisible ||
+    session.seconds > 0 ||
+    session.steps > 0 ||
+    session.gpsDistanceKm > 0 ||
+    session.route.length > 0;
 
   useEffect(() => {
     async function loadWeight() {
@@ -102,11 +366,26 @@ export default function RunScreen() {
   }, []);
 
   useEffect(() => {
-    return () => stopWatchers();
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active" && getRunSession().tracking) {
+        setRunSession({
+          seconds: elapsedSeconds(),
+        });
+        startTimer();
+      }
+    });
+
+    return () => subscription.remove();
   }, []);
 
   useEffect(() => {
-    if (runSource !== "outdoor") return;
+    if (session.tracking && !timerRef) {
+      startTimer();
+    }
+  }, [session.tracking]);
+
+  useEffect(() => {
+    if (session.runSource !== "outdoor" || session.tracking) return;
 
     async function initLocation() {
       const permission = await Location.requestForegroundPermissionsAsync();
@@ -116,50 +395,64 @@ export default function RunScreen() {
         accuracy: Location.Accuracy.Balanced,
       });
 
-      setRegion({
-        latitude: current.coords.latitude,
-        longitude: current.coords.longitude,
-        latitudeDelta: 0.005,
-        longitudeDelta: 0.005,
+      setRunSession({
+        region: {
+          latitude: current.coords.latitude,
+          longitude: current.coords.longitude,
+          latitudeDelta: 0.005,
+          longitudeDelta: 0.005,
+        },
       });
     }
 
     initLocation();
-  }, [runSource]);
+  }, [session.runSource, session.tracking]);
 
-  function stopWatchers() {
-    watchRef.current?.remove();
-    watchRef.current = null;
-
-    pedometerRef.current?.remove();
-    pedometerRef.current = null;
-
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-
-    if (mockRef.current) {
-      clearInterval(mockRef.current);
-      mockRef.current = null;
-    }
+  function showAlert({
+    title,
+    message,
+    confirmText = "OK",
+    cancelText,
+    danger = false,
+    onConfirm,
+  }: {
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    danger?: boolean;
+    onConfirm?: () => void;
+  }) {
+    setAlertTitle(title);
+    setAlertMessage(message);
+    setAlertConfirmText(confirmText);
+    setAlertCancelText(cancelText);
+    setAlertDanger(danger);
+    setAlertOnConfirm(() => onConfirm);
+    setAlertOpen(true);
   }
 
-  function resetSession() {
-    setSeconds(0);
-    setSteps(0);
-    setGpsDistanceKm(0);
-    setRoute([]);
-    setGpsAccuracy(null);
-    setGpsReady(false);
+  function handleClosePress() {
+    if (hasUnsavedSession) {
+      setDiscardAlertVisible(true);
+      return;
+    }
+
+    router.back();
+  }
+
+  function confirmDiscardRun() {
+    stopWatchers();
+    setDiscardAlertVisible(false);
+    setFinishModalVisible(false);
     setManualDistanceKm("");
     setNotes("");
-    setMockMode(false);
-    setIsPaused(false);
+    resetSession();
+    router.back();
+  }
 
-    pausedRef.current = false;
-    lastRawStepsRef.current = 0;
-    lastPointRef.current = null;
+  function dismissFinishModal() {
+    setFinishModalVisible(false);
   }
 
   function formatTime(totalSeconds: number) {
@@ -174,44 +467,25 @@ export default function RunScreen() {
     return `${m}:${String(s).padStart(2, "0")}`;
   }
 
-  function calculateDistanceKm(a: RoutePoint, b: RoutePoint) {
-    const R = 6371;
-
-    const dLat = ((b.latitude - a.latitude) * Math.PI) / 180;
-    const dLon = ((b.longitude - a.longitude) * Math.PI) / 180;
-
-    const lat1 = (a.latitude * Math.PI) / 180;
-    const lat2 = (b.latitude * Math.PI) / 180;
-
-    const x =
-      Math.sin(dLat / 2) ** 2 +
-      Math.sin(dLon / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
-
-    const c = 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
-
-    return R * c;
-  }
-
-  function isGpsReliable(accuracy: number | null) {
-    if (!accuracy) return false;
-    return accuracy <= 25;
-  }
-
   function gpsStatusText() {
-    if (isPaused) return "Run paused";
-    if (mockMode) return "Mock GPS active";
-    if (runSource !== "outdoor") return "GPS disabled";
-    if (!gpsAccuracy) return "Waiting for GPS...";
-    if (gpsAccuracy <= 10) return `GPS good • ±${Math.round(gpsAccuracy)}m`;
-    if (gpsAccuracy <= 25) return `GPS okay • ±${Math.round(gpsAccuracy)}m`;
-    return `GPS weak • ±${Math.round(gpsAccuracy)}m`;
+    if (session.isPaused) return "Run paused";
+    if (session.mockMode) return "Mock GPS active";
+    if (session.runSource !== "outdoor") return "GPS disabled";
+    if (!session.gpsAccuracy) return "Waiting for GPS...";
+    if (session.gpsAccuracy <= 10) {
+      return `GPS good • ±${Math.round(session.gpsAccuracy)}m`;
+    }
+    if (session.gpsAccuracy <= 25) {
+      return `GPS okay • ±${Math.round(session.gpsAccuracy)}m`;
+    }
+    return `GPS weak • ±${Math.round(session.gpsAccuracy)}m`;
   }
 
   function paceText(distanceKm = displayDistanceKm) {
-    if (distanceKm <= 0 || seconds <= 0) return "—";
-    if (seconds < 10 || distanceKm < 0.01) return "—";
+    if (distanceKm <= 0 || session.seconds <= 0) return "—";
+    if (session.seconds < 10 || distanceKm < 0.01) return "—";
 
-    const pace = seconds / 60 / distanceKm;
+    const pace = session.seconds / 60 / distanceKm;
     const min = Math.floor(pace);
     const sec = Math.round((pace - min) * 60);
 
@@ -219,8 +493,8 @@ export default function RunScreen() {
   }
 
   function speedKmh(distanceKm = displayDistanceKm) {
-    if (!distanceKm || seconds <= 0) return "0.0";
-    return (distanceKm / (seconds / 3600)).toFixed(1);
+    if (!distanceKm || session.seconds <= 0) return "0.0";
+    return (distanceKm / (session.seconds / 3600)).toFixed(1);
   }
 
   function estimateCalories(distanceKm = displayDistanceKm) {
@@ -228,19 +502,19 @@ export default function RunScreen() {
   }
 
   function distanceQualityText() {
-    if (isPaused) {
+    if (session.isPaused) {
       return "Paused. Duration, distance, pace, and steps are currently frozen.";
     }
 
-    if (mockMode) {
+    if (session.mockMode) {
       return "Mock mode is active. Good for testing UI, saving, and analytics.";
     }
 
-    if (runSource === "treadmill") {
+    if (session.runSource === "treadmill") {
       return "Distance estimated from running stride. You can correct it before saving.";
     }
 
-    if (!gpsReady) {
+    if (!session.gpsReady) {
       return "GPS is weak. Distance may be inaccurate.";
     }
 
@@ -248,21 +522,41 @@ export default function RunScreen() {
   }
 
   function togglePauseRun() {
-    if (!tracking) return;
-    setIsPaused((current) => !current);
-  }
+    const current = getRunSession();
 
-  function startTimer() {
-    timerRef.current = setInterval(() => {
-      if (pausedRef.current) return;
-      setSeconds((prev) => prev + 1);
-    }, 1000);
+    if (!current.tracking) return;
+
+    if (current.isPaused) {
+      setFinishModalVisible(false);
+      setRunSession({
+        isPaused: false,
+        startedAtMs: Date.now(),
+      });
+      return;
+    }
+
+    const activeMs =
+      current.activeMs +
+      (current.startedAtMs ? Date.now() - current.startedAtMs : 0);
+
+    setRunSession({
+      isPaused: true,
+      activeMs,
+      startedAtMs: null,
+      seconds: Math.floor(activeMs / 1000),
+    });
   }
 
   function startMockRun() {
     resetSession();
-    setTracking(true);
-    setMockMode(true);
+
+    setRunSession({
+      tracking: true,
+      mockMode: true,
+      startedAtMs: Date.now(),
+      activeMs: 0,
+      seconds: 0,
+    });
 
     let mockSteps = 0;
     let mockDistance = 0;
@@ -273,47 +567,53 @@ export default function RunScreen() {
       timestamp: Date.now(),
     };
 
-    setRoute([startPoint]);
-    lastPointRef.current = startPoint;
+    lastPointRef = startPoint;
 
-    setRegion({
-      latitude: startPoint.latitude,
-      longitude: startPoint.longitude,
-      latitudeDelta: 0.005,
-      longitudeDelta: 0.005,
+    setRunSession({
+      route: [startPoint],
+      region: {
+        latitude: startPoint.latitude,
+        longitude: startPoint.longitude,
+        latitudeDelta: 0.005,
+        longitudeDelta: 0.005,
+      },
     });
 
     startTimer();
 
-    mockRef.current = setInterval(() => {
-      if (pausedRef.current) return;
+    mockRef = setInterval(() => {
+      const current = getRunSession();
+
+      if (current.isPaused) return;
 
       mockSteps += Math.floor(3 + Math.random() * 3);
       mockDistance = (mockSteps * RUN_STRIDE_M) / 1000;
 
-      setSteps(mockSteps);
+      const update: Partial<RunSession> = {
+        steps: mockSteps,
+        seconds: elapsedSeconds(),
+      };
 
-      if (runSource === "outdoor") {
-        setGpsDistanceKm(mockDistance);
-
+      if (current.runSource === "outdoor") {
         const newPoint: RoutePoint = {
           latitude: startPoint.latitude + mockDistance / 111,
           longitude: startPoint.longitude,
           timestamp: Date.now(),
         };
 
-        setRoute((prev) => [...prev, newPoint]);
-
-        setRegion({
+        update.gpsDistanceKm = mockDistance;
+        update.route = [...current.route, newPoint];
+        update.region = {
           latitude: newPoint.latitude,
           longitude: newPoint.longitude,
           latitudeDelta: 0.005,
           longitudeDelta: 0.005,
-        });
-
-        setGpsAccuracy(8);
-        setGpsReady(true);
+        };
+        update.gpsAccuracy = 8;
+        update.gpsReady = true;
       }
+
+      setRunSession(update);
     }, 1000);
   }
 
@@ -329,24 +629,36 @@ export default function RunScreen() {
       return;
     }
 
+    const currentSource = getRunSession().runSource;
+
     resetSession();
-    setTracking(true);
+
+    setRunSession({
+      runSource: currentSource,
+      tracking: true,
+      startedAtMs: Date.now(),
+      activeMs: 0,
+      seconds: 0,
+    });
 
     startTimer();
 
-    pedometerRef.current = Pedometer.watchStepCount((result) => {
+    pedometerRef = Pedometer.watchStepCount((result) => {
       const rawSteps = result.steps;
-      const previousRawSteps = lastRawStepsRef.current;
+      const previousRawSteps = lastRawStepsRef;
       const delta = Math.max(0, rawSteps - previousRawSteps);
 
-      lastRawStepsRef.current = rawSteps;
+      lastRawStepsRef = rawSteps;
 
-      if (pausedRef.current) return;
+      if (getRunSession().isPaused) return;
 
-      setSteps((prev) => prev + delta);
+      setRunSession((prev) => ({
+        ...prev,
+        steps: prev.steps + delta,
+      }));
     });
 
-    if (runSource === "treadmill") return;
+    if (currentSource === "treadmill") return;
 
     const current = await Location.getCurrentPositionAsync({
       accuracy: Location.Accuracy.Highest,
@@ -360,98 +672,78 @@ export default function RunScreen() {
 
     const accuracy = current.coords.accuracy ?? null;
 
-    setGpsAccuracy(accuracy);
-    setGpsReady(isGpsReliable(accuracy));
-    setRoute([firstPoint]);
-    lastPointRef.current = firstPoint;
+    lastPointRef = firstPoint;
 
-    setRegion({
-      latitude: firstPoint.latitude,
-      longitude: firstPoint.longitude,
-      latitudeDelta: 0.005,
-      longitudeDelta: 0.005,
+    setRunSession({
+      gpsAccuracy: accuracy,
+      gpsReady: isGpsReliable(accuracy),
+      route: [firstPoint],
+      region: {
+        latitude: firstPoint.latitude,
+        longitude: firstPoint.longitude,
+        latitudeDelta: 0.005,
+        longitudeDelta: 0.005,
+      },
     });
 
-    watchRef.current = await Location.watchPositionAsync(
+    void startBackgroundLocation();
+
+    watchRef = await Location.watchPositionAsync(
       {
         accuracy: Location.Accuracy.Highest,
         timeInterval: 1000,
         distanceInterval: 1,
       },
-      (location) => {
-        const accuracy = location.coords.accuracy ?? null;
-
-        const point: RoutePoint = {
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
-          timestamp: location.timestamp,
-        };
-
-        setGpsAccuracy(accuracy);
-        setGpsReady(isGpsReliable(accuracy));
-
-        setRegion({
-          latitude: point.latitude,
-          longitude: point.longitude,
-          latitudeDelta: 0.005,
-          longitudeDelta: 0.005,
-        });
-
-        if (pausedRef.current) {
-          lastPointRef.current = point;
-          return;
-        }
-
-        setRoute((prev) => [...prev, point]);
-
-        const lastPoint = lastPointRef.current;
-
-        if (lastPoint && isGpsReliable(accuracy)) {
-          const addedKm = calculateDistanceKm(lastPoint, point);
-
-          if (addedKm > 0.001 && addedKm < 0.08) {
-            setGpsDistanceKm((prev) => prev + addedKm);
-          }
-        }
-
-        lastPointRef.current = point;
-      },
+      handleLocationUpdate,
     );
   }
 
   function stopRunning() {
-    stopWatchers();
-    setTracking(false);
-    setIsPaused(false);
-    pausedRef.current = false;
+    const current = getRunSession();
+
+    const activeMs =
+      current.isPaused || !current.startedAtMs
+        ? current.activeMs
+        : current.activeMs + Date.now() - current.startedAtMs;
+
+    const finalSeconds = Math.floor(activeMs / 1000);
+
+    setRunSession({
+      tracking: true,
+      isPaused: true,
+      startedAtMs: null,
+      activeMs,
+      seconds: finalSeconds,
+    });
 
     const finalDistance =
-      runSource === "treadmill" ? stepDistanceKm : gpsDistanceKm;
+      current.runSource === "treadmill"
+        ? (current.steps * RUN_STRIDE_M) / 1000
+        : current.gpsDistanceKm;
 
     setManualDistanceKm(finalDistance.toFixed(2));
     setFinishModalVisible(true);
   }
 
-  function discardRun() {
-    stopWatchers();
-    setTracking(false);
-    setFinishModalVisible(false);
-    resetSession();
-  }
-
   async function saveRun() {
+    const current = getRunSession();
     const finalDistanceKm = Number(manualDistanceKm || displayDistanceKm);
 
-    if (seconds < 10) {
-      Alert.alert("Too short", "Run must be at least 10 seconds.");
+    if (current.seconds < 10) {
+      showAlert({
+        title: "Too short",
+        message: "Run must be at least 10 seconds.",
+        danger: true,
+      });
       return;
     }
 
     if (!finalDistanceKm || finalDistanceKm <= 0) {
-      Alert.alert(
-        "Missing distance",
-        "Enter or confirm your running distance.",
-      );
+      showAlert({
+        title: "Missing distance",
+        message: "Enter or confirm your running distance.",
+        danger: true,
+      });
       return;
     }
 
@@ -461,19 +753,21 @@ export default function RunScreen() {
 
     if (!user) return;
 
+    stopWatchers();
+
     const payload = {
       user_id: user.id,
       session_date: new Date().toISOString().split("T")[0],
       cardio_type: "running" as const,
-      cardio_source: runSource,
+      cardio_source: current.runSource,
       distance_km: Number(finalDistanceKm.toFixed(3)),
-      duration_seconds: seconds,
-      steps,
+      duration_seconds: current.seconds,
+      steps: current.steps,
       calories_burned: estimateCalories(finalDistanceKm),
       avg_heart_rate: null,
       notes: notes || null,
-      route: runSource === "outdoor" ? route : null,
-      is_mock: mockMode,
+      route: current.runSource === "outdoor" ? current.route : null,
+      is_mock: current.mockMode,
       created_at: new Date().toISOString(),
     };
 
@@ -486,18 +780,15 @@ export default function RunScreen() {
       });
 
       setFinishModalVisible(false);
+      setManualDistanceKm("");
+      setNotes("");
       resetSession();
 
-      Alert.alert(
-        "Saved Offline",
-        "Your run will sync when internet is back.",
-        [
-          {
-            text: "OK",
-            onPress: () => router.back(),
-          },
-        ],
-      );
+      showAlert({
+        title: "Saved Offline",
+        message: "Your run will sync when internet is back.",
+        onConfirm: () => router.back(),
+      });
 
       return;
     }
@@ -513,32 +804,66 @@ export default function RunScreen() {
       });
 
       setFinishModalVisible(false);
+      setManualDistanceKm("");
+      setNotes("");
       resetSession();
 
-      Alert.alert(
-        "Saved Offline",
-        "Could not upload now, so your run was saved offline.",
-        [
-          {
-            text: "OK",
-            onPress: () => router.back(),
-          },
-        ],
-      );
+      showAlert({
+        title: "Saved Offline",
+        message: "Could not upload now, so your run was saved offline.",
+        onConfirm: () => router.back(),
+      });
 
       return;
     }
 
     setFinishModalVisible(false);
+    setManualDistanceKm("");
+    setNotes("");
     resetSession();
 
-    Alert.alert("Saved", "Run saved successfully.", [
-      {
-        text: "OK",
-        onPress: () => router.back(),
-      },
-    ]);
+    showAlert({
+      title: "Saved",
+      message: "Run saved successfully.",
+      onConfirm: () => router.back(),
+    });
   }
+
+  const themedAlert = (
+    <ThemedAlert
+      visible={alertOpen}
+      title={alertTitle}
+      message={alertMessage}
+      confirmText={alertConfirmText}
+      cancelText={alertCancelText}
+      danger={alertDanger}
+      onClose={() => setAlertOpen(false)}
+      onConfirm={() => {
+        setAlertOpen(false);
+
+        if (alertOnConfirm) {
+          alertOnConfirm();
+        }
+      }}
+    />
+  );
+
+  const discardAlert = (
+    <ThemedAlert
+      visible={discardAlertVisible}
+      title="Discard run?"
+      message={
+        session.tracking
+          ? "You have an active run session. Leaving now will stop tracking and discard this run."
+          : "You have an unsaved run session. Leaving now will discard it."
+      }
+      cancelText="Stay"
+      confirmText="Discard"
+      danger
+      onClose={() => setDiscardAlertVisible(false)}
+      onConfirm={confirmDiscardRun}
+    />
+  );
 
   return (
     <>
@@ -553,7 +878,7 @@ export default function RunScreen() {
           },
           headerLeft: () => (
             <Pressable
-              onPress={() => router.back()}
+              onPress={handleClosePress}
               style={{
                 width: 46,
                 height: 46,
@@ -566,6 +891,7 @@ export default function RunScreen() {
           ),
         }}
       />
+
       <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
         <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 20 }}>
           <Text style={{ fontSize: 30, fontWeight: "900" }}>Run</Text>
@@ -573,7 +899,7 @@ export default function RunScreen() {
             Outdoor GPS run or treadmill run.
           </Text>
 
-          {mockMode && (
+          {session.mockMode && (
             <View
               style={{
                 marginTop: 16,
@@ -602,24 +928,24 @@ export default function RunScreen() {
             </View>
           )}
 
-          {!tracking && (
+          {!session.tracking && (
             <View style={{ flexDirection: "row", gap: 12, marginTop: 20 }}>
               <SourceButton
                 theme={theme}
                 label="Outdoor"
-                active={runSource === "outdoor"}
-                onPress={() => setRunSource("outdoor")}
+                active={session.runSource === "outdoor"}
+                onPress={() => setRunSession({ runSource: "outdoor" })}
               />
               <SourceButton
                 theme={theme}
                 label="Treadmill"
-                active={runSource === "treadmill"}
-                onPress={() => setRunSource("treadmill")}
+                active={session.runSource === "treadmill"}
+                onPress={() => setRunSession({ runSource: "treadmill" })}
               />
             </View>
           )}
 
-          {runSource === "outdoor" && (
+          {session.runSource === "outdoor" && (
             <View
               style={{
                 marginTop: 20,
@@ -639,29 +965,29 @@ export default function RunScreen() {
                 <MapView
                   style={{ flex: 1 }}
                   region={
-                    region || {
+                    session.region || {
                       latitude: 14.5995,
                       longitude: 120.9842,
                       latitudeDelta: 0.05,
                       longitudeDelta: 0.05,
                     }
                   }
-                  showsUserLocation={!mockMode}
-                  followsUserLocation={!mockMode}
+                  showsUserLocation={!session.mockMode}
+                  followsUserLocation={!session.mockMode}
                 >
-                  {route.length > 0 && (
+                  {session.route.length > 0 && (
                     <Marker
                       coordinate={{
-                        latitude: route[0].latitude,
-                        longitude: route[0].longitude,
+                        latitude: session.route[0].latitude,
+                        longitude: session.route[0].longitude,
                       }}
                       title="Start"
                     />
                   )}
 
-                  {route.length > 1 && (
+                  {session.route.length > 1 && (
                     <Polyline
-                      coordinates={route.map((p) => ({
+                      coordinates={session.route.map((p) => ({
                         latitude: p.latitude,
                         longitude: p.longitude,
                       }))}
@@ -676,7 +1002,7 @@ export default function RunScreen() {
                   marginTop: 10,
                   textAlign: "center",
                   color:
-                    gpsReady || mockMode || isPaused
+                    session.gpsReady || session.mockMode || session.isPaused
                       ? theme.colors.text
                       : theme.colors.textFaint,
                   fontWeight: "800",
@@ -697,10 +1023,12 @@ export default function RunScreen() {
             }}
           >
             <Text style={{ color: theme.colors.textFaint, fontWeight: "800" }}>
-              {runSource === "outdoor" ? "OUTDOOR RUN" : "TREADMILL RUN"}
+              {session.runSource === "outdoor"
+                ? "OUTDOOR RUN"
+                : "TREADMILL RUN"}
             </Text>
 
-            {isPaused && (
+            {session.isPaused && (
               <Text
                 style={{
                   marginTop: 12,
@@ -717,7 +1045,7 @@ export default function RunScreen() {
             )}
 
             <Text style={{ fontSize: 64, fontWeight: "900", marginTop: 16 }}>
-              {formatTime(seconds)}
+              {formatTime(session.seconds)}
             </Text>
 
             <Text style={{ color: theme.colors.textFaint }}>Duration</Text>
@@ -732,7 +1060,7 @@ export default function RunScreen() {
             </View>
 
             <View style={{ flexDirection: "row", gap: 12, marginTop: 12 }}>
-              <StatBox theme={theme} label="Steps" value={`${steps}`} />
+              <StatBox theme={theme} label="Steps" value={`${session.steps}`} />
               <StatBox
                 theme={theme}
                 label="Speed"
@@ -765,7 +1093,7 @@ export default function RunScreen() {
             </Text>
           </View>
 
-          {!tracking ? (
+          {!session.tracking ? (
             <Pressable
               onPress={startRunning}
               style={{
@@ -791,7 +1119,7 @@ export default function RunScreen() {
               <Pressable
                 onPress={togglePauseRun}
                 style={{
-                  backgroundColor: isPaused
+                  backgroundColor: session.isPaused
                     ? theme.colors.text
                     : theme.colors.surface,
                   padding: 18,
@@ -803,12 +1131,14 @@ export default function RunScreen() {
               >
                 <Text
                   style={{
-                    color: isPaused ? theme.colors.surface : theme.colors.text,
+                    color: session.isPaused
+                      ? theme.colors.surface
+                      : theme.colors.text,
                     fontSize: 17,
                     fontWeight: "900",
                   }}
                 >
-                  {isPaused ? "Resume Run" : "Pause Run"}
+                  {session.isPaused ? "Resume Run" : "Pause Run"}
                 </Text>
               </Pressable>
 
@@ -831,32 +1161,20 @@ export default function RunScreen() {
                   Stop
                 </Text>
               </Pressable>
-
-              <Pressable
-                onPress={discardRun}
-                style={{
-                  backgroundColor: theme.colors.surfaceAlt,
-                  padding: 18,
-                  borderRadius: 18,
-                  alignItems: "center",
-                }}
-              >
-                <Text
-                  style={{
-                    color: theme.colors.text,
-                    fontSize: 17,
-                    fontWeight: "900",
-                  }}
-                >
-                  Discard
-                </Text>
-              </Pressable>
             </View>
           )}
         </ScrollView>
 
-        <Modal visible={finishModalVisible} animationType="slide" transparent>
-          <View
+        <Modal
+          visible={finishModalVisible}
+          animationType="slide"
+          transparent
+          allowSwipeDismissal
+          onRequestClose={dismissFinishModal}
+          onDismiss={dismissFinishModal}
+        >
+          <Pressable
+            onPress={dismissFinishModal}
             style={{
               flex: 1,
               backgroundColor:
@@ -864,7 +1182,8 @@ export default function RunScreen() {
               justifyContent: "flex-end",
             }}
           >
-            <View
+            <Pressable
+              onPress={(event) => event.stopPropagation()}
               style={{
                 backgroundColor: theme.colors.surface,
                 borderTopLeftRadius: 24,
@@ -886,6 +1205,7 @@ export default function RunScreen() {
                   value={manualDistanceKm}
                   onChangeText={setManualDistanceKm}
                   placeholder="e.g. 3.20"
+                  placeholderTextColor={theme.colors.textFaint}
                   keyboardType="numeric"
                   style={{
                     marginTop: 8,
@@ -893,21 +1213,23 @@ export default function RunScreen() {
                     borderColor: theme.colors.border,
                     borderRadius: 14,
                     padding: 14,
+                    color: theme.colors.text,
+                    backgroundColor: theme.colors.surfaceAlt,
                   }}
                 />
-                <Text style={{ color: theme.colors.textFaint, marginTop: 8 }}>
-                  Outdoor uses GPS. Treadmill uses running stride estimate. You
-                  can edit it.
-                </Text>
               </View>
 
               <View style={{ flexDirection: "row", gap: 12, marginTop: 18 }}>
                 <StatBox
                   theme={theme}
                   label="Time"
-                  value={formatTime(seconds)}
+                  value={formatTime(session.seconds)}
                 />
-                <StatBox theme={theme} label="Steps" value={`${steps}`} />
+                <StatBox
+                  theme={theme}
+                  label="Steps"
+                  value={`${session.steps}`}
+                />
               </View>
 
               <View style={{ flexDirection: "row", gap: 12, marginTop: 12 }}>
@@ -933,6 +1255,7 @@ export default function RunScreen() {
                   value={notes}
                   onChangeText={setNotes}
                   placeholder="Optional"
+                  placeholderTextColor={theme.colors.textFaint}
                   multiline
                   style={{
                     marginTop: 8,
@@ -942,6 +1265,8 @@ export default function RunScreen() {
                     padding: 14,
                     minHeight: 80,
                     textAlignVertical: "top",
+                    color: theme.colors.text,
+                    backgroundColor: theme.colors.surfaceAlt,
                   }}
                 />
               </View>
@@ -962,23 +1287,15 @@ export default function RunScreen() {
                   Save Run
                 </Text>
               </Pressable>
+            </Pressable>
 
-              <Pressable
-                onPress={discardRun}
-                style={{
-                  padding: 16,
-                  alignItems: "center",
-                }}
-              >
-                <Text
-                  style={{ color: theme.colors.textMuted, fontWeight: "800" }}
-                >
-                  Discard
-                </Text>
-              </Pressable>
-            </View>
-          </View>
+            {themedAlert}
+            {discardAlert}
+          </Pressable>
         </Modal>
+
+        {!finishModalVisible ? themedAlert : null}
+        {!finishModalVisible ? discardAlert : null}
       </View>
     </>
   );

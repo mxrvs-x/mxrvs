@@ -206,7 +206,7 @@ export default function WorkoutIndexScreen() {
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: theme.colors.background }}
-      contentContainerStyle={{ padding: 16, paddingBottom: 120 }}
+      contentContainerStyle={{ padding: 16, paddingBottom: 20 }}
       showsVerticalScrollIndicator={false}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
@@ -220,13 +220,8 @@ export default function WorkoutIndexScreen() {
           color: theme.colors.text,
         }}
       >
-        Workout
+        Workouts
       </Text>
-
-      <Text style={{ color: theme.colors.textMuted, marginTop: 4 }}>
-        PPL / UL strength tracking
-      </Text>
-
       <View
         style={{
           marginTop: 20,

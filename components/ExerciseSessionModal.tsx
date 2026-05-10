@@ -1,3 +1,4 @@
+import { useTheme } from "@/lib/theme";
 import { useEffect, useState } from "react";
 import { Modal, Pressable, Text, TextInput, View } from "react-native";
 
@@ -47,6 +48,8 @@ export default function ExerciseSessionModal({
   onCompleteSet,
   onSkipRest,
 }: Props) {
+  const theme = useTheme();
+
   const [setNumber, setSetNumber] = useState(startingSetNumber);
   const [reps, setReps] = useState("");
   const [weightKg, setWeightKg] = useState("");
@@ -96,7 +99,10 @@ export default function ExerciseSessionModal({
       <View
         style={{
           flex: 1,
-          backgroundColor: "rgba(0,0,0,0.35)",
+          backgroundColor:
+            theme.mode === "dark"
+              ? "rgba(0,0,0,0.65)"
+              : "rgba(15,23,42,0.35)",
           justifyContent: "center",
           alignItems: "center",
           padding: 18,
@@ -106,15 +112,13 @@ export default function ExerciseSessionModal({
           style={{
             width: "100%",
             maxWidth: 420,
-            backgroundColor: "#fff",
-            borderRadius: 24,
+            backgroundColor: theme.colors.surface,
+            borderRadius: theme.radius.xl,
             padding: 20,
             minHeight: 440,
-            shadowColor: "#000",
-            shadowOffset: { width: 0, height: 8 },
-            shadowOpacity: 0.2,
-            shadowRadius: 16,
-            elevation: 10,
+            borderWidth: 1,
+            borderColor: theme.colors.border,
+            ...theme.shadow.card,
           }}
         >
           <View
@@ -126,13 +130,19 @@ export default function ExerciseSessionModal({
             }}
           >
             <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 22, fontWeight: "900" }}>
+              <Text
+                style={{
+                  fontSize: 22,
+                  fontWeight: "900",
+                  color: theme.colors.text,
+                }}
+              >
                 {exercise.name}
               </Text>
 
               <Text
                 style={{
-                  color: "#666",
+                  color: theme.colors.textMuted,
                   marginTop: 4,
                   textTransform: "capitalize",
                 }}
@@ -145,13 +155,17 @@ export default function ExerciseSessionModal({
             <Pressable
               onPress={onClose}
               style={{
-                backgroundColor: "#F1F1F1",
+                backgroundColor: theme.colors.surfaceAlt,
                 paddingHorizontal: 14,
                 paddingVertical: 10,
-                borderRadius: 999,
+                borderRadius: theme.radius.pill,
+                borderWidth: 1,
+                borderColor: theme.colors.border,
               }}
             >
-              <Text style={{ fontWeight: "800" }}>Close</Text>
+              <Text style={{ fontWeight: "800", color: theme.colors.text }}>
+                Close
+              </Text>
             </Pressable>
           </View>
 
@@ -171,18 +185,19 @@ export default function ExerciseSessionModal({
                   fontSize: 44,
                   fontWeight: "900",
                   marginTop: 12,
+                  color: theme.colors.text,
                 }}
               >
                 {formatRest(restRemaining)}
               </Text>
 
-              <Text style={{ color: "#666", marginTop: 8 }}>
+              <Text style={{ color: theme.colors.textMuted, marginTop: 8 }}>
                 Rest before Set {nextSetNumber}
               </Text>
 
               <Text
                 style={{
-                  color: "#888",
+                  color: theme.colors.textFaint,
                   marginTop: 8,
                   textAlign: "center",
                   lineHeight: 20,
@@ -195,13 +210,18 @@ export default function ExerciseSessionModal({
                 onPress={onSkipRest}
                 style={{
                   marginTop: 24,
-                  backgroundColor: "#111",
+                  backgroundColor: theme.colors.primary,
                   paddingHorizontal: 24,
                   paddingVertical: 14,
-                  borderRadius: 999,
+                  borderRadius: theme.radius.pill,
                 }}
               >
-                <Text style={{ color: "#fff", fontWeight: "800" }}>
+                <Text
+                  style={{
+                    color: theme.colors.textInverse,
+                    fontWeight: "800",
+                  }}
+                >
                   Skip Rest
                 </Text>
               </Pressable>
@@ -210,17 +230,19 @@ export default function ExerciseSessionModal({
             <>
               <View
                 style={{
-                  backgroundColor: "#111",
+                  backgroundColor: theme.colors.primary,
                   borderRadius: 20,
                   padding: 18,
                   marginTop: 20,
                 }}
               >
-                <Text style={{ color: "#aaa" }}>Current Set</Text>
+                <Text style={{ color: theme.colors.textInverse }}>
+                  Current Set
+                </Text>
 
                 <Text
                   style={{
-                    color: "#fff",
+                    color: theme.colors.textInverse,
                     fontSize: 34,
                     fontWeight: "900",
                     marginTop: 6,
@@ -229,48 +251,76 @@ export default function ExerciseSessionModal({
                   Set {setNumber}
                 </Text>
 
-                <Text style={{ color: "#bbb", marginTop: 8 }}>
+                <Text style={{ color: theme.colors.textInverse, marginTop: 8 }}>
                   Log reps and weight, then start rest.
                 </Text>
               </View>
 
               <View style={{ flexDirection: "row", gap: 10, marginTop: 18 }}>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontWeight: "700", marginBottom: 8 }}>
+                  <Text
+                    style={{
+                      fontWeight: "700",
+                      marginBottom: 8,
+                      color: theme.colors.text,
+                    }}
+                  >
                     Reps
                   </Text>
+
                   <TextInput
                     value={reps}
                     onChangeText={setReps}
                     keyboardType="numeric"
                     placeholder="8"
+                    placeholderTextColor={theme.colors.textFaint}
                     style={{
-                      backgroundColor: "#F7F7F7",
-                      borderRadius: 14,
+                      backgroundColor: theme.colors.surfaceAlt,
+                      borderRadius: theme.radius.lg,
                       padding: 14,
+                      color: theme.colors.text,
+                      borderWidth: 1,
+                      borderColor: theme.colors.border,
                     }}
                   />
                 </View>
 
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontWeight: "700", marginBottom: 8 }}>
+                  <Text
+                    style={{
+                      fontWeight: "700",
+                      marginBottom: 8,
+                      color: theme.colors.text,
+                    }}
+                  >
                     Weight kg
                   </Text>
+
                   <TextInput
                     value={weightKg}
                     onChangeText={setWeightKg}
                     keyboardType="numeric"
                     placeholder="80"
+                    placeholderTextColor={theme.colors.textFaint}
                     style={{
-                      backgroundColor: "#F7F7F7",
-                      borderRadius: 14,
+                      backgroundColor: theme.colors.surfaceAlt,
+                      borderRadius: theme.radius.lg,
                       padding: 14,
+                      color: theme.colors.text,
+                      borderWidth: 1,
+                      borderColor: theme.colors.border,
                     }}
                   />
                 </View>
               </View>
 
-              <Text style={{ fontWeight: "700", marginTop: 18 }}>
+              <Text
+                style={{
+                  fontWeight: "700",
+                  marginTop: 18,
+                  color: theme.colors.text,
+                }}
+              >
                 Rest Seconds
               </Text>
 
@@ -279,25 +329,34 @@ export default function ExerciseSessionModal({
                 onChangeText={setRestSeconds}
                 keyboardType="numeric"
                 placeholder="90"
+                placeholderTextColor={theme.colors.textFaint}
                 style={{
-                  backgroundColor: "#F7F7F7",
-                  borderRadius: 14,
+                  backgroundColor: theme.colors.surfaceAlt,
+                  borderRadius: theme.radius.lg,
                   padding: 14,
                   marginTop: 8,
+                  color: theme.colors.text,
+                  borderWidth: 1,
+                  borderColor: theme.colors.border,
                 }}
               />
 
               <Pressable
                 onPress={completeSet}
                 style={{
-                  backgroundColor: "#111",
-                  borderRadius: 18,
+                  backgroundColor: theme.colors.primary,
+                  borderRadius: theme.radius.lg,
                   padding: 18,
                   alignItems: "center",
                   marginTop: 24,
                 }}
               >
-                <Text style={{ color: "#fff", fontWeight: "900" }}>
+                <Text
+                  style={{
+                    color: theme.colors.textInverse,
+                    fontWeight: "900",
+                  }}
+                >
                   Complete Set & Start Rest
                 </Text>
               </Pressable>
@@ -305,14 +364,18 @@ export default function ExerciseSessionModal({
               <Pressable
                 onPress={onClose}
                 style={{
-                  backgroundColor: "#F1F1F1",
-                  borderRadius: 18,
+                  backgroundColor: theme.colors.surfaceAlt,
+                  borderRadius: theme.radius.lg,
                   padding: 16,
                   alignItems: "center",
                   marginTop: 10,
+                  borderWidth: 1,
+                  borderColor: theme.colors.border,
                 }}
               >
-                <Text style={{ fontWeight: "800" }}>End Exercise</Text>
+                <Text style={{ fontWeight: "800", color: theme.colors.text }}>
+                  End Exercise
+                </Text>
               </Pressable>
             </>
           )}

@@ -212,6 +212,17 @@ export default function CardioHome() {
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
       }
     >
+      <Text
+        style={{
+          fontSize: 28,
+          fontWeight: "800",
+          marginTop: 48,
+          color: theme.colors.text,
+        }}
+      >
+        Cardio
+      </Text>
+
       <View style={{ flexDirection: "row", gap: 12, marginTop: 20 }}>
         <StartButton
           theme={theme}

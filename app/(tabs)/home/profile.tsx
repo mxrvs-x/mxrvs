@@ -2,13 +2,13 @@ import EditMacroTargetModal, {
   MacroTargetForm,
 } from "@/components/EditMacroTargetModal";
 import EditProfileModal from "@/components/EditProfileModal";
+import ThemedAlert from "@/components/ThemedAlert";
 import { supabase } from "@/lib/supabase";
 import { AppTheme, useTheme } from "@/lib/theme";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -57,6 +57,40 @@ export default function ProfileScreen() {
 
   const [target, setTarget] = useState<MacroTarget | null>(null);
   const [userDetails, setUserDetails] = useState<UserDetails | null>(null);
+
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [alertTitle, setAlertTitle] = useState("");
+  const [alertMessage, setAlertMessage] = useState("");
+  const [alertConfirmText, setAlertConfirmText] = useState("OK");
+  const [alertCancelText, setAlertCancelText] = useState<string | undefined>();
+  const [alertDanger, setAlertDanger] = useState(false);
+  const [alertOnConfirm, setAlertOnConfirm] = useState<
+    (() => void) | undefined
+  >();
+
+  function showAlert({
+    title,
+    message,
+    confirmText = "OK",
+    cancelText,
+    danger = false,
+    onConfirm,
+  }: {
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    danger?: boolean;
+    onConfirm?: () => void;
+  }) {
+    setAlertTitle(title);
+    setAlertMessage(message);
+    setAlertConfirmText(confirmText);
+    setAlertCancelText(cancelText);
+    setAlertDanger(danger);
+    setAlertOnConfirm(() => onConfirm);
+    setAlertOpen(true);
+  }
 
   async function loadProfile() {
     const {
@@ -117,20 +151,27 @@ export default function ProfileScreen() {
     password: string;
   }) {
     if (!data.displayName.trim()) {
-      Alert.alert("Required", "Display name is required.");
+      showAlert({
+        title: "Required",
+        message: "Display name is required.",
+      });
       return;
     }
 
     if (!data.email.trim()) {
-      Alert.alert("Required", "Email is required.");
+      showAlert({
+        title: "Required",
+        message: "Email is required.",
+      });
       return;
     }
 
     if (data.password.trim() && data.password.trim().length < 6) {
-      Alert.alert(
-        "Invalid Password",
-        "Password must be at least 6 characters.",
-      );
+      showAlert({
+        title: "Invalid Password",
+        message: "Password must be at least 6 characters.",
+        danger: true,
+      });
       return;
     }
 
@@ -163,7 +204,11 @@ export default function ProfileScreen() {
         await supabase.auth.updateUser(updates);
 
       if (error) {
-        Alert.alert("Update Failed", error.message);
+        showAlert({
+          title: "Update Failed",
+          message: error.message,
+          danger: true,
+        });
         return;
       }
 
@@ -177,15 +222,19 @@ export default function ProfileScreen() {
 
       setEditVisible(false);
 
-      Alert.alert(
-        "Profile Updated",
-        updates.email
+      showAlert({
+        title: "Profile Updated",
+        message: updates.email
           ? "Profile updated. Please check your new email for confirmation."
           : "Your profile has been updated successfully.",
-      );
+      });
     } catch (error) {
       console.log("Update profile error:", error);
-      Alert.alert("Error", "Something went wrong while updating your profile.");
+      showAlert({
+        title: "Error",
+        message: "Something went wrong while updating your profile.",
+        danger: true,
+      });
     } finally {
       setSavingProfile(false);
     }
@@ -219,7 +268,11 @@ export default function ProfileScreen() {
     } = await supabase.auth.getUser();
 
     if (!user) {
-      Alert.alert("Error", "No authenticated user found.");
+      showAlert({
+        title: "Error",
+        message: "No authenticated user found.",
+        danger: true,
+      });
       return;
     }
 
@@ -232,7 +285,10 @@ export default function ProfileScreen() {
       !form.carbs_target_g.trim() ||
       !form.fat_target_g.trim()
     ) {
-      Alert.alert("Required", "Please complete all target fields.");
+      showAlert({
+        title: "Required",
+        message: "Please complete all target fields.",
+      });
       return;
     }
 
@@ -263,20 +319,51 @@ export default function ProfileScreen() {
       const { data, error } = await query.single();
 
       if (error) {
-        Alert.alert("Update Failed", error.message);
+        showAlert({
+          title: "Update Failed",
+          message: error.message,
+          danger: true,
+        });
         return;
       }
 
       setTarget(data);
       setEditTargetVisible(false);
-      Alert.alert("Updated", "Your macro target has been updated.");
+
+      showAlert({
+        title: "Updated",
+        message: "Your macro target has been updated.",
+      });
     } catch (error) {
       console.log("Update macro target error:", error);
-      Alert.alert("Error", "Something went wrong while updating your target.");
+      showAlert({
+        title: "Error",
+        message: "Something went wrong while updating your target.",
+        danger: true,
+      });
     } finally {
       setSavingTarget(false);
     }
   }
+
+  const themedAlert = (
+    <ThemedAlert
+      visible={alertOpen}
+      title={alertTitle}
+      message={alertMessage}
+      confirmText={alertConfirmText}
+      cancelText={alertCancelText}
+      danger={alertDanger}
+      onClose={() => setAlertOpen(false)}
+      onConfirm={() => {
+        setAlertOpen(false);
+
+        if (alertOnConfirm) {
+          alertOnConfirm();
+        }
+      }}
+    />
+  );
 
   if (loading) {
     return (
@@ -292,15 +379,14 @@ export default function ProfileScreen() {
             Loading profile...
           </Text>
         </View>
+
+        {themedAlert}
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView
-      edges={["top", "bottom"]}
-      style={{ flex: 1, backgroundColor: theme.colors.background }}
-    >
+    <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
       <EditProfileModal
         visible={editVisible}
         saving={savingProfile}
@@ -332,34 +418,87 @@ export default function ProfileScreen() {
           />
         }
       >
-        <Text
-          style={{
-            fontSize: 30,
-            fontWeight: "900",
-            color: theme.colors.text,
-          }}
-        >
-          Profile
-        </Text>
+        {/* Compact header with avatar */}
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+          <View
+            style={{
+              width: 64,
+              height: 64,
+              borderRadius: 999,
+              backgroundColor: theme.colors.surfaceAlt,
+              borderWidth: 1,
+              borderColor: theme.colors.border,
+              justifyContent: "center",
+              alignItems: "center",
+            }}
+          >
+            <Text style={{ color: theme.colors.textMuted, fontWeight: "900" }}>
+              {userDetails?.display_name
+                ? userDetails.display_name.slice(0, 1).toUpperCase()
+                : "U"}
+            </Text>
+          </View>
+
+          <View style={{ flex: 1 }}>
+            <Text
+              style={{
+                fontSize: 20,
+                fontWeight: "900",
+                color: theme.colors.text,
+              }}
+            >
+              {userDetails?.display_name || "Marviquint Bahio"}
+            </Text>
+            <Text style={{ marginTop: 4, color: theme.colors.textMuted }}>
+              {userDetails?.email || "—"}
+            </Text>
+          </View>
+
+          <Pressable
+            onPress={() => setEditVisible(true)}
+            style={{
+              paddingHorizontal: 12,
+              height: 40,
+              borderRadius: theme.radius.md,
+              backgroundColor: theme.colors.accent,
+              justifyContent: "center",
+              alignItems: "center",
+            }}
+          >
+            <Text
+              style={{
+                color: theme.colors.textInverse,
+                fontWeight: "900",
+              }}
+            >
+              Edit
+            </Text>
+          </Pressable>
+        </View>
 
         <Text
           style={{
-            marginTop: 6,
+            marginTop: 12,
             color: theme.colors.textMuted,
             lineHeight: 20,
+            fontSize: 13,
           }}
         >
           Your account details, body stats, and macro targets.
         </Text>
 
-        <View style={cardStyle(theme, 24)}>
-          <CardHeader
-            theme={theme}
-            title="User Details"
-            onEdit={() => setEditVisible(true)}
-          />
+        <View style={cardStyle(theme, 18)}>
+          <Text
+            style={{
+              fontSize: 16,
+              fontWeight: "900",
+              color: theme.colors.text,
+            }}
+          >
+            Account
+          </Text>
 
-          <View style={{ marginTop: 16 }}>
+          <View style={{ marginTop: 12 }}>
             <DetailRow
               theme={theme}
               label="Display Name"
@@ -375,7 +514,7 @@ export default function ProfileScreen() {
         </View>
 
         {!target ? (
-          <View style={cardStyle(theme, 18)}>
+          <View style={cardStyle(theme, 14)}>
             <Text
               style={{
                 fontSize: 18,
@@ -391,6 +530,7 @@ export default function ProfileScreen() {
                 marginTop: 8,
                 color: theme.colors.textMuted,
                 lineHeight: 20,
+                fontSize: 13,
               }}
             >
               Add your body stats, goal, calories, and macro targets.
@@ -406,8 +546,8 @@ export default function ProfileScreen() {
           <>
             <View
               style={{
-                marginTop: 18,
-                padding: 18,
+                marginTop: 14,
+                padding: 14,
                 borderRadius: theme.radius.xl,
                 backgroundColor: theme.colors.primaryDark,
                 borderWidth: 1,
@@ -422,24 +562,43 @@ export default function ProfileScreen() {
                   alignItems: "center",
                 }}
               >
-                <Text style={{ color: "#D1FAE5", fontWeight: "700" }}>
-                  Current Goal
-                </Text>
+                <View>
+                  <Text style={{ color: "#D1FAE5", fontWeight: "700" }}>
+                    Current Goal
+                  </Text>
+                  <Text
+                    style={{
+                      marginTop: 6,
+                      fontSize: 22,
+                      fontWeight: "900",
+                      color: theme.colors.textInverse,
+                    }}
+                  >
+                    {formatGoal(target.goal)}
+                  </Text>
+                  <Text
+                    style={{ marginTop: 6, color: "#D1FAE5", fontSize: 13 }}
+                  >
+                    Activity: {formatGoal(target.activity_level)}
+                  </Text>
+                </View>
 
                 <Pressable
                   onPress={() => setEditTargetVisible(true)}
                   style={{
-                    paddingHorizontal: 14,
-                    height: 34,
+                    paddingHorizontal: 12,
+                    height: 36,
                     borderRadius: theme.radius.md,
-                    backgroundColor: theme.colors.accent,
+                    backgroundColor: theme.colors.surfaceAlt,
                     justifyContent: "center",
                     alignItems: "center",
+                    borderWidth: 1,
+                    borderColor: theme.colors.border,
                   }}
                 >
                   <Text
                     style={{
-                      color: theme.colors.textInverse,
+                      color: theme.colors.text,
                       fontSize: 13,
                       fontWeight: "900",
                     }}
@@ -448,27 +607,12 @@ export default function ProfileScreen() {
                   </Text>
                 </Pressable>
               </View>
-
-              <Text
-                style={{
-                  marginTop: 8,
-                  fontSize: 30,
-                  fontWeight: "900",
-                  color: theme.colors.textInverse,
-                }}
-              >
-                {formatGoal(target.goal)}
-              </Text>
-
-              <Text style={{ marginTop: 8, color: "#D1FAE5" }}>
-                Activity Level: {formatGoal(target.activity_level)}
-              </Text>
             </View>
 
-            <View style={cardStyle(theme, 18)}>
+            <View style={cardStyle(theme, 14)}>
               <Text
                 style={{
-                  fontSize: 20,
+                  fontSize: 16,
                   fontWeight: "900",
                   color: theme.colors.text,
                 }}
@@ -476,7 +620,7 @@ export default function ProfileScreen() {
                 Body Stats
               </Text>
 
-              <View style={{ flexDirection: "row", marginTop: 16, gap: 8 }}>
+              <View style={{ flexDirection: "row", marginTop: 12, gap: 8 }}>
                 <StatBox
                   theme={theme}
                   label="Weight"
@@ -490,21 +634,33 @@ export default function ProfileScreen() {
               </View>
             </View>
 
-            <View style={cardStyle(theme, 18)}>
-              <Text
+            <View style={cardStyle(theme, 14)}>
+              <View
                 style={{
-                  fontSize: 20,
-                  fontWeight: "900",
-                  color: theme.colors.text,
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "center",
                 }}
               >
-                Daily Macro Targets
-              </Text>
+                <Text
+                  style={{
+                    fontSize: 16,
+                    fontWeight: "900",
+                    color: theme.colors.text,
+                  }}
+                >
+                  Daily Macro Targets
+                </Text>
+                <Text style={{ fontSize: 12, color: theme.colors.textMuted }}>
+                  Last updated:{" "}
+                  {new Date(target.created_at).toLocaleDateString()}
+                </Text>
+              </View>
 
               <Text
                 style={{
-                  marginTop: 14,
-                  fontSize: 36,
+                  marginTop: 12,
+                  fontSize: 28,
                   fontWeight: "900",
                   color: theme.colors.calories,
                 }}
@@ -512,7 +668,7 @@ export default function ProfileScreen() {
                 {Math.round(Number(target.calories_target))} kcal
               </Text>
 
-              <View style={{ flexDirection: "row", marginTop: 18, gap: 8 }}>
+              <View style={{ flexDirection: "row", marginTop: 14, gap: 8 }}>
                 <MacroBox
                   theme={theme}
                   label="Protein"
@@ -536,72 +692,22 @@ export default function ProfileScreen() {
           </>
         )}
       </ScrollView>
-    </SafeAreaView>
+
+      {themedAlert}
+    </View>
   );
 }
 
 function cardStyle(theme: AppTheme, marginTop: number) {
   return {
     marginTop,
-    padding: 18,
+    padding: 14,
     borderRadius: theme.radius.xl,
     backgroundColor: theme.colors.surface,
     borderWidth: 1,
     borderColor: theme.colors.border,
     ...theme.shadow.card,
   };
-}
-
-function CardHeader({
-  theme,
-  title,
-  onEdit,
-}: {
-  theme: AppTheme;
-  title: string;
-  onEdit: () => void;
-}) {
-  return (
-    <View
-      style={{
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-      }}
-    >
-      <Text
-        style={{
-          fontSize: 20,
-          fontWeight: "900",
-          color: theme.colors.text,
-        }}
-      >
-        {title}
-      </Text>
-
-      <Pressable
-        onPress={onEdit}
-        style={{
-          paddingHorizontal: 14,
-          height: 36,
-          borderRadius: theme.radius.md,
-          backgroundColor: theme.colors.primary,
-          justifyContent: "center",
-          alignItems: "center",
-        }}
-      >
-        <Text
-          style={{
-            color: theme.colors.textInverse,
-            fontSize: 13,
-            fontWeight: "900",
-          }}
-        >
-          Edit
-        </Text>
-      </Pressable>
-    </View>
-  );
 }
 
 function DetailRow({
@@ -618,7 +724,7 @@ function DetailRow({
   return (
     <View
       style={{
-        paddingVertical: 12,
+        paddingVertical: 10,
         borderBottomWidth: isLast ? 0 : 1,
         borderBottomColor: theme.colors.border,
       }}
@@ -628,7 +734,7 @@ function DetailRow({
       </Text>
       <Text
         style={{
-          marginTop: 4,
+          marginTop: 6,
           fontSize: 15,
           fontWeight: "800",
           color: theme.colors.text,
@@ -653,11 +759,12 @@ function StatBox({
     <View
       style={{
         flex: 1,
-        padding: 14,
+        padding: 12,
         borderRadius: theme.radius.lg,
         backgroundColor: theme.colors.surfaceAlt,
         borderWidth: 1,
         borderColor: theme.colors.border,
+        alignItems: "center",
       }}
     >
       <Text style={{ color: theme.colors.textMuted, fontSize: 12 }}>
@@ -665,8 +772,8 @@ function StatBox({
       </Text>
       <Text
         style={{
-          marginTop: 5,
-          fontSize: 18,
+          marginTop: 6,
+          fontSize: 16,
           fontWeight: "900",
           color: theme.colors.text,
         }}
@@ -692,7 +799,7 @@ function MacroBox({
     <View
       style={{
         flex: 1,
-        padding: 12,
+        padding: 10,
         borderRadius: theme.radius.lg,
         backgroundColor: theme.colors.surfaceAlt,
         borderWidth: 1,
@@ -704,8 +811,8 @@ function MacroBox({
       </Text>
       <Text
         style={{
-          marginTop: 5,
-          fontSize: 17,
+          marginTop: 6,
+          fontSize: 15,
           fontWeight: "900",
           color,
         }}
@@ -729,8 +836,8 @@ function PrimaryButton({
     <Pressable
       onPress={onPress}
       style={{
-        marginTop: 16,
-        height: 46,
+        marginTop: 12,
+        height: 44,
         borderRadius: theme.radius.md,
         backgroundColor: theme.colors.accent,
         justifyContent: "center",

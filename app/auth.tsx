@@ -1,3 +1,4 @@
+import ThemedAlert from "@/components/ThemedAlert";
 import { useTheme } from "@/lib/theme";
 import * as LocalAuthentication from "expo-local-authentication";
 import { useRouter } from "expo-router";
@@ -5,7 +6,6 @@ import * as SecureStore from "expo-secure-store";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -33,14 +33,48 @@ export default function AuthScreen() {
   const [checking, setChecking] = useState(true);
   const [biometricReady, setBiometricReady] = useState(false);
 
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [alertTitle, setAlertTitle] = useState("");
+  const [alertMessage, setAlertMessage] = useState("");
+  const [alertConfirmText, setAlertConfirmText] = useState("OK");
+  const [alertCancelText, setAlertCancelText] = useState<string | undefined>();
+  const [alertDanger, setAlertDanger] = useState(false);
+  const [alertOnConfirm, setAlertOnConfirm] = useState<
+    (() => void) | undefined
+  >();
+
   useEffect(() => {
     initAuth();
   }, []);
 
+  function showAlert({
+    title,
+    message,
+    confirmText = "OK",
+    cancelText,
+    danger = false,
+    onConfirm,
+  }: {
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    danger?: boolean;
+    onConfirm?: () => void;
+  }) {
+    setAlertTitle(title);
+    setAlertMessage(message);
+    setAlertConfirmText(confirmText);
+    setAlertCancelText(cancelText);
+    setAlertDanger(danger);
+    setAlertOnConfirm(() => onConfirm);
+    setAlertOpen(true);
+  }
+
   async function initAuth() {
     const savedEmail = await SecureStore.getItemAsync(SAVED_EMAIL_KEY);
     const biometricEnabled = await SecureStore.getItemAsync(
-      BIOMETRIC_ENABLED_KEY
+      BIOMETRIC_ENABLED_KEY,
     );
 
     if (savedEmail) {
@@ -60,8 +94,8 @@ export default function AuthScreen() {
           savedEmail &&
           biometricEnabled === "true" &&
           hasHardware &&
-          isEnrolled
-      )
+          isEnrolled,
+      ),
     );
 
     setChecking(false);
@@ -69,7 +103,10 @@ export default function AuthScreen() {
 
   async function signIn() {
     if (!email || !password) {
-      Alert.alert("Missing fields", "Enter your email and password.");
+      showAlert({
+        title: "Missing Fields",
+        message: "Enter your email and password.",
+      });
       return;
     }
 
@@ -84,7 +121,11 @@ export default function AuthScreen() {
     setLoading(false);
 
     if (error) {
-      Alert.alert("Login failed", error.message);
+      showAlert({
+        title: "Login Failed",
+        message: error.message,
+        danger: true,
+      });
       return;
     }
 
@@ -117,15 +158,35 @@ export default function AuthScreen() {
     if (session) {
       router.replace("/(tabs)" as any);
     } else {
-      Alert.alert(
-        "Session expired",
-        "Please login again with your email and password."
-      );
+      showAlert({
+        title: "Session Expired",
+        message: "Please login again with your email and password.",
+        danger: true,
+      });
 
       await SecureStore.deleteItemAsync(BIOMETRIC_ENABLED_KEY);
       setBiometricReady(false);
     }
   }
+
+  const themedAlert = (
+    <ThemedAlert
+      visible={alertOpen}
+      title={alertTitle}
+      message={alertMessage}
+      confirmText={alertConfirmText}
+      cancelText={alertCancelText}
+      danger={alertDanger}
+      onClose={() => setAlertOpen(false)}
+      onConfirm={() => {
+        setAlertOpen(false);
+
+        if (alertOnConfirm) {
+          alertOnConfirm();
+        }
+      }}
+    />
+  );
 
   if (checking) {
     return (
@@ -138,6 +199,7 @@ export default function AuthScreen() {
         }}
       >
         <ActivityIndicator color={theme.colors.primary} />
+        {themedAlert}
       </SafeAreaView>
     );
   }
@@ -307,6 +369,8 @@ export default function AuthScreen() {
           </ScrollView>
         </TouchableWithoutFeedback>
       </KeyboardAvoidingView>
+
+      {themedAlert}
     </SafeAreaView>
   );
 }
