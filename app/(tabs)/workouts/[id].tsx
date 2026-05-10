@@ -1,20 +1,24 @@
 import { supabase } from "@/lib/supabase";
 import { useTheme } from "@/lib/theme";
+import * as MediaLibrary from "expo-media-library";
 import {
   Stack,
   useFocusEffect,
   useLocalSearchParams,
   useRouter,
 } from "expo-router";
-import { X } from "lucide-react-native";
-import { useCallback, useState } from "react";
+import * as Sharing from "expo-sharing";
+import { Download, Share2, X } from "lucide-react-native";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Pressable,
   Text,
   View,
 } from "react-native";
+import { captureRef } from "react-native-view-shot";
 
 type WorkoutType = "push" | "pull" | "legs" | "upper" | "lower" | "rest";
 
@@ -46,6 +50,15 @@ type Exercise = {
 type DisplaySet = WorkoutSet & {
   exercise_name: string;
   muscle_group: string | null;
+};
+
+type GroupedExercise = {
+  exercise_id: string;
+  exercise_name: string;
+  muscle_group: string | null;
+  sets: DisplaySet[];
+  totalVolume: number;
+  totalReps: number;
 };
 
 function isWorkoutType(value?: string | string[]): value is WorkoutType {
@@ -92,6 +105,7 @@ function formatRest(seconds: number | null) {
 export default function WorkoutDetailsScreen() {
   const router = useRouter();
   const theme = useTheme();
+  const exportRef = useRef<View>(null);
 
   const params = useLocalSearchParams<{
     id: string;
@@ -105,15 +119,101 @@ export default function WorkoutDetailsScreen() {
     : "push";
 
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [workout, setWorkout] = useState<Workout | null>(null);
   const [sets, setSets] = useState<DisplaySet[]>([]);
 
   const totalVolume = sets.reduce((sum, set) => {
-    return sum + (Number(set.reps) || 0) * (Number(set.weight_kg) || 0);
+    return sum + Number(set.reps || 0) * Number(set.weight_kg || 0);
   }, 0);
+
+  const totalReps = sets.reduce((sum, set) => {
+    return sum + Number(set.reps || 0);
+  }, 0);
+
+  const groupedExercises = useMemo<GroupedExercise[]>(() => {
+    const grouped = sets.reduce<Record<string, GroupedExercise>>((acc, set) => {
+      const volume = Number(set.reps || 0) * Number(set.weight_kg || 0);
+
+      if (!acc[set.exercise_id]) {
+        acc[set.exercise_id] = {
+          exercise_id: set.exercise_id,
+          exercise_name: set.exercise_name,
+          muscle_group: set.muscle_group,
+          sets: [],
+          totalVolume: 0,
+          totalReps: 0,
+        };
+      }
+
+      acc[set.exercise_id].sets.push(set);
+      acc[set.exercise_id].totalVolume += volume;
+      acc[set.exercise_id].totalReps += Number(set.reps || 0);
+
+      return acc;
+    }, {});
+
+    return Object.values(grouped).map((exercise) => ({
+      ...exercise,
+      sets: exercise.sets.sort((a, b) => a.set_number - b.set_number),
+    }));
+  }, [sets]);
 
   function handleClosePress() {
     router.back();
+  }
+
+  async function exportWorkoutImage(type: "save" | "share") {
+    try {
+      if (!exportRef.current || exporting) return;
+
+      setExporting(true);
+
+      const uri = await captureRef(exportRef.current, {
+        format: "png",
+        quality: 1,
+        result: "tmpfile",
+      });
+
+      if (type === "save") {
+        const permission = await MediaLibrary.requestPermissionsAsync(false);
+
+        if (!permission.granted) {
+          Alert.alert(
+            "Permission Required",
+            "Please allow photo library access to save your workout summary.",
+          );
+          setExporting(false);
+          return;
+        }
+
+        await MediaLibrary.saveToLibraryAsync(uri);
+        Alert.alert("Saved", "Workout summary saved to gallery.");
+      } else {
+        const canShare = await Sharing.isAvailableAsync();
+
+        if (!canShare) {
+          Alert.alert("Sharing unavailable", "Sharing is not available here.");
+          setExporting(false);
+          return;
+        }
+
+        await Sharing.shareAsync(uri, {
+          mimeType: "image/png",
+          dialogTitle: "Share Workout Summary",
+        });
+      }
+
+      setExporting(false);
+    } catch (error) {
+      console.log("Export workout image error:", error);
+      setExporting(false);
+
+      Alert.alert(
+        "Export Failed",
+        "Something went wrong while exporting workout summary.",
+      );
+    }
   }
 
   async function loadWorkoutDetails() {
@@ -142,8 +242,10 @@ export default function WorkoutDetailsScreen() {
     }
 
     const currentWorkout = workoutData as Workout;
+    theme.setSessionTheme(currentWorkout.workout_type);
 
     const workoutSets = (setData || []) as WorkoutSet[];
+
     const exerciseIds = Array.from(
       new Set(workoutSets.map((set) => set.exercise_id)),
     );
@@ -159,7 +261,7 @@ export default function WorkoutDetailsScreen() {
       exerciseRows = (exercises || []) as Exercise[];
     }
 
-    const mappedSets = workoutSets.map((set) => {
+    const mappedSets: DisplaySet[] = workoutSets.map((set) => {
       const exercise = exerciseRows.find((item) => item.id === set.exercise_id);
 
       return {
@@ -176,7 +278,10 @@ export default function WorkoutDetailsScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      theme.setSessionTheme(currentSplit);
+      if (currentSplit) {
+        theme.setSessionTheme(currentSplit);
+      }
+
       loadWorkoutDetails();
 
       return () => {
@@ -315,6 +420,47 @@ export default function WorkoutDetailsScreen() {
               <X size={30} color={theme.colors.text} />
             </Pressable>
           ),
+          headerRight: () => (
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <Pressable
+                onPress={() => exportWorkoutImage("share")}
+                disabled={exporting}
+                style={{
+                  width: 42,
+                  height: 42,
+                  borderRadius: 21,
+                  backgroundColor: theme.colors.background,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  opacity: exporting ? 0.5 : 1,
+                }}
+              >
+                <Share2 size={20} color={theme.colors.text} />
+              </Pressable>
+
+              <Pressable
+                onPress={() => exportWorkoutImage("save")}
+                disabled={exporting}
+                style={{
+                  width: 42,
+                  height: 42,
+                  borderRadius: 21,
+                  backgroundColor: theme.colors.primary,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  opacity: exporting ? 0.5 : 1,
+                }}
+              >
+                <Download size={20} color={theme.colors.textInverse} />
+              </Pressable>
+            </View>
+          ),
         }}
       />
 
@@ -322,88 +468,269 @@ export default function WorkoutDetailsScreen() {
         style={{ flex: 1, backgroundColor: theme.colors.background }}
         data={sets}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={{ padding: 16, paddingBottom: 90 }}
+        contentContainerStyle={{ padding: 16, paddingBottom: 20 }}
         ListHeaderComponent={
           <View>
             <View
+              ref={exportRef}
+              collapsable={false}
               style={{
-                marginTop: 24,
-                flexDirection: "row",
-                justifyContent: "space-between",
-                alignItems: "center",
-                gap: 12,
+                backgroundColor: theme.colors.background,
+                padding: 16,
+                borderRadius: 24,
               }}
             >
-              <View style={{ flex: 1 }}>
+              <View
+                style={{
+                  marginTop: 8,
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 12,
+                }}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text
+                    style={{
+                      fontSize: 28,
+                      fontWeight: "900",
+                      color: theme.colors.text,
+                    }}
+                  >
+                    {formatWorkoutType(workout.workout_type)}
+                  </Text>
+
+                  <Text style={{ color: theme.colors.textMuted, marginTop: 4 }}>
+                    {formatDate(workout.workout_date)}
+                  </Text>
+                </View>
+
                 <Text
                   style={{
-                    fontSize: 28,
+                    color: theme.colors.primary,
+                    fontSize: 13,
                     fontWeight: "900",
-                    color: theme.colors.text,
                   }}
                 >
-                  {formatWorkoutType(workout.workout_type)}
-                </Text>
-
-                <Text style={{ color: theme.colors.textMuted, marginTop: 4 }}>
-                  {formatDate(workout.workout_date)}
+                  mxrvs
                 </Text>
               </View>
-            </View>
 
-            <View
-              style={{
-                backgroundColor: theme.colors.primary,
-                borderRadius: 20,
-                padding: 18,
-                marginTop: 20,
-              }}
-            >
-              <Text style={{ color: theme.colors.textInverse }}>
-                Session Summary
-              </Text>
+              <View
+                style={{
+                  backgroundColor: theme.colors.primary,
+                  borderRadius: 20,
+                  padding: 18,
+                  marginTop: 20,
+                }}
+              >
+                <Text style={{ color: theme.colors.textInverse }}>
+                  Session Summary
+                </Text>
+
+                <Text
+                  style={{
+                    color: theme.colors.textInverse,
+                    fontSize: 34,
+                    fontWeight: "900",
+                    marginTop: 6,
+                  }}
+                >
+                  {(totalVolume || 0).toLocaleString()} kg
+                </Text>
+
+                <Text style={{ color: theme.colors.textInverse, marginTop: 8 }}>
+                  {sets.length} sets • {totalReps} reps •{" "}
+                  {workout.duration_minutes || 0} min
+                </Text>
+              </View>
+
+              <View
+                style={{
+                  flexDirection: "row",
+                  gap: 8,
+                  marginTop: 12,
+                }}
+              >
+                <ExportStat label="Sets" value={`${sets.length}`} />
+                <ExportStat label="Reps" value={`${totalReps}`} />
+                <ExportStat
+                  label="Volume"
+                  value={`${totalVolume.toLocaleString()} kg`}
+                />
+              </View>
+
+              {workout.notes ? (
+                <View
+                  style={{
+                    backgroundColor: theme.colors.surface,
+                    borderRadius: 16,
+                    padding: 16,
+                    marginTop: 14,
+                    borderWidth: 1,
+                    borderColor: theme.colors.border,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontWeight: "900",
+                      color: theme.colors.text,
+                    }}
+                  >
+                    Notes
+                  </Text>
+
+                  <Text style={{ color: theme.colors.textMuted, marginTop: 6 }}>
+                    {workout.notes}
+                  </Text>
+                </View>
+              ) : null}
 
               <Text
                 style={{
-                  color: theme.colors.textInverse,
-                  fontSize: 34,
+                  fontSize: 18,
                   fontWeight: "900",
-                  marginTop: 6,
+                  marginTop: 22,
+                  marginBottom: 10,
+                  color: theme.colors.text,
                 }}
               >
-                {(totalVolume || 0).toLocaleString()} kg
+                Exercises
               </Text>
 
-              <Text style={{ color: theme.colors.textInverse, marginTop: 8 }}>
-                {sets.length} sets • {workout.duration_minutes || 0} min
+              {groupedExercises.length === 0 ? (
+                <Text style={{ color: theme.colors.textMuted }}>
+                  No exercises found.
+                </Text>
+              ) : (
+                groupedExercises.map((exercise) => (
+                  <View
+                    key={exercise.exercise_id}
+                    style={{
+                      backgroundColor: theme.colors.surface,
+                      borderRadius: 16,
+                      padding: 14,
+                      borderWidth: 1,
+                      borderColor: theme.colors.border,
+                      marginBottom: 10,
+                    }}
+                  >
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        justifyContent: "space-between",
+                        gap: 12,
+                      }}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text
+                          style={{
+                            fontWeight: "900",
+                            fontSize: 16,
+                            color: theme.colors.text,
+                          }}
+                        >
+                          {exercise.exercise_name}
+                        </Text>
+
+                        <Text
+                          style={{
+                            color: theme.colors.textMuted,
+                            marginTop: 3,
+                            textTransform: "capitalize",
+                          }}
+                        >
+                          {exercise.muscle_group || "No muscle group"}
+                        </Text>
+                      </View>
+
+                      <View style={{ alignItems: "flex-end" }}>
+                        <Text
+                          style={{
+                            color: theme.colors.text,
+                            fontWeight: "900",
+                          }}
+                        >
+                          {exercise.sets.length} sets
+                        </Text>
+
+                        <Text
+                          style={{
+                            color: theme.colors.textMuted,
+                            marginTop: 3,
+                            fontSize: 12,
+                          }}
+                        >
+                          {exercise.totalVolume.toLocaleString()} kg
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={{ marginTop: 12, gap: 8 }}>
+                      {exercise.sets.map((set) => {
+                        const setVolume =
+                          Number(set.reps || 0) * Number(set.weight_kg || 0);
+
+                        return (
+                          <View
+                            key={set.id}
+                            style={{
+                              flexDirection: "row",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              backgroundColor: theme.colors.surfaceAlt,
+                              borderRadius: 12,
+                              paddingVertical: 8,
+                              paddingHorizontal: 10,
+                              gap: 10,
+                            }}
+                          >
+                            <Text
+                              style={{
+                                color: theme.colors.text,
+                                fontWeight: "900",
+                                width: 48,
+                              }}
+                            >
+                              Set {set.set_number}
+                            </Text>
+
+                            <Text
+                              style={{
+                                color: theme.colors.textMuted,
+                                flex: 1,
+                              }}
+                            >
+                              {set.reps} reps × {set.weight_kg} kg
+                            </Text>
+
+                            <Text
+                              style={{
+                                color: theme.colors.text,
+                                fontWeight: "900",
+                              }}
+                            >
+                              {setVolume.toLocaleString()} kg
+                            </Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  </View>
+                ))
+              )}
+
+              <Text
+                style={{
+                  marginTop: 10,
+                  textAlign: "center",
+                  color: theme.colors.textMuted,
+                  fontWeight: "800",
+                }}
+              >
+                Logged with mxrvs
               </Text>
             </View>
-
-            {workout.notes ? (
-              <View
-                style={{
-                  backgroundColor: theme.colors.surface,
-                  borderRadius: 16,
-                  padding: 16,
-                  marginTop: 14,
-                  borderWidth: 1,
-                  borderColor: theme.colors.border,
-                }}
-              >
-                <Text
-                  style={{
-                    fontWeight: "900",
-                    color: theme.colors.text,
-                  }}
-                >
-                  Notes
-                </Text>
-
-                <Text style={{ color: theme.colors.textMuted, marginTop: 6 }}>
-                  {workout.notes}
-                </Text>
-              </View>
-            ) : null}
 
             <Text
               style={{
@@ -508,6 +835,37 @@ function MiniStat({ label, value }: { label: string; value: string }) {
       </Text>
 
       <Text style={{ fontWeight: "900", color: theme.colors.text }}>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
+function ExportStat({ label, value }: { label: string; value: string }) {
+  const theme = useTheme();
+
+  return (
+    <View
+      style={{
+        flex: 1,
+        backgroundColor: theme.colors.surface,
+        borderRadius: 14,
+        padding: 12,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+      }}
+    >
+      <Text style={{ fontSize: 11, color: theme.colors.textMuted }}>
+        {label}
+      </Text>
+
+      <Text
+        style={{
+          fontWeight: "900",
+          color: theme.colors.text,
+          marginTop: 4,
+        }}
+      >
         {value}
       </Text>
     </View>

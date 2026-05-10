@@ -1,19 +1,21 @@
+import { AppTheme, useTheme } from "@/lib/theme";
 import {
-    getOfflineCardioSessions,
-    syncOfflineCardioSessions,
+  getOfflineCardioSessions,
+  syncOfflineCardioSessions,
 } from "@/lib/offlineCardio";
 import { supabase } from "@/lib/supabase";
 import NetInfo from "@react-native-community/netinfo";
-import { useFocusEffect, useRouter } from "expo-router";
+import { Stack, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import {
-    ActivityIndicator,
-    FlatList,
-    Pressable,
-    RefreshControl,
-    Text,
-    View,
+  ActivityIndicator,
+  FlatList,
+  Pressable,
+  RefreshControl,
+  Text as RNText,
+  View,
 } from "react-native";
+import { X, ExpandIcon } from "lucide-react-native";
 
 type CardioSession = {
   id: string;
@@ -28,6 +30,11 @@ type CardioSession = {
 };
 
 export default function CardioHistoryScreen() {
+  const theme = useTheme();
+  const Text = (props: any) => (
+    <RNText {...props} style={[{ color: theme.colors.text }, props.style]} />
+  );
+
   const router = useRouter();
 
   const [sessions, setSessions] = useState<CardioSession[]>([]);
@@ -166,6 +173,7 @@ export default function CardioHistoryScreen() {
       date: string | null;
       day: number | null;
     }[] = [];
+
     for (let i = 0; i < firstWeekday; i++) {
       days.push({ date: null, day: null });
     }
@@ -185,11 +193,8 @@ export default function CardioHistoryScreen() {
   function changeMonth(direction: "prev" | "next") {
     const nextDate = new Date(calendarYear, calendarMonth, 1);
 
-    if (direction === "prev") {
-      nextDate.setMonth(nextDate.getMonth() - 1);
-    } else {
-      nextDate.setMonth(nextDate.getMonth() + 1);
-    }
+    if (direction === "prev") nextDate.setMonth(nextDate.getMonth() - 1);
+    else nextDate.setMonth(nextDate.getMonth() + 1);
 
     setCalendarMonth(nextDate.getMonth());
     setCalendarYear(nextDate.getFullYear());
@@ -253,7 +258,7 @@ export default function CardioHistoryScreen() {
       <View
         style={{
           flex: 1,
-          backgroundColor: "#f7f7f7",
+          backgroundColor: theme.colors.background,
           justifyContent: "center",
         }}
       >
@@ -263,384 +268,437 @@ export default function CardioHistoryScreen() {
   }
 
   return (
-    <FlatList
-      style={{ flex: 1, backgroundColor: "#f7f7f7" }}
-      data={filteredSessions}
-      keyExtractor={(item) => item.id}
-      contentContainerStyle={{
-        padding: 16,
-        paddingBottom: 80,
-      }}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-      }
-      ListHeaderComponent={
-        <View>
-          <Text style={{ fontSize: 30, fontWeight: "900" }}>
-            All Activities
-          </Text>
+    <>
+      {/* ✅ STACK SCREEN (ONLY ADDITION, NO OTHER CHANGES) */}
+      <Stack.Screen
+        options={{
+          headerShown: true,
+          headerShadowVisible: false,
+          headerTitle: "",
+          headerBackVisible: false,
+          headerStyle: {
+            backgroundColor: theme.colors.surface,
+          },
+          headerLeft: () => (
+            <Pressable
+              onPress={() => router.back()}
+              style={{
+                width: 46,
+                height: 46,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <X size={30} color={theme.colors.text} />
+            </Pressable>
+          ),
+        }}
+      />
 
-          <Text style={{ color: "#666", marginTop: 4 }}>
-            Complete cardio history.
-          </Text>
+      <FlatList
+        style={{ flex: 1, backgroundColor: theme.colors.background }}
+        data={filteredSessions}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={{ padding: 16, paddingBottom: 20 }}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+        ListHeaderComponent={
+          <View>
+            {/* unchanged UI below */}
+            <Text style={{ fontSize: 30, fontWeight: "900" }}>
+              All Activities
+            </Text>
 
-          <View
-            style={{
-              marginTop: 16,
-              backgroundColor: "#fff",
-              borderRadius: 20,
-              padding: 14,
-            }}
-          >
-            {!calendarExpanded ? (
-              <>
-                <View
-                  style={{
-                    flexDirection: "row",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    marginBottom: 10,
-                  }}
-                >
-                  <Text style={{ fontSize: 16, fontWeight: "900" }}>
-                    This Week
-                  </Text>
+            <Text style={{ color: theme.colors.textMuted, marginTop: 4 }}>
+              Complete cardio history.
+            </Text>
 
-                  <Pressable
-                    onPress={() => setCalendarExpanded(true)}
+            <View
+              style={{
+                marginTop: 16,
+                backgroundColor: theme.colors.surface,
+                borderRadius: 20,
+                padding: 14,
+              }}
+            >
+              {!calendarExpanded ? (
+                <>
+                  <View
                     style={{
-                      backgroundColor: "#f4f4f4",
-                      paddingVertical: 8,
-                      paddingHorizontal: 12,
-                      borderRadius: 12,
-                    }}
-                  >
-                    <Text style={{ fontWeight: "900" }}>Expand</Text>
-                  </Pressable>
-                </View>
-
-                <View style={{ flexDirection: "row", gap: 6 }}>
-                  {weekDays.map((item) => {
-                    const isSelected = selectedDate === item.date;
-                    const isToday = item.date === toDateKey(new Date());
-                    const hasActivity = activeDates[item.date] > 0;
-
-                    return (
-                      <Pressable
-                        key={item.date}
-                        onPress={() => handleDatePress(item.date)}
-                        style={{
-                          flex: 1,
-                          backgroundColor: isSelected
-                            ? "#111"
-                            : isToday
-                              ? "#eee"
-                              : "#f7f7f7",
-                          borderRadius: 14,
-                          paddingVertical: 10,
-                          alignItems: "center",
-                        }}
-                      >
-                        <Text
-                          style={{
-                            fontSize: 11,
-                            color: isSelected ? "#fff" : "#777",
-                            fontWeight: "800",
-                          }}
-                        >
-                          {item.label}
-                        </Text>
-
-                        <Text
-                          style={{
-                            marginTop: 4,
-                            fontSize: 15,
-                            fontWeight: "900",
-                            color: isSelected ? "#fff" : "#111",
-                          }}
-                        >
-                          {item.day}
-                        </Text>
-
-                        <Text style={{ fontSize: 12, marginTop: 2 }}>
-                          {hasActivity ? "🔥" : ""}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </>
-            ) : (
-              <>
-                <View
-                  style={{
-                    flexDirection: "row",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    marginBottom: 12,
-                  }}
-                >
-                  <Pressable
-                    onPress={() => changeMonth("prev")}
-                    style={{
-                      backgroundColor: "#f4f4f4",
-                      width: 34,
-                      height: 34,
-                      borderRadius: 17,
+                      flexDirection: "row",
+                      justifyContent: "space-between",
                       alignItems: "center",
-                      justifyContent: "center",
+                      marginBottom: 10,
                     }}
                   >
-                    <Text style={{ fontSize: 18, fontWeight: "900" }}>‹</Text>
-                  </Pressable>
+                    <Text style={{ fontSize: 16, fontWeight: "900" }}>
+                      This Week
+                    </Text>
 
-                  <Text style={{ fontSize: 16, fontWeight: "900" }}>
-                    {monthTitle()}
-                  </Text>
-
-                  <Pressable
-                    onPress={() => changeMonth("next")}
-                    style={{
-                      backgroundColor: "#f4f4f4",
-                      width: 34,
-                      height: 34,
-                      borderRadius: 17,
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <Text style={{ fontSize: 18, fontWeight: "900" }}>›</Text>
-                  </Pressable>
-                </View>
-
-                <View style={{ flexDirection: "row", marginBottom: 6 }}>
-                  {["S", "M", "T", "W", "T", "F", "S"].map((d, index) => (
-                    <Text
-                      key={`${d}-${index}`}
+                    <Pressable
+                      onPress={() => setCalendarExpanded(true)}
                       style={{
-                        flex: 1,
-                        textAlign: "center",
-                        color: "#777",
-                        fontWeight: "800",
-                        fontSize: 11,
+                        backgroundColor: theme.colors.surfaceAlt,
+                        paddingVertical: 8,
+                        paddingHorizontal: 12,
+                        borderRadius: 12,
                       }}
                     >
-                      {d}
-                    </Text>
-                  ))}
-                </View>
+                      <ExpandIcon size={18} color={theme.colors.primary} />
+                    </Pressable>
+                  </View>
 
-                <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
-                  {monthDays.map((item, index) => {
-                    const isSelected = item.date === selectedDate;
-                    const isToday = item.date === toDateKey(new Date());
-                    const hasActivity = item.date
-                      ? activeDates[item.date] > 0
-                      : false;
+                  <View style={{ flexDirection: "row", gap: 6 }}>
+                    {weekDays.map((item) => {
+                      const isSelected = selectedDate === item.date;
+                      const isToday = item.date === toDateKey(new Date());
+                      const hasActivity = activeDates[item.date] > 0;
 
-                    return (
-                      <Pressable
-                        key={`${item.date || "empty"}-${index}`}
-                        disabled={!item.date}
-                        onPress={() => {
-                          if (item.date) handleDatePress(item.date);
-                        }}
-                        style={{
-                          width: `${100 / 7}%`,
-                          paddingVertical: 4,
-                          alignItems: "center",
-                        }}
-                      >
-                        {item.day ? (
-                          <View
+                      return (
+                        <Pressable
+                          key={item.date}
+                          onPress={() => handleDatePress(item.date)}
+                          style={{
+                            flex: 1,
+                            backgroundColor: isSelected
+                              ? theme.colors.text
+                              : isToday
+                                ? theme.colors.surfaceAlt
+                                : theme.colors.background,
+                            borderRadius: 14,
+                            paddingVertical: 10,
+                            alignItems: "center",
+                          }}
+                        >
+                          <Text
                             style={{
-                              width: 34,
-                              height: 40,
-                              borderRadius: 14,
-                              alignItems: "center",
-                              justifyContent: "center",
-                              backgroundColor: isSelected
-                                ? "#111"
-                                : isToday
-                                  ? "#eee"
-                                  : "transparent",
+                              fontSize: 11,
+                              color: isSelected
+                                ? theme.colors.surface
+                                : theme.colors.textFaint,
+                              fontWeight: "800",
                             }}
                           >
-                            <Text
+                            {item.label}
+                          </Text>
+
+                          <Text
+                            style={{
+                              marginTop: 4,
+                              fontSize: 15,
+                              fontWeight: "900",
+                              color: isSelected
+                                ? theme.colors.surface
+                                : theme.colors.text,
+                            }}
+                          >
+                            {item.day}
+                          </Text>
+
+                          <Text style={{ fontSize: 12, marginTop: 2 }}>
+                            {hasActivity ? "🔥" : ""}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </>
+              ) : (
+                <>
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      marginBottom: 12,
+                    }}
+                  >
+                    <Pressable
+                      onPress={() => changeMonth("prev")}
+                      style={{
+                        backgroundColor: theme.colors.surfaceAlt,
+                        width: 34,
+                        height: 34,
+                        borderRadius: 17,
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Text style={{ fontSize: 18, fontWeight: "900" }}>‹</Text>
+                    </Pressable>
+
+                    <Text style={{ fontSize: 16, fontWeight: "900" }}>
+                      {monthTitle()}
+                    </Text>
+
+                    <Pressable
+                      onPress={() => changeMonth("next")}
+                      style={{
+                        backgroundColor: theme.colors.surfaceAlt,
+                        width: 34,
+                        height: 34,
+                        borderRadius: 17,
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Text style={{ fontSize: 18, fontWeight: "900" }}>›</Text>
+                    </Pressable>
+                  </View>
+
+                  <View style={{ flexDirection: "row", marginBottom: 6 }}>
+                    {["S", "M", "T", "W", "T", "F", "S"].map((d, index) => (
+                      <Text
+                        key={`${d}-${index}`}
+                        style={{
+                          flex: 1,
+                          textAlign: "center",
+                          color: theme.colors.textFaint,
+                          fontWeight: "800",
+                          fontSize: 11,
+                        }}
+                      >
+                        {d}
+                      </Text>
+                    ))}
+                  </View>
+
+                  <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
+                    {monthDays.map((item, index) => {
+                      const isSelected = item.date === selectedDate;
+                      const isToday = item.date === toDateKey(new Date());
+                      const hasActivity = item.date
+                        ? activeDates[item.date] > 0
+                        : false;
+
+                      return (
+                        <Pressable
+                          key={`${item.date || "empty"}-${index}`}
+                          disabled={!item.date}
+                          onPress={() => {
+                            if (item.date) handleDatePress(item.date);
+                          }}
+                          style={{
+                            width: `${100 / 7}%`,
+                            paddingVertical: 4,
+                            alignItems: "center",
+                          }}
+                        >
+                          {item.day ? (
+                            <View
                               style={{
-                                fontSize: 13,
-                                fontWeight: "900",
-                                color: isSelected ? "#fff" : "#111",
+                                width: 34,
+                                height: 40,
+                                borderRadius: 14,
+                                alignItems: "center",
+                                justifyContent: "center",
+                                backgroundColor: isSelected
+                                  ? theme.colors.text
+                                  : isToday
+                                    ? theme.colors.surfaceAlt
+                                    : "transparent",
                               }}
                             >
-                              {item.day}
-                            </Text>
+                              <Text
+                                style={{
+                                  fontSize: 13,
+                                  fontWeight: "900",
+                                  color: isSelected
+                                    ? theme.colors.surface
+                                    : theme.colors.text,
+                                }}
+                              >
+                                {item.day}
+                              </Text>
 
-                            <Text style={{ fontSize: 10 }}>
-                              {hasActivity ? "🔥" : ""}
-                            </Text>
-                          </View>
-                        ) : (
-                          <View style={{ width: 34, height: 40 }} />
-                        )}
-                      </Pressable>
-                    );
-                  })}
-                </View>
+                              <Text style={{ fontSize: 10 }}>
+                                {hasActivity ? "🔥" : ""}
+                              </Text>
+                            </View>
+                          ) : (
+                            <View style={{ width: 34, height: 40 }} />
+                          )}
+                        </Pressable>
+                      );
+                    })}
+                  </View>
 
-                <Pressable
-                  onPress={() => setCalendarExpanded(false)}
+                  <Pressable
+                    onPress={() => setCalendarExpanded(false)}
+                    style={{
+                      padding: 10,
+                      alignItems: "center",
+                    }}
+                  >
+                    <X size={24} color={theme.colors.danger} />
+                  </Pressable>
+                </>
+              )}
+
+              {selectedDate && (
+                <View
                   style={{
-                    marginTop: 10,
-                    backgroundColor: "#f4f4f4",
-                    padding: 10,
-                    borderRadius: 12,
-                    alignItems: "center",
+                    marginTop: 12,
+                    backgroundColor: theme.colors.surfaceAlt,
+                    borderRadius: 14,
+                    padding: 12,
                   }}
                 >
                   <Text style={{ fontWeight: "900" }}>
-                    Collapse to Current Week
+                    {activeDates[selectedDate] || 0} record
+                    {(activeDates[selectedDate] || 0) === 1 ? "" : "s"} on{" "}
+                    {formatDate(selectedDate)}
                   </Text>
-                </Pressable>
-              </>
-            )}
 
-            {selectedDate && (
-              <View
-                style={{
-                  marginTop: 12,
-                  backgroundColor: "#f4f4f4",
-                  borderRadius: 14,
-                  padding: 12,
-                }}
+                  <Pressable onPress={() => setSelectedDate(null)}>
+                    <Text
+                      style={{ color: theme.colors.textMuted, marginTop: 6 }}
+                    >
+                      Clear date filter
+                    </Text>
+                  </Pressable>
+                </View>
+              )}
+            </View>
+
+            <View
+              style={{
+                marginTop: 20,
+                marginBottom: 12,
+                flexDirection: "row",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <Text style={{ fontSize: 20, fontWeight: "900" }}>
+                {selectedDate ? "Selected Date" : "Activities"}
+              </Text>
+
+              <Text
+                style={{ color: theme.colors.textFaint, fontWeight: "800" }}
               >
-                <Text style={{ fontWeight: "900" }}>
-                  {activeDates[selectedDate] || 0} record
-                  {(activeDates[selectedDate] || 0) === 1 ? "" : "s"} on{" "}
-                  {formatDate(selectedDate)}
-                </Text>
-
-                <Pressable onPress={() => setSelectedDate(null)}>
-                  <Text style={{ color: "#666", marginTop: 6 }}>
-                    Clear date filter
-                  </Text>
-                </Pressable>
-              </View>
-            )}
+                {filteredSessions.length}
+              </Text>
+            </View>
           </View>
-
+        }
+        ListEmptyComponent={
           <View
             style={{
-              marginTop: 20,
-              marginBottom: 12,
-              flexDirection: "row",
-              justifyContent: "space-between",
+              backgroundColor: theme.colors.surface,
+              borderRadius: 16,
+              padding: 20,
               alignItems: "center",
             }}
           >
-            <Text style={{ fontSize: 20, fontWeight: "900" }}>
-              {selectedDate ? "Selected Date" : "Activities"}
-            </Text>
-
-            <Text style={{ color: "#777", fontWeight: "800" }}>
-              {filteredSessions.length}
+            <Text style={{ color: theme.colors.textFaint }}>
+              {selectedDate
+                ? "No cardio records on this date."
+                : "No cardio sessions yet."}
             </Text>
           </View>
-        </View>
-      }
-      ListEmptyComponent={
-        <View
-          style={{
-            backgroundColor: "#fff",
-            borderRadius: 16,
-            padding: 20,
-            alignItems: "center",
-          }}
-        >
-          <Text style={{ color: "#777" }}>
-            {selectedDate
-              ? "No cardio records on this date."
-              : "No cardio sessions yet."}
-          </Text>
-        </View>
-      }
-      renderItem={({ item }) => (
-        <Pressable
-          disabled={item.offline}
-          onPress={() =>
-            router.push({
-              pathname: "/cardio/[id]",
-              params: { id: item.id },
-            } as any)
-          }
-          style={{
-            backgroundColor: "#fff",
-            borderRadius: 18,
-            padding: 16,
-            marginBottom: 12,
-            opacity: item.offline ? 0.75 : 1,
-          }}
-        >
-          <View
+        }
+        renderItem={({ item }) => (
+          <Pressable
+            disabled={item.offline}
+            onPress={() =>
+              router.push({
+                pathname: "/cardio/[id]",
+                params: { id: item.id },
+              } as any)
+            }
             style={{
-              flexDirection: "row",
-              justifyContent: "space-between",
+              backgroundColor: theme.colors.surface,
+              borderRadius: 18,
+              padding: 16,
+              marginBottom: 12,
+              opacity: item.offline ? 0.75 : 1,
             }}
           >
-            <View>
-              <Text style={{ fontSize: 18, fontWeight: "900" }}>
-                {item.cardio_type === "running" ? "Run" : "Walk"}
-              </Text>
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+              }}
+            >
+              <View>
+                <Text style={{ fontSize: 18, fontWeight: "900" }}>
+                  {item.cardio_type === "running" ? "Run" : "Walk"}
+                </Text>
 
-              <Text style={{ color: "#666", marginTop: 2 }}>
-                {sourceText(item.cardio_source)}
-                {item.is_mock ? " • Mock" : ""}
-                {item.offline ? " • Waiting to sync" : ""}
+                <Text style={{ color: theme.colors.textMuted, marginTop: 2 }}>
+                  {sourceText(item.cardio_source)}
+                  {item.is_mock ? " • Mock" : ""}
+                  {item.offline ? " • Waiting to sync" : ""}
+                </Text>
+              </View>
+
+              <Text style={{ color: theme.colors.textFaint, fontSize: 12 }}>
+                {formatDate(item.session_date)}
               </Text>
             </View>
 
-            <Text style={{ color: "#777", fontSize: 12 }}>
-              {formatDate(item.session_date)}
-            </Text>
-          </View>
-
-          <View
-            style={{
-              flexDirection: "row",
-              marginTop: 12,
-              gap: 10,
-              flexWrap: "wrap",
-            }}
-          >
-            <MiniStat label="Distance" value={`${item.distance_km} km`} />
-            <MiniStat label="Time" value={formatTime(item.duration_seconds)} />
-            <MiniStat
-              label="Pace"
-              value={paceText(item.distance_km, item.duration_seconds)}
-            />
-            <MiniStat
-              label="Calories"
-              value={`${item.calories_burned || 0} kcal`}
-            />
-          </View>
-        </Pressable>
-      )}
-    />
+            <View
+              style={{
+                flexDirection: "row",
+                marginTop: 12,
+                gap: 10,
+                flexWrap: "wrap",
+              }}
+            >
+              <MiniStat
+                theme={theme}
+                label="Distance"
+                value={`${item.distance_km} km`}
+              />
+              <MiniStat
+                theme={theme}
+                label="Time"
+                value={formatTime(item.duration_seconds)}
+              />
+              <MiniStat
+                theme={theme}
+                label="Pace"
+                value={paceText(item.distance_km, item.duration_seconds)}
+              />
+              <MiniStat
+                theme={theme}
+                label="Calories"
+                value={`${item.calories_burned || 0} kcal`}
+              />
+            </View>
+          </Pressable>
+        )}
+      />
+    </>
   );
 }
 
-function MiniStat({ label, value }: { label: string; value: string }) {
+function MiniStat({
+  theme,
+  label,
+  value,
+}: {
+  theme: AppTheme;
+  label: string;
+  value: string;
+}) {
   return (
     <View
       style={{
-        backgroundColor: "#f4f4f4",
+        backgroundColor: theme.colors.surfaceAlt,
         borderRadius: 10,
         paddingVertical: 6,
         paddingHorizontal: 8,
       }}
     >
-      <Text style={{ fontSize: 11, color: "#777" }}>{label}</Text>
-      <Text style={{ fontWeight: "900" }}>{value}</Text>
+      <RNText style={{ fontSize: 11, color: theme.colors.textFaint }}>
+        {label}
+      </RNText>
+      <RNText style={{ color: theme.colors.text, fontWeight: "900" }}>
+        {value}
+      </RNText>
     </View>
   );
 }

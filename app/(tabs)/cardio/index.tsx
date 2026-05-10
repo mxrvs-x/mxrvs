@@ -1,3 +1,4 @@
+import { AppTheme, useTheme } from "@/lib/theme";
 import {
   getOfflineCardioSessions,
   syncOfflineCardioSessions,
@@ -12,7 +13,7 @@ import {
   Pressable,
   RefreshControl,
   ScrollView,
-  Text,
+  Text as RNText,
   View,
 } from "react-native";
 
@@ -29,6 +30,11 @@ type CardioSession = {
 };
 
 export default function CardioHome() {
+  const theme = useTheme();
+  const Text = (props: any) => (
+    <RNText {...props} style={[{ color: theme.colors.text }, props.style]} />
+  );
+
   const router = useRouter();
 
   const [sessions, setSessions] = useState<CardioSession[]>([]);
@@ -189,7 +195,7 @@ export default function CardioHome() {
       <View
         style={{
           flex: 1,
-          backgroundColor: "#f7f7f7",
+          backgroundColor: theme.colors.background,
           justifyContent: "center",
         }}
       >
@@ -200,7 +206,7 @@ export default function CardioHome() {
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: "#f7f7f7" }}
+      style={{ flex: 1, backgroundColor: theme.colors.background }}
       contentContainerStyle={{ padding: 16, paddingBottom: 20 }}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
@@ -208,11 +214,13 @@ export default function CardioHome() {
     >
       <View style={{ flexDirection: "row", gap: 12, marginTop: 20 }}>
         <StartButton
+          theme={theme}
           label="Run"
           emoji="🏃"
           onPress={() => router.push("/cardio/run" as any)}
         />
         <StartButton
+          theme={theme}
           label="Walk"
           emoji="🚶"
           onPress={() => router.push("/cardio/walk" as any)}
@@ -222,7 +230,7 @@ export default function CardioHome() {
       <View
         style={{
           marginTop: 20,
-          backgroundColor: "#fff",
+          backgroundColor: theme.colors.surface,
           borderRadius: 20,
           padding: 16,
         }}
@@ -230,13 +238,22 @@ export default function CardioHome() {
         <Text style={{ fontSize: 18, fontWeight: "900" }}>Last 7 Days</Text>
 
         <View style={{ flexDirection: "row", marginTop: 12, gap: 12 }}>
-          <Stat label="Sessions" value={`${weekly.sessions}`} />
-          <Stat label="Distance" value={`${weekly.distance.toFixed(2)} km`} />
+          <Stat theme={theme} label="Sessions" value={`${weekly.sessions}`} />
+          <Stat
+            theme={theme}
+            label="Distance"
+            value={`${weekly.distance.toFixed(2)} km`}
+          />
         </View>
 
         <View style={{ flexDirection: "row", marginTop: 12, gap: 12 }}>
-          <Stat label="Time" value={formatTime(weekly.duration)} />
           <Stat
+            theme={theme}
+            label="Time"
+            value={formatTime(weekly.duration)}
+          />
+          <Stat
+            theme={theme}
             label="Calories"
             value={`${Math.round(weekly.calories)} kcal`}
           />
@@ -257,20 +274,22 @@ export default function CardioHome() {
         </Text>
 
         <Pressable onPress={() => router.push("/cardio/history" as any)}>
-          <Text style={{ fontWeight: "900", color: "#111" }}>View All</Text>
+          <Text style={{ fontWeight: "900", color: theme.colors.text }}>
+            View All
+          </Text>
         </Pressable>
       </View>
 
       {sessions.length === 0 ? (
         <View
           style={{
-            backgroundColor: "#fff",
+            backgroundColor: theme.colors.surface,
             borderRadius: 16,
             padding: 20,
             alignItems: "center",
           }}
         >
-          <Text style={{ color: "#777" }}>
+          <Text style={{ color: theme.colors.textFaint }}>
             No cardio yet. Start your first session.
           </Text>
         </View>
@@ -289,7 +308,7 @@ export default function CardioHome() {
                 } as any)
               }
               style={{
-                backgroundColor: "#fff",
+                backgroundColor: theme.colors.surface,
                 borderRadius: 18,
                 padding: 16,
                 marginBottom: 12,
@@ -307,14 +326,14 @@ export default function CardioHome() {
                     {item.cardio_type === "running" ? "Run" : "Walk"}
                   </Text>
 
-                  <Text style={{ color: "#666", marginTop: 2 }}>
+                  <Text style={{ color: theme.colors.textMuted, marginTop: 2 }}>
                     {sourceText(item.cardio_source)}
                     {item.is_mock ? " • Mock" : ""}
                     {item.offline ? " • Waiting to sync" : ""}
                   </Text>
                 </View>
 
-                <Text style={{ color: "#777", fontSize: 12 }}>
+                <Text style={{ color: theme.colors.textFaint, fontSize: 12 }}>
                   {formatDate(item.session_date)}
                 </Text>
               </View>
@@ -327,16 +346,23 @@ export default function CardioHome() {
                   flexWrap: "wrap",
                 }}
               >
-                <MiniStat label="Distance" value={`${item.distance_km} km`} />
                 <MiniStat
+                  theme={theme}
+                  label="Distance"
+                  value={`${item.distance_km} km`}
+                />
+                <MiniStat
+                  theme={theme}
                   label="Time"
                   value={formatTime(item.duration_seconds)}
                 />
                 <MiniStat
+                  theme={theme}
                   label="Pace"
                   value={paceText(item.distance_km, item.duration_seconds)}
                 />
                 <MiniStat
+                  theme={theme}
                   label="Calories"
                   value={`${item.calories_burned || 0} kcal`}
                 />
@@ -350,10 +376,12 @@ export default function CardioHome() {
 }
 
 function StartButton({
+  theme,
   label,
   emoji,
   onPress,
 }: {
+  theme: AppTheme;
   label: string;
   emoji: string;
   onPress: () => void;
@@ -363,48 +391,76 @@ function StartButton({
       onPress={onPress}
       style={{
         flex: 1,
-        backgroundColor: "#111",
+        backgroundColor: theme.colors.text,
         padding: 18,
         borderRadius: 18,
         alignItems: "center",
       }}
     >
-      <Text style={{ fontSize: 22 }}>{emoji}</Text>
-      <Text style={{ color: "#fff", fontWeight: "900", marginTop: 6 }}>
+      <RNText style={{ fontSize: 22 }}>{emoji}</RNText>
+      <RNText
+        style={{ color: theme.colors.surface, fontWeight: "900", marginTop: 6 }}
+      >
         {label}
-      </Text>
+      </RNText>
     </Pressable>
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({
+  theme,
+  label,
+  value,
+}: {
+  theme: AppTheme;
+  label: string;
+  value: string;
+}) {
   return (
     <View
       style={{
         flex: 1,
-        backgroundColor: "#f4f4f4",
+        backgroundColor: theme.colors.surfaceAlt,
         borderRadius: 14,
         padding: 12,
       }}
     >
-      <Text style={{ color: "#777", fontSize: 12 }}>{label}</Text>
-      <Text style={{ fontWeight: "900", marginTop: 4 }}>{value}</Text>
+      <RNText style={{ color: theme.colors.textFaint, fontSize: 12 }}>
+        {label}
+      </RNText>
+      <RNText
+        style={{ color: theme.colors.text, fontWeight: "900", marginTop: 4 }}
+      >
+        {value}
+      </RNText>
     </View>
   );
 }
 
-function MiniStat({ label, value }: { label: string; value: string }) {
+function MiniStat({
+  theme,
+  label,
+  value,
+}: {
+  theme: AppTheme;
+  label: string;
+  value: string;
+}) {
   return (
     <View
       style={{
-        backgroundColor: "#f4f4f4",
+        backgroundColor: theme.colors.surfaceAlt,
         borderRadius: 10,
         paddingVertical: 6,
         paddingHorizontal: 8,
       }}
     >
-      <Text style={{ fontSize: 11, color: "#777" }}>{label}</Text>
-      <Text style={{ fontWeight: "900" }}>{value}</Text>
+      <RNText style={{ fontSize: 11, color: theme.colors.textFaint }}>
+        {label}
+      </RNText>
+      <RNText style={{ color: theme.colors.text, fontWeight: "900" }}>
+        {value}
+      </RNText>
     </View>
   );
 }

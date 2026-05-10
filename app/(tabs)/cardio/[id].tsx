@@ -1,7 +1,15 @@
+import { AppTheme, useTheme } from "@/lib/theme";
 import { supabase } from "@/lib/supabase";
-import { useLocalSearchParams } from "expo-router";
+import { X } from "lucide-react-native";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, ScrollView, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  Text as RNText,
+  View,
+} from "react-native";
 import MapView, { Marker, Polyline } from "react-native-maps";
 
 type RoutePoint = {
@@ -29,7 +37,15 @@ type CardioSession = {
 };
 
 export default function CardioDetailsScreen() {
+  const theme = useTheme();
+  const router = useRouter();
+
+  const Text = (props: any) => (
+    <RNText {...props} style={[{ color: theme.colors.text }, props.style]} />
+  );
+
   const { id } = useLocalSearchParams();
+
   const mapRef = useRef<MapView | null>(null);
 
   const [loading, setLoading] = useState(true);
@@ -97,7 +113,9 @@ export default function CardioDetailsScreen() {
     if (!session?.distance_km || !session?.duration_seconds) return "—";
 
     const pace = session.duration_seconds / 60 / session.distance_km;
+
     const min = Math.floor(pace);
+
     const sec = Math.round((pace - min) * 60);
 
     return `${min}:${String(sec).padStart(2, "0")}/km`;
@@ -119,7 +137,9 @@ export default function CardioDetailsScreen() {
     if (!session) return "";
 
     if (session.cardio_source === "outdoor") return "Outdoor";
+
     if (session.cardio_source === "treadmill") return "Treadmill";
+
     return "Manual";
   }
 
@@ -139,7 +159,7 @@ export default function CardioDetailsScreen() {
         style={{
           flex: 1,
           justifyContent: "center",
-          backgroundColor: "#f7f7f7",
+          backgroundColor: theme.colors.background,
         }}
       >
         <ActivityIndicator />
@@ -153,11 +173,17 @@ export default function CardioDetailsScreen() {
         style={{
           flex: 1,
           justifyContent: "center",
-          backgroundColor: "#f7f7f7",
+          backgroundColor: theme.colors.background,
           padding: 24,
         }}
       >
-        <Text style={{ textAlign: "center", fontSize: 18, fontWeight: "900" }}>
+        <Text
+          style={{
+            textAlign: "center",
+            fontSize: 18,
+            fontWeight: "900",
+          }}
+        >
           Session not found
         </Text>
       </View>
@@ -165,197 +191,317 @@ export default function CardioDetailsScreen() {
   }
 
   const route = session.route || [];
+
   const hasRoute =
     session.cardio_source === "outdoor" &&
     Array.isArray(route) &&
     route.length > 0;
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: "#f7f7f7" }}>
-      <View style={{ padding: 16, paddingBottom: 40 }}>
-        <Text style={{ fontSize: 30, fontWeight: "900" }}>{titleText()}</Text>
+    <>
+      <Stack.Screen
+        options={{
+          headerShown: true,
+          headerShadowVisible: false,
+          headerTitle: "",
+          headerBackVisible: false,
 
-        <Text style={{ color: "#666", marginTop: 4 }}>
-          {sourceText()} • {formatDate(session.session_date)}
-        </Text>
+          headerStyle: {
+            backgroundColor: theme.colors.surface,
+          },
 
-        {session.is_mock && (
-          <View
-            style={{
-              marginTop: 16,
-              backgroundColor: "#fff3cd",
-              padding: 14,
-              borderRadius: 14,
-            }}
-          >
-            <Text style={{ fontWeight: "900", color: "#7a5b00" }}>
-              Mock Session
-            </Text>
-            <Text style={{ color: "#7a5b00", marginTop: 4 }}>
-              This was saved using simulated cardio data.
-            </Text>
-          </View>
-        )}
-
-        {hasRoute && (
-          <View
-            style={{
-              marginTop: 18,
-              backgroundColor: "#fff",
-              borderRadius: 24,
-              padding: 12,
-            }}
-          >
-            <View
+          headerLeft: () => (
+            <Pressable
+              onPress={() => router.back()}
               style={{
-                height: 280,
-                borderRadius: 20,
-                overflow: "hidden",
-                backgroundColor: "#eee",
+                width: 46,
+                height: 46,
+                alignItems: "center",
+                justifyContent: "center",
               }}
             >
-              <MapView
-                ref={mapRef}
-                style={{ flex: 1 }}
-                initialRegion={{
-                  latitude: route[0].latitude,
-                  longitude: route[0].longitude,
-                  latitudeDelta: 0.01,
-                  longitudeDelta: 0.01,
-                }}
-              >
-                <Marker
-                  coordinate={{
-                    latitude: route[0].latitude,
-                    longitude: route[0].longitude,
-                  }}
-                  title="Start"
-                />
+              <X size={30} color={theme.colors.text} />
+            </Pressable>
+          ),
+        }}
+      />
 
-                {route.length > 1 && (
-                  <Marker
-                    coordinate={{
-                      latitude: route[route.length - 1].latitude,
-                      longitude: route[route.length - 1].longitude,
-                    }}
-                    title="Finish"
-                  />
-                )}
+      <ScrollView
+        style={{
+          flex: 1,
+          backgroundColor: theme.colors.background,
+        }}
+      >
+        <View style={{ padding: 16, paddingBottom: 20 }}>
+          <Text style={{ fontSize: 30, fontWeight: "900" }}>{titleText()}</Text>
 
-                {route.length > 1 && (
-                  <Polyline
-                    coordinates={route.map((point) => ({
-                      latitude: point.latitude,
-                      longitude: point.longitude,
-                    }))}
-                    strokeWidth={5}
-                  />
-                )}
-              </MapView>
-            </View>
-          </View>
-        )}
-
-        <View
-          style={{
-            marginTop: 20,
-            backgroundColor: "#fff",
-            borderRadius: 24,
-            padding: 18,
-          }}
-        >
-          <Text style={{ fontSize: 18, fontWeight: "900", marginBottom: 10 }}>
-            Summary
+          <Text style={{ color: theme.colors.textMuted, marginTop: 4 }}>
+            {sourceText()} • {formatDate(session.session_date)}
           </Text>
 
-          <View style={{ flexDirection: "row", gap: 12 }}>
-            <StatBox label="Distance" value={`${session.distance_km} km`} />
-            <StatBox
-              label="Duration"
-              value={formatTime(session.duration_seconds)}
-            />
+          {session.is_mock && (
+            <View
+              style={{
+                marginTop: 16,
+                backgroundColor: theme.mode === "dark" ? "#422006" : "#FEF3C7",
+                padding: 14,
+                borderRadius: 14,
+              }}
+            >
+              <Text
+                style={{
+                  fontWeight: "900",
+                  color: theme.mode === "dark" ? "#FACC15" : "#92400E",
+                }}
+              >
+                Mock Session
+              </Text>
+
+              <Text
+                style={{
+                  color: theme.mode === "dark" ? "#FACC15" : "#92400E",
+                  marginTop: 4,
+                }}
+              >
+                This was saved using simulated cardio data.
+              </Text>
+            </View>
+          )}
+
+          {hasRoute && (
+            <View
+              style={{
+                marginTop: 18,
+                backgroundColor: theme.colors.surface,
+                borderRadius: 24,
+                padding: 12,
+              }}
+            >
+              <View
+                style={{
+                  height: 280,
+                  borderRadius: 20,
+                  overflow: "hidden",
+                  backgroundColor: theme.colors.surfaceAlt,
+                }}
+              >
+                <MapView
+                  ref={mapRef}
+                  style={{ flex: 1 }}
+                  initialRegion={{
+                    latitude: route[0].latitude,
+                    longitude: route[0].longitude,
+                    latitudeDelta: 0.01,
+                    longitudeDelta: 0.01,
+                  }}
+                >
+                  <Marker
+                    coordinate={{
+                      latitude: route[0].latitude,
+                      longitude: route[0].longitude,
+                    }}
+                    title="Start"
+                  />
+
+                  {route.length > 1 && (
+                    <Marker
+                      coordinate={{
+                        latitude: route[route.length - 1].latitude,
+                        longitude: route[route.length - 1].longitude,
+                      }}
+                      title="Finish"
+                    />
+                  )}
+
+                  {route.length > 1 && (
+                    <Polyline
+                      coordinates={route.map((point) => ({
+                        latitude: point.latitude,
+                        longitude: point.longitude,
+                      }))}
+                      strokeWidth={5}
+                    />
+                  )}
+                </MapView>
+              </View>
+            </View>
+          )}
+
+          <View
+            style={{
+              marginTop: 20,
+              backgroundColor: theme.colors.surface,
+              borderRadius: 24,
+              padding: 18,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 18,
+                fontWeight: "900",
+                marginBottom: 10,
+              }}
+            >
+              Summary
+            </Text>
+
+            <View style={{ flexDirection: "row", gap: 12 }}>
+              <StatBox
+                theme={theme}
+                label="Distance"
+                value={`${session.distance_km} km`}
+              />
+
+              <StatBox
+                theme={theme}
+                label="Duration"
+                value={formatTime(session.duration_seconds)}
+              />
+            </View>
+
+            <View
+              style={{
+                flexDirection: "row",
+                gap: 12,
+                marginTop: 12,
+              }}
+            >
+              <StatBox theme={theme} label="Pace" value={paceText()} />
+
+              <StatBox
+                theme={theme}
+                label="Speed"
+                value={`${speedKmh()} km/h`}
+              />
+            </View>
+
+            <View
+              style={{
+                flexDirection: "row",
+                gap: 12,
+                marginTop: 12,
+              }}
+            >
+              <StatBox
+                theme={theme}
+                label="Steps"
+                value={`${session.steps || 0}`}
+              />
+
+              <StatBox
+                theme={theme}
+                label="Calories"
+                value={`${session.calories_burned || 0} kcal`}
+              />
+            </View>
+
+            <View
+              style={{
+                flexDirection: "row",
+                gap: 12,
+                marginTop: 12,
+              }}
+            >
+              <StatBox
+                theme={theme}
+                label="Avg HR"
+                value={
+                  session.avg_heart_rate ? `${session.avg_heart_rate} bpm` : "—"
+                }
+              />
+
+              <StatBox theme={theme} label="Source" value={sourceText()} />
+            </View>
           </View>
 
-          <View style={{ flexDirection: "row", gap: 12, marginTop: 12 }}>
-            <StatBox label="Pace" value={paceText()} />
-            <StatBox label="Speed" value={`${speedKmh()} km/h`} />
-          </View>
+          {session.notes && (
+            <View
+              style={{
+                marginTop: 16,
+                backgroundColor: theme.colors.surface,
+                borderRadius: 24,
+                padding: 18,
+              }}
+            >
+              <Text style={{ fontSize: 18, fontWeight: "900" }}>Notes</Text>
 
-          <View style={{ flexDirection: "row", gap: 12, marginTop: 12 }}>
-            <StatBox label="Steps" value={`${session.steps || 0}`} />
-            <StatBox
-              label="Calories"
-              value={`${session.calories_burned || 0} kcal`}
-            />
-          </View>
+              <Text
+                style={{
+                  marginTop: 8,
+                  color: theme.colors.textMuted,
+                  lineHeight: 22,
+                }}
+              >
+                {session.notes}
+              </Text>
+            </View>
+          )}
 
-          <View style={{ flexDirection: "row", gap: 12, marginTop: 12 }}>
-            <StatBox
-              label="Avg HR"
-              value={
-                session.avg_heart_rate ? `${session.avg_heart_rate} bpm` : "—"
-              }
-            />
-            <StatBox label="Source" value={sourceText()} />
-          </View>
+          {!hasRoute && session.cardio_source === "outdoor" && (
+            <View
+              style={{
+                marginTop: 16,
+                backgroundColor: theme.colors.surface,
+                borderRadius: 24,
+                padding: 18,
+              }}
+            >
+              <Text style={{ fontWeight: "900" }}>No route saved</Text>
+
+              <Text
+                style={{
+                  marginTop: 6,
+                  color: theme.colors.textMuted,
+                  lineHeight: 22,
+                }}
+              >
+                This outdoor session has no GPS route data.
+              </Text>
+            </View>
+          )}
         </View>
-
-        {session.notes && (
-          <View
-            style={{
-              marginTop: 16,
-              backgroundColor: "#fff",
-              borderRadius: 24,
-              padding: 18,
-            }}
-          >
-            <Text style={{ fontSize: 18, fontWeight: "900" }}>Notes</Text>
-            <Text style={{ marginTop: 8, color: "#444", lineHeight: 22 }}>
-              {session.notes}
-            </Text>
-          </View>
-        )}
-
-        {!hasRoute && session.cardio_source === "outdoor" && (
-          <View
-            style={{
-              marginTop: 16,
-              backgroundColor: "#fff",
-              borderRadius: 24,
-              padding: 18,
-            }}
-          >
-            <Text style={{ fontWeight: "900" }}>No route saved</Text>
-            <Text style={{ marginTop: 6, color: "#666", lineHeight: 22 }}>
-              This outdoor session has no GPS route data.
-            </Text>
-          </View>
-        )}
-      </View>
-    </ScrollView>
+      </ScrollView>
+    </>
   );
 }
 
-function StatBox({ label, value }: { label: string; value: string }) {
+function StatBox({
+  theme,
+  label,
+  value,
+}: {
+  theme: AppTheme;
+  label: string;
+  value: string;
+}) {
   return (
     <View
       style={{
         flex: 1,
-        backgroundColor: "#f4f4f4",
+        backgroundColor: theme.colors.surfaceAlt,
         borderRadius: 18,
         padding: 14,
       }}
     >
-      <Text style={{ color: "#777", fontSize: 12 }}>{label}</Text>
-      <Text
+      <RNText
         style={{
+          color: theme.colors.textFaint,
+          fontSize: 12,
+        }}
+      >
+        {label}
+      </RNText>
+
+      <RNText
+        style={{
+          color: theme.colors.text,
           fontSize: 17,
           fontWeight: "900",
           marginTop: 6,
         }}
       >
         {value}
-      </Text>
+      </RNText>
     </View>
   );
 }

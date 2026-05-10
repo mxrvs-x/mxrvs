@@ -1,13 +1,22 @@
+import { AppTheme, useTheme } from "@/lib/theme";
 import { Stack } from "expo-router";
 
 export default function CardioLayout() {
+  const theme = useTheme();
+
   return (
-    <Stack>
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        contentStyle: {
+          backgroundColor: theme.colors.background,
+        },
+      }}
+    >
       <Stack.Screen
         name="index"
         options={{
           title: "Cardio",
-          headerShown: false,
         }}
       />
 
@@ -15,7 +24,6 @@ export default function CardioLayout() {
         name="walk"
         options={{
           title: "Walk",
-          headerShown: false,
         }}
       />
 
@@ -23,7 +31,6 @@ export default function CardioLayout() {
         name="run"
         options={{
           title: "Run",
-          headerShown: false,
         }}
       />
 
@@ -31,7 +38,6 @@ export default function CardioLayout() {
         name="history"
         options={{
           title: "All Activities",
-          headerShown: false,
         }}
       />
 
@@ -39,7 +45,7 @@ export default function CardioLayout() {
         name="[id]"
         options={{
           title: "Activity Details",
-          headerShown: false,
+          headerShown: true,
         }}
       />
     </Stack>

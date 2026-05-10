@@ -21,7 +21,18 @@
     "web": {
       "output": "static"
     },
-    "plugins": ["expo-router", "expo-secure-store"],
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow mxrvs to save workout images.",
+          "savePhotosPermission": "Allow mxrvs to save workout images.",
+          "isAccessMediaLocationEnabled": false
+        }
+      ]
+    ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true

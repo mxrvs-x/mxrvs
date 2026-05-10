@@ -192,10 +192,10 @@ export default function WorkoutIndexScreen() {
   }, []);
 
   useFocusEffect(
-  useCallback(() => {
-    theme.setSessionTheme(todaySplit.type);
-  }, [todaySplit.type]),
-);
+    useCallback(() => {
+      theme.setSessionTheme(todaySplit.type);
+    }, [todaySplit.type]),
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -370,7 +370,7 @@ export default function WorkoutIndexScreen() {
             }}
           >
             {todaySplit.type === "rest"
-              ? "Recovery screen"
+              ? "Recover well"
               : todayWorkout
                 ? "Already logged today"
                 : "Log sets, reps, weight"}
@@ -462,6 +462,7 @@ export default function WorkoutIndexScreen() {
                 style={{
                   flexDirection: "row",
                   justifyContent: "space-between",
+                  alignItems: "center",
                   gap: 12,
                 }}
               >
@@ -484,31 +485,21 @@ export default function WorkoutIndexScreen() {
                   </Text>
                 </View>
 
-                <Text
+                <View
                   style={{
-                    color: theme.colors.primary,
-                    fontWeight: "800",
+                    flexDirection: "row",
+                    gap: 8,
+                    alignItems: "center",
                   }}
                 >
-                  View
-                </Text>
-              </View>
+                  <MiniStat label="Sets" value={`${item.set_count || 0}`} />
 
-              <View
-                style={{
-                  flexDirection: "row",
-                  gap: 8,
-                  marginTop: 12,
-                  flexWrap: "wrap",
-                }}
-              >
-                <MiniStat label="Sets" value={`${item.set_count || 0}`} />
-                <MiniStat
-                  label="Volume"
-                  value={`${(item.total_volume || 0).toLocaleString()} kg`}
-                />
+                  <MiniStat
+                    label="Volume"
+                    value={`${(item.total_volume || 0).toLocaleString()} kg`}
+                  />
+                </View>
               </View>
-
               {item.notes ? (
                 <Text style={{ marginTop: 8, color: theme.colors.textMuted }}>
                   {item.notes}

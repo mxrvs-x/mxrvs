@@ -1,8 +1,9 @@
+import { AppTheme, useTheme } from "@/lib/theme";
 import { requestFitnessPermissions } from "@/lib/appPermissions";
 import { isOnline, saveOfflineCardioSession } from "@/lib/offlineCardio";
 import { supabase } from "@/lib/supabase";
 import * as Location from "expo-location";
-import { useRouter } from "expo-router";
+import { useRouter, Stack } from "expo-router";
 import { Pedometer } from "expo-sensors";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -10,11 +11,12 @@ import {
   Modal,
   Pressable,
   ScrollView,
-  Text,
+  Text as RNText,
   TextInput,
   View,
 } from "react-native";
 import MapView, { Marker, Polyline, Region } from "react-native-maps";
+import { X } from "lucide-react-native";
 
 type WalkSource = "outdoor" | "treadmill";
 
@@ -46,6 +48,11 @@ async function getUserWeight() {
 }
 
 export default function WalkScreen() {
+  const theme = useTheme();
+  const Text = (props: any) => (
+    <RNText {...props} style={[{ color: theme.colors.text }, props.style]} />
+  );
+
   const router = useRouter();
 
   const [walkSource, setWalkSource] = useState<WalkSource>("outdoor");
@@ -533,368 +540,458 @@ export default function WalkScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#f7f7f7" }}>
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 120 }}>
-        <Text style={{ fontSize: 30, fontWeight: "900" }}>Walk</Text>
-        <Text style={{ color: "#666", marginTop: 4 }}>
-          Outdoor GPS walk or treadmill/home walk.
-        </Text>
+    <>
+      <Stack.Screen
+        options={{
+          headerShown: true,
+          headerShadowVisible: false,
+          headerTitle: "",
+          headerBackVisible: false,
+          headerStyle: {
+            backgroundColor: theme.colors.surface,
+          },
+          headerLeft: () => (
+            <Pressable
+              onPress={() => router.back()}
+              style={{
+                width: 46,
+                height: 46,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <X size={30} color={theme.colors.text} />
+            </Pressable>
+          ),
+        }}
+      />
+      <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
+        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 20 }}>
+          <Text style={{ fontSize: 30, fontWeight: "900" }}>Walk</Text>
+          <Text style={{ color: theme.colors.textMuted, marginTop: 4 }}>
+            Outdoor GPS walk or treadmill/home walk.
+          </Text>
 
-        {mockMode && (
-          <View
-            style={{
-              marginTop: 16,
-              backgroundColor: "#fff3cd",
-              padding: 14,
-              borderRadius: 14,
-            }}
-          >
-            <Text style={{ fontWeight: "900", color: "#7a5b00" }}>
-              Dev Mock Mode Active
-            </Text>
-            <Text style={{ color: "#7a5b00", marginTop: 4 }}>
-              Permissions were denied, so this session is using simulated steps
-              and distance.
-            </Text>
-          </View>
-        )}
-
-        {!tracking ? (
-          <View style={{ flexDirection: "row", gap: 12, marginTop: 20 }}>
-            <SourceButton
-              label="Outdoor"
-              active={walkSource === "outdoor"}
-              onPress={() => setWalkSource("outdoor")}
-            />
-            <SourceButton
-              label="Treadmill/Home"
-              active={walkSource === "treadmill"}
-              onPress={() => setWalkSource("treadmill")}
-            />
-          </View>
-        ) : null}
-
-        {walkSource === "outdoor" ? (
-          <View
-            style={{
-              marginTop: 20,
-              backgroundColor: "#fff",
-              borderRadius: 24,
-              padding: 12,
-            }}
-          >
+          {mockMode && (
             <View
               style={{
-                height: 260,
-                borderRadius: 20,
-                overflow: "hidden",
-                backgroundColor: "#eee",
-              }}
-            >
-              <MapView
-                style={{ flex: 1 }}
-                region={
-                  region || {
-                    latitude: 14.5995,
-                    longitude: 120.9842,
-                    latitudeDelta: 0.05,
-                    longitudeDelta: 0.05,
-                  }
-                }
-                showsUserLocation={!mockMode}
-                followsUserLocation={!mockMode}
-              >
-                {route.length > 0 && (
-                  <Marker
-                    coordinate={{
-                      latitude: route[0].latitude,
-                      longitude: route[0].longitude,
-                    }}
-                    title="Start"
-                  />
-                )}
-
-                {route.length > 1 && (
-                  <Polyline
-                    coordinates={route.map((p) => ({
-                      latitude: p.latitude,
-                      longitude: p.longitude,
-                    }))}
-                    strokeWidth={5}
-                  />
-                )}
-              </MapView>
-            </View>
-
-            <Text
-              style={{
-                marginTop: 10,
-                textAlign: "center",
-                color: gpsReady || mockMode || isPaused ? "#111" : "#777",
-                fontWeight: "800",
-              }}
-            >
-              {gpsStatusText()}
-            </Text>
-          </View>
-        ) : null}
-
-        <View
-          style={{
-            marginTop: 24,
-            backgroundColor: "#fff",
-            borderRadius: 28,
-            padding: 24,
-            alignItems: "center",
-          }}
-        >
-          <Text style={{ color: "#777", fontWeight: "800" }}>
-            {walkSource === "outdoor"
-              ? "OUTDOOR WALK"
-              : "TREADMILL / HOME WALK"}
-          </Text>
-
-          {isPaused && (
-            <Text
-              style={{
-                marginTop: 12,
-                backgroundColor: "#111",
-                color: "#fff",
-                paddingHorizontal: 14,
-                paddingVertical: 6,
-                borderRadius: 999,
-                fontWeight: "900",
-              }}
-            >
-              PAUSED
-            </Text>
-          )}
-
-          <Text style={{ fontSize: 64, fontWeight: "900", marginTop: 16 }}>
-            {formatTime(seconds)}
-          </Text>
-
-          <Text style={{ color: "#777" }}>Duration</Text>
-
-          <View style={{ flexDirection: "row", gap: 12, marginTop: 28 }}>
-            <StatBox
-              label="Distance"
-              value={`${displayDistanceKm.toFixed(3)} km`}
-            />
-            <StatBox label="Pace" value={paceText()} />
-          </View>
-
-          <View style={{ flexDirection: "row", gap: 12, marginTop: 12 }}>
-            <StatBox label="Steps" value={`${steps}`} />
-            <StatBox label="Speed" value={`${speedKmh()} km/h`} />
-          </View>
-
-          <View style={{ flexDirection: "row", gap: 12, marginTop: 12 }}>
-            <StatBox label="Calories" value={`${estimateCalories()} kcal`} />
-            <StatBox
-              label="Step Distance"
-              value={`${stepDistanceKm.toFixed(3)} km`}
-            />
-          </View>
-
-          <Text
-            style={{
-              marginTop: 16,
-              color: "#777",
-              textAlign: "center",
-              lineHeight: 20,
-            }}
-          >
-            {distanceQualityText()}
-          </Text>
-        </View>
-
-        {!tracking ? (
-          <Pressable
-            onPress={startWalking}
-            style={{
-              marginTop: 24,
-              backgroundColor: "#111",
-              padding: 18,
-              borderRadius: 18,
-              alignItems: "center",
-            }}
-          >
-            <Text style={{ color: "#fff", fontSize: 17, fontWeight: "900" }}>
-              Start Walk
-            </Text>
-          </Pressable>
-        ) : (
-          <View style={{ marginTop: 24, gap: 12 }}>
-            <Pressable
-              onPress={togglePauseWalk}
-              style={{
-                backgroundColor: isPaused ? "#111" : "#fff",
-                padding: 18,
-                borderRadius: 18,
-                alignItems: "center",
-                borderWidth: 1,
-                borderColor: "#111",
+                marginTop: 16,
+                backgroundColor: theme.mode === "dark" ? "#422006" : "#FEF3C7",
+                padding: 14,
+                borderRadius: 14,
               }}
             >
               <Text
                 style={{
-                  color: isPaused ? "#fff" : "#111",
-                  fontSize: 17,
+                  fontWeight: "900",
+                  color: theme.mode === "dark" ? "#FACC15" : "#92400E",
+                }}
+              >
+                Dev Mock Mode Active
+              </Text>
+              <Text
+                style={{
+                  color: theme.mode === "dark" ? "#FACC15" : "#92400E",
+                  marginTop: 4,
+                }}
+              >
+                Permissions were denied, so this session is using simulated
+                steps and distance.
+              </Text>
+            </View>
+          )}
+
+          {!tracking ? (
+            <View style={{ flexDirection: "row", gap: 12, marginTop: 20 }}>
+              <SourceButton
+                theme={theme}
+                label="Outdoor"
+                active={walkSource === "outdoor"}
+                onPress={() => setWalkSource("outdoor")}
+              />
+              <SourceButton
+                theme={theme}
+                label="Treadmill/Home"
+                active={walkSource === "treadmill"}
+                onPress={() => setWalkSource("treadmill")}
+              />
+            </View>
+          ) : null}
+
+          {walkSource === "outdoor" ? (
+            <View
+              style={{
+                marginTop: 20,
+                backgroundColor: theme.colors.surface,
+                borderRadius: 24,
+                padding: 12,
+              }}
+            >
+              <View
+                style={{
+                  height: 260,
+                  borderRadius: 20,
+                  overflow: "hidden",
+                  backgroundColor: theme.colors.surfaceAlt,
+                }}
+              >
+                <MapView
+                  style={{ flex: 1 }}
+                  region={
+                    region || {
+                      latitude: 14.5995,
+                      longitude: 120.9842,
+                      latitudeDelta: 0.05,
+                      longitudeDelta: 0.05,
+                    }
+                  }
+                  showsUserLocation={!mockMode}
+                  followsUserLocation={!mockMode}
+                >
+                  {route.length > 0 && (
+                    <Marker
+                      coordinate={{
+                        latitude: route[0].latitude,
+                        longitude: route[0].longitude,
+                      }}
+                      title="Start"
+                    />
+                  )}
+
+                  {route.length > 1 && (
+                    <Polyline
+                      coordinates={route.map((p) => ({
+                        latitude: p.latitude,
+                        longitude: p.longitude,
+                      }))}
+                      strokeWidth={5}
+                    />
+                  )}
+                </MapView>
+              </View>
+
+              <Text
+                style={{
+                  marginTop: 10,
+                  textAlign: "center",
+                  color:
+                    gpsReady || mockMode || isPaused
+                      ? theme.colors.text
+                      : theme.colors.textFaint,
+                  fontWeight: "800",
+                }}
+              >
+                {gpsStatusText()}
+              </Text>
+            </View>
+          ) : null}
+
+          <View
+            style={{
+              marginTop: 24,
+              backgroundColor: theme.colors.surface,
+              borderRadius: 28,
+              padding: 24,
+              alignItems: "center",
+            }}
+          >
+            <Text style={{ color: theme.colors.textFaint, fontWeight: "800" }}>
+              {walkSource === "outdoor"
+                ? "OUTDOOR WALK"
+                : "TREADMILL / HOME WALK"}
+            </Text>
+
+            {isPaused && (
+              <Text
+                style={{
+                  marginTop: 12,
+                  backgroundColor: theme.colors.text,
+                  color: theme.colors.surface,
+                  paddingHorizontal: 14,
+                  paddingVertical: 6,
+                  borderRadius: 999,
                   fontWeight: "900",
                 }}
               >
-                {isPaused ? "Resume Walk" : "Pause Walk"}
+                PAUSED
               </Text>
-            </Pressable>
+            )}
 
-            <Pressable
-              onPress={stopWalking}
-              style={{
-                backgroundColor: "#111",
-                padding: 18,
-                borderRadius: 18,
-                alignItems: "center",
-              }}
-            >
-              <Text style={{ color: "#fff", fontSize: 17, fontWeight: "900" }}>
-                Stop
-              </Text>
-            </Pressable>
-
-            <Pressable
-              onPress={discardWalk}
-              style={{
-                backgroundColor: "#eee",
-                padding: 18,
-                borderRadius: 18,
-                alignItems: "center",
-              }}
-            >
-              <Text style={{ color: "#111", fontSize: 17, fontWeight: "900" }}>
-                Discard
-              </Text>
-            </Pressable>
-          </View>
-        )}
-      </ScrollView>
-
-      <Modal visible={finishModalVisible} animationType="slide" transparent>
-        <View
-          style={{
-            flex: 1,
-            backgroundColor: "rgba(0,0,0,0.35)",
-            justifyContent: "flex-end",
-          }}
-        >
-          <View
-            style={{
-              backgroundColor: "#fff",
-              borderTopLeftRadius: 24,
-              borderTopRightRadius: 24,
-              padding: 20,
-            }}
-          >
-            <Text style={{ fontSize: 22, fontWeight: "900" }}>Finish Walk</Text>
-
-            <Text style={{ color: "#666", marginTop: 6 }}>
-              Confirm distance before saving.
+            <Text style={{ fontSize: 64, fontWeight: "900", marginTop: 16 }}>
+              {formatTime(seconds)}
             </Text>
 
-            <View style={{ marginTop: 18 }}>
-              <Text style={{ fontWeight: "800" }}>Final Distance (km)</Text>
-              <TextInput
-                value={manualDistanceKm}
-                onChangeText={setManualDistanceKm}
-                placeholder="e.g. 1.25"
-                keyboardType="numeric"
-                style={{
-                  marginTop: 8,
-                  borderWidth: 1,
-                  borderColor: "#ddd",
-                  borderRadius: 14,
-                  padding: 14,
-                }}
+            <Text style={{ color: theme.colors.textFaint }}>Duration</Text>
+
+            <View style={{ flexDirection: "row", gap: 12, marginTop: 28 }}>
+              <StatBox
+                theme={theme}
+                label="Distance"
+                value={`${displayDistanceKm.toFixed(3)} km`}
               />
-              <Text style={{ color: "#777", marginTop: 8 }}>
-                Outdoor uses GPS estimate. Treadmill/home uses step estimate.
-                You can edit it.
-              </Text>
+              <StatBox theme={theme} label="Pace" value={paceText()} />
             </View>
 
-            <View style={{ flexDirection: "row", gap: 12, marginTop: 18 }}>
-              <StatBox label="Time" value={formatTime(seconds)} />
-              <StatBox label="Steps" value={`${steps}`} />
+            <View style={{ flexDirection: "row", gap: 12, marginTop: 12 }}>
+              <StatBox theme={theme} label="Steps" value={`${steps}`} />
+              <StatBox
+                theme={theme}
+                label="Speed"
+                value={`${speedKmh()} km/h`}
+              />
             </View>
 
             <View style={{ flexDirection: "row", gap: 12, marginTop: 12 }}>
               <StatBox
+                theme={theme}
                 label="Calories"
-                value={`${estimateCalories(
-                  Number(manualDistanceKm || displayDistanceKm),
-                )} kcal`}
+                value={`${estimateCalories()} kcal`}
               />
               <StatBox
-                label="Pace"
-                value={paceText(Number(manualDistanceKm || displayDistanceKm))}
+                theme={theme}
+                label="Step Distance"
+                value={`${stepDistanceKm.toFixed(3)} km`}
               />
             </View>
 
-            <View style={{ marginTop: 18 }}>
-              <Text style={{ fontWeight: "800" }}>Notes</Text>
-              <TextInput
-                value={notes}
-                onChangeText={setNotes}
-                placeholder="Optional"
-                multiline
-                style={{
-                  marginTop: 8,
-                  borderWidth: 1,
-                  borderColor: "#ddd",
-                  borderRadius: 14,
-                  padding: 14,
-                  minHeight: 80,
-                  textAlignVertical: "top",
-                }}
-              />
-            </View>
-
-            <Pressable
-              onPress={saveWalk}
+            <Text
               style={{
-                marginTop: 18,
-                backgroundColor: "#111",
-                padding: 16,
-                borderRadius: 16,
+                marginTop: 16,
+                color: theme.colors.textFaint,
+                textAlign: "center",
+                lineHeight: 20,
+              }}
+            >
+              {distanceQualityText()}
+            </Text>
+          </View>
+
+          {!tracking ? (
+            <Pressable
+              onPress={startWalking}
+              style={{
+                marginTop: 24,
+                backgroundColor: theme.colors.text,
+                padding: 18,
+                borderRadius: 18,
                 alignItems: "center",
               }}
             >
-              <Text style={{ color: "#fff", fontWeight: "900" }}>
-                Save Walk
+              <Text
+                style={{
+                  color: theme.colors.surface,
+                  fontSize: 17,
+                  fontWeight: "900",
+                }}
+              >
+                Start Walk
               </Text>
             </Pressable>
+          ) : (
+            <View style={{ marginTop: 24, gap: 12 }}>
+              <Pressable
+                onPress={togglePauseWalk}
+                style={{
+                  backgroundColor: isPaused
+                    ? theme.colors.text
+                    : theme.colors.surface,
+                  padding: 18,
+                  borderRadius: 18,
+                  alignItems: "center",
+                  borderWidth: 1,
+                  borderColor: theme.colors.text,
+                }}
+              >
+                <Text
+                  style={{
+                    color: isPaused ? theme.colors.surface : theme.colors.text,
+                    fontSize: 17,
+                    fontWeight: "900",
+                  }}
+                >
+                  {isPaused ? "Resume Walk" : "Pause Walk"}
+                </Text>
+              </Pressable>
 
-            <Pressable
-              onPress={discardWalk}
+              <Pressable
+                onPress={stopWalking}
+                style={{
+                  backgroundColor: theme.colors.text,
+                  padding: 18,
+                  borderRadius: 18,
+                  alignItems: "center",
+                }}
+              >
+                <Text
+                  style={{
+                    color: theme.colors.surface,
+                    fontSize: 17,
+                    fontWeight: "900",
+                  }}
+                >
+                  Stop
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={discardWalk}
+                style={{
+                  backgroundColor: theme.colors.surfaceAlt,
+                  padding: 18,
+                  borderRadius: 18,
+                  alignItems: "center",
+                }}
+              >
+                <Text
+                  style={{
+                    color: theme.colors.text,
+                    fontSize: 17,
+                    fontWeight: "900",
+                  }}
+                >
+                  Discard
+                </Text>
+              </Pressable>
+            </View>
+          )}
+        </ScrollView>
+
+        <Modal visible={finishModalVisible} animationType="slide" transparent>
+          <View
+            style={{
+              flex: 1,
+              backgroundColor:
+                theme.mode === "dark" ? "rgba(0,0,0,0.65)" : "rgba(0,0,0,0.35)",
+              justifyContent: "flex-end",
+            }}
+          >
+            <View
               style={{
-                padding: 16,
-                alignItems: "center",
+                backgroundColor: theme.colors.surface,
+                borderTopLeftRadius: 24,
+                borderTopRightRadius: 24,
+                padding: 20,
               }}
             >
-              <Text style={{ color: "#666", fontWeight: "800" }}>Discard</Text>
-            </Pressable>
+              <Text style={{ fontSize: 22, fontWeight: "900" }}>
+                Finish Walk
+              </Text>
+
+              <Text style={{ color: theme.colors.textMuted, marginTop: 6 }}>
+                Confirm distance before saving.
+              </Text>
+
+              <View style={{ marginTop: 18 }}>
+                <Text style={{ fontWeight: "800" }}>Final Distance (km)</Text>
+                <TextInput
+                  value={manualDistanceKm}
+                  onChangeText={setManualDistanceKm}
+                  placeholder="e.g. 1.25"
+                  keyboardType="numeric"
+                  style={{
+                    marginTop: 8,
+                    borderWidth: 1,
+                    borderColor: theme.colors.border,
+                    borderRadius: 14,
+                    padding: 14,
+                  }}
+                />
+                <Text style={{ color: theme.colors.textFaint, marginTop: 8 }}>
+                  Outdoor uses GPS estimate. Treadmill/home uses step estimate.
+                  You can edit it.
+                </Text>
+              </View>
+
+              <View style={{ flexDirection: "row", gap: 12, marginTop: 18 }}>
+                <StatBox
+                  theme={theme}
+                  label="Time"
+                  value={formatTime(seconds)}
+                />
+                <StatBox theme={theme} label="Steps" value={`${steps}`} />
+              </View>
+
+              <View style={{ flexDirection: "row", gap: 12, marginTop: 12 }}>
+                <StatBox
+                  theme={theme}
+                  label="Calories"
+                  value={`${estimateCalories(
+                    Number(manualDistanceKm || displayDistanceKm),
+                  )} kcal`}
+                />
+                <StatBox
+                  theme={theme}
+                  label="Pace"
+                  value={paceText(
+                    Number(manualDistanceKm || displayDistanceKm),
+                  )}
+                />
+              </View>
+
+              <View style={{ marginTop: 18 }}>
+                <Text style={{ fontWeight: "800" }}>Notes</Text>
+                <TextInput
+                  value={notes}
+                  onChangeText={setNotes}
+                  placeholder="Optional"
+                  multiline
+                  style={{
+                    marginTop: 8,
+                    borderWidth: 1,
+                    borderColor: theme.colors.border,
+                    borderRadius: 14,
+                    padding: 14,
+                    minHeight: 80,
+                    textAlignVertical: "top",
+                  }}
+                />
+              </View>
+
+              <Pressable
+                onPress={saveWalk}
+                style={{
+                  marginTop: 18,
+                  backgroundColor: theme.colors.text,
+                  padding: 16,
+                  borderRadius: 16,
+                  alignItems: "center",
+                }}
+              >
+                <Text
+                  style={{ color: theme.colors.surface, fontWeight: "900" }}
+                >
+                  Save Walk
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={discardWalk}
+                style={{
+                  padding: 16,
+                  alignItems: "center",
+                }}
+              >
+                <Text
+                  style={{ color: theme.colors.textMuted, fontWeight: "800" }}
+                >
+                  Discard
+                </Text>
+              </Pressable>
+            </View>
           </View>
-        </View>
-      </Modal>
-    </View>
+        </Modal>
+      </View>
+    </>
   );
 }
 
 function SourceButton({
+  theme,
   label,
   active,
   onPress,
 }: {
+  theme: AppTheme;
   label: string;
   active: boolean;
   onPress: () => void;
@@ -904,38 +1001,49 @@ function SourceButton({
       onPress={onPress}
       style={{
         flex: 1,
-        backgroundColor: active ? "#111" : "#eaeaea",
+        backgroundColor: active ? theme.colors.text : theme.colors.surfaceAlt,
         padding: 16,
         borderRadius: 16,
         alignItems: "center",
       }}
     >
-      <Text
+      <RNText
         style={{
-          color: active ? "#fff" : "#111",
+          color: active ? theme.colors.surface : theme.colors.text,
           fontWeight: "900",
         }}
       >
         {label}
-      </Text>
+      </RNText>
     </Pressable>
   );
 }
 
-function StatBox({ label, value }: { label: string; value: string }) {
+function StatBox({
+  theme,
+  label,
+  value,
+}: {
+  theme: AppTheme;
+  label: string;
+  value: string;
+}) {
   return (
     <View
       style={{
         flex: 1,
-        backgroundColor: "#f4f4f4",
+        backgroundColor: theme.colors.surfaceAlt,
         borderRadius: 18,
         padding: 14,
         alignItems: "center",
       }}
     >
-      <Text style={{ color: "#777", fontSize: 12 }}>{label}</Text>
-      <Text
+      <RNText style={{ color: theme.colors.textFaint, fontSize: 12 }}>
+        {label}
+      </RNText>
+      <RNText
         style={{
+          color: theme.colors.text,
           fontSize: 17,
           fontWeight: "900",
           marginTop: 6,
@@ -943,7 +1051,7 @@ function StatBox({ label, value }: { label: string; value: string }) {
         }}
       >
         {value}
-      </Text>
+      </RNText>
     </View>
   );
 }

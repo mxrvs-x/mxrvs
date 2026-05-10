@@ -640,21 +640,6 @@ export default function StartWorkoutScreen() {
         >
           {"Growth happens during recovery."}
         </Text>
-
-        <Pressable
-          onPress={() => router.back()}
-          style={{
-            marginTop: 30,
-            backgroundColor: theme.colors.primary,
-            paddingHorizontal: 22,
-            paddingVertical: 12,
-            borderRadius: 999,
-          }}
-        >
-          <Text style={{ fontWeight: "800", color: theme.colors.textInverse }}>
-            Go Back
-          </Text>
-        </Pressable>
       </View>
     );
   }

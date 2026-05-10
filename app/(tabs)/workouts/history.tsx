@@ -6,7 +6,7 @@ import {
   useLocalSearchParams,
   useRouter,
 } from "expo-router";
-import { X, ExpandIcon, ArrowUpToLine } from "lucide-react-native";
+import { X, ExpandIcon } from "lucide-react-native";
 import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
