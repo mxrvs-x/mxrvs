@@ -17,7 +17,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { supabase } from "../lib/supabase";
+import { supabase, supabaseConfigError } from "../lib/supabase";
 
 const SAVED_EMAIL_KEY = "mxrvs_saved_email";
 const BIOMETRIC_ENABLED_KEY = "mxrvs_biometric_enabled";
@@ -72,36 +72,55 @@ export default function AuthScreen() {
   }
 
   async function initAuth() {
-    const savedEmail = await SecureStore.getItemAsync(SAVED_EMAIL_KEY);
-    const biometricEnabled = await SecureStore.getItemAsync(
-      BIOMETRIC_ENABLED_KEY,
-    );
-
-    if (savedEmail) {
-      setEmail(savedEmail);
+    if (supabaseConfigError) {
+      setChecking(false);
+      return;
     }
 
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
+    try {
+      const savedEmail = await SecureStore.getItemAsync(SAVED_EMAIL_KEY);
+      const biometricEnabled = await SecureStore.getItemAsync(
+        BIOMETRIC_ENABLED_KEY,
+      );
 
-    const hasHardware = await LocalAuthentication.hasHardwareAsync();
-    const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+      if (savedEmail) {
+        setEmail(savedEmail);
+      }
 
-    setBiometricReady(
-      Boolean(
-        session &&
-          savedEmail &&
-          biometricEnabled === "true" &&
-          hasHardware &&
-          isEnrolled,
-      ),
-    );
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
-    setChecking(false);
+      const hasHardware = await LocalAuthentication.hasHardwareAsync();
+      const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+
+      setBiometricReady(
+        Boolean(
+          session &&
+            savedEmail &&
+            biometricEnabled === "true" &&
+            hasHardware &&
+            isEnrolled,
+        ),
+      );
+    } catch (error) {
+      console.error("Failed to initialize auth", error);
+      setBiometricReady(false);
+    } finally {
+      setChecking(false);
+    }
   }
 
   async function signIn() {
+    if (supabaseConfigError) {
+      showAlert({
+        title: "Configuration Issue",
+        message: supabaseConfigError,
+        danger: true,
+      });
+      return;
+    }
+
     if (!email || !password) {
       showAlert({
         title: "Missing Fields",
@@ -132,10 +151,19 @@ export default function AuthScreen() {
     await SecureStore.setItemAsync(SAVED_EMAIL_KEY, email.trim());
     await SecureStore.setItemAsync(BIOMETRIC_ENABLED_KEY, "true");
 
-    router.replace("/(tabs)" as any);
+    router.replace("/(tabs)/home" as any);
   }
 
   async function loginWithFingerprint() {
+    if (supabaseConfigError) {
+      showAlert({
+        title: "Configuration Issue",
+        message: supabaseConfigError,
+        danger: true,
+      });
+      return;
+    }
+
     setLoading(true);
 
     const result = await LocalAuthentication.authenticateAsync({
@@ -156,7 +184,7 @@ export default function AuthScreen() {
     setLoading(false);
 
     if (session) {
-      router.replace("/(tabs)" as any);
+      router.replace("/(tabs)/home" as any);
     } else {
       showAlert({
         title: "Session Expired",
@@ -255,7 +283,38 @@ export default function AuthScreen() {
                 Login to track your fitness, food, and progress.
               </Text>
 
-              {biometricReady ? (
+              {supabaseConfigError ? (
+                <View
+                  style={{
+                    padding: 14,
+                    borderRadius: theme.radius.md,
+                    borderWidth: 1,
+                    borderColor: theme.colors.danger,
+                    backgroundColor: theme.colors.surfaceAlt,
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: theme.colors.danger,
+                      fontWeight: "900",
+                      fontSize: theme.fontSize.md,
+                    }}
+                  >
+                    Configuration Issue
+                  </Text>
+
+                  <Text
+                    style={{
+                      marginTop: 8,
+                      color: theme.colors.textMuted,
+                      fontSize: theme.fontSize.sm,
+                      lineHeight: 20,
+                    }}
+                  >
+                    {supabaseConfigError}
+                  </Text>
+                </View>
+              ) : biometricReady ? (
                 loading ? (
                   <ActivityIndicator color={theme.colors.primary} />
                 ) : (

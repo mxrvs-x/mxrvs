@@ -1,8 +1,9 @@
+import { SafeRouteMap } from "@/components/SafeRouteMap";
 import { AppTheme, useTheme } from "@/lib/theme";
 import { supabase } from "@/lib/supabase";
 import { X } from "lucide-react-native";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -10,7 +11,6 @@ import {
   Text as RNText,
   View,
 } from "react-native";
-import MapView, { Marker, Polyline } from "react-native-maps";
 
 type RoutePoint = {
   latitude: number;
@@ -46,32 +46,12 @@ export default function CardioDetailsScreen() {
 
   const { id } = useLocalSearchParams();
 
-  const mapRef = useRef<MapView | null>(null);
-
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState<CardioSession | null>(null);
 
   useEffect(() => {
     loadSession();
   }, [id]);
-
-  useEffect(() => {
-    const route = session?.route || [];
-
-    if (mapRef.current && route.length > 1) {
-      setTimeout(() => {
-        mapRef.current?.fitToCoordinates(route, {
-          edgePadding: {
-            top: 60,
-            right: 60,
-            bottom: 60,
-            left: 60,
-          },
-          animated: true,
-        });
-      }, 500);
-    }
-  }, [session]);
 
   async function loadSession() {
     if (!id) return;
@@ -285,44 +265,27 @@ export default function CardioDetailsScreen() {
                   backgroundColor: theme.colors.surfaceAlt,
                 }}
               >
-                <MapView
-                  ref={mapRef}
-                  style={{ flex: 1 }}
-                  initialRegion={{
+                <SafeRouteMap
+                  region={{
                     latitude: route[0].latitude,
                     longitude: route[0].longitude,
                     latitudeDelta: 0.01,
                     longitudeDelta: 0.01,
                   }}
-                >
-                  <Marker
-                    coordinate={{
-                      latitude: route[0].latitude,
-                      longitude: route[0].longitude,
-                    }}
-                    title="Start"
-                  />
-
-                  {route.length > 1 && (
-                    <Marker
-                      coordinate={{
-                        latitude: route[route.length - 1].latitude,
-                        longitude: route[route.length - 1].longitude,
-                      }}
-                      title="Finish"
-                    />
-                  )}
-
-                  {route.length > 1 && (
-                    <Polyline
-                      coordinates={route.map((point) => ({
-                        latitude: point.latitude,
-                        longitude: point.longitude,
-                      }))}
-                      strokeWidth={5}
-                    />
-                  )}
-                </MapView>
+                  fallbackRegion={{
+                    latitude: route[0].latitude,
+                    longitude: route[0].longitude,
+                    latitudeDelta: 0.01,
+                    longitudeDelta: 0.01,
+                  }}
+                  route={route}
+                  showUserLocation={false}
+                  showFinishMarker
+                  fallbackTitle="Route saved"
+                  fallbackMessage="Set a Google Maps API key to show saved routes in Android builds."
+                  textColor={theme.colors.text}
+                  mutedTextColor={theme.colors.textMuted}
+                />
               </View>
             </View>
           )}

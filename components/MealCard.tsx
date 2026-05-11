@@ -9,7 +9,7 @@ import {
   Share2,
 } from "lucide-react-native";
 import { useRef, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Alert, Pressable, Text, View } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import { captureRef } from "react-native-view-shot";
 import * as Sharing from "expo-sharing";
@@ -199,6 +199,8 @@ export default function MealCard({
 }) {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportCardReady, setExportCardReady] = useState(false);
   const exportCardRef = useRef<View>(null);
 
   const mealTotals = logs.reduce(
@@ -221,12 +223,23 @@ export default function MealCard({
   const carbsPercent = macroPercent(carbsCalories, macroCaloriesTotal);
   const fatPercent = macroPercent(fatCalories, macroCaloriesTotal);
 
+  function waitForExportCard() {
+    return new Promise<void>((resolve) => {
+      requestAnimationFrame(() => {
+        setTimeout(resolve, exportCardReady ? 50 : 150);
+      });
+    });
+  }
+
   async function captureMealImage() {
     if (!exportCardRef.current) return null;
 
-    const uri = await captureRef(exportCardRef, {
+    await waitForExportCard();
+
+    const uri = await captureRef(exportCardRef.current, {
       format: "png",
       quality: 1,
+      fileName: `mxrvs-${mealType}-meal`,
       result: "tmpfile",
     });
 
@@ -234,28 +247,75 @@ export default function MealCard({
   }
 
   async function exportMealImage() {
-    const uri = await captureMealImage();
+    if (exporting) return;
 
-    if (!uri) return;
+    try {
+      setExporting(true);
 
-    const permission = await MediaLibrary.requestPermissionsAsync();
+      const uri = await captureMealImage();
 
-    if (permission.status === "granted") {
+      if (!uri) {
+        Alert.alert("Export Failed", "Meal image is not ready yet.");
+        return;
+      }
+
+      const permission = await MediaLibrary.requestPermissionsAsync(false, [
+        "photo",
+      ]);
+
+      if (!permission.granted) {
+        Alert.alert(
+          "Permission Required",
+          "Please allow photo access so mxrvs can save meal images.",
+        );
+        return;
+      }
+
       await MediaLibrary.saveToLibraryAsync(uri);
+
+      Alert.alert("Saved", "Meal image saved to your gallery.");
+    } catch (error) {
+      console.log("Export meal image error:", error);
+      Alert.alert(
+        "Export Failed",
+        "Something went wrong while saving the meal image.",
+      );
+    } finally {
+      setExporting(false);
     }
   }
 
   async function shareMealImage() {
-    const uri = await captureMealImage();
+    if (exporting) return;
 
-    if (!uri) return;
+    try {
+      setExporting(true);
 
-    if (await Sharing.isAvailableAsync()) {
+      const uri = await captureMealImage();
+
+      if (!uri) {
+        Alert.alert("Share Failed", "Meal image is not ready yet.");
+        return;
+      }
+
+      if (!(await Sharing.isAvailableAsync())) {
+        Alert.alert("Sharing Unavailable", "Sharing is not available here.");
+        return;
+      }
+
       await Sharing.shareAsync(uri, {
         mimeType: "image/png",
         dialogTitle: `${title} Meal Share`,
         UTI: "public.png",
       });
+    } catch (error) {
+      console.log("Share meal image error:", error);
+      Alert.alert(
+        "Share Failed",
+        "Something went wrong while sharing the meal image.",
+      );
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -274,12 +334,14 @@ export default function MealCard({
       >
         <Pressable
           onPress={shareMealImage}
+          disabled={exporting}
           style={{
             width: "100%",
             height: "100%",
             alignItems: "center",
             justifyContent: "center",
             paddingHorizontal: 8,
+            opacity: exporting ? 0.55 : 1,
           }}
         >
           <Share2 size={24} color={theme.colors.background} />
@@ -315,12 +377,14 @@ export default function MealCard({
       >
         <Pressable
           onPress={exportMealImage}
+          disabled={exporting}
           style={{
             width: "100%",
             height: "100%",
             alignItems: "center",
             justifyContent: "center",
             paddingHorizontal: 8,
+            opacity: exporting ? 0.55 : 1,
           }}
         >
           <ImageDown size={24} color={theme.colors.background} />
@@ -558,11 +622,14 @@ export default function MealCard({
       <View
         ref={exportCardRef}
         collapsable={false}
+        onLayout={() => setExportCardReady(true)}
+        pointerEvents="none"
         style={{
           position: "absolute",
-          left: -9999,
+          left: 0,
           top: 0,
           width: 380,
+          transform: [{ translateX: -10000 }],
           backgroundColor: theme.colors.background,
           padding: 18,
         }}

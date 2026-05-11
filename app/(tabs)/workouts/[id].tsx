@@ -210,7 +210,9 @@ export default function WorkoutDetailsScreen() {
       });
 
       if (type === "save") {
-        const permission = await MediaLibrary.requestPermissionsAsync(false);
+        const permission = await MediaLibrary.requestPermissionsAsync(false, [
+          "photo",
+        ]);
 
         if (!permission.granted) {
           setExporting(false);

@@ -12,7 +12,7 @@
       "backgroundColor": "#ffffff"
     },
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "ios": {
       "supportsTablet": true
     },
@@ -25,9 +25,7 @@
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
-        "android.permission.READ_MEDIA_IMAGES",
-        "android.permission.READ_MEDIA_VIDEO",
-        "android.permission.READ_MEDIA_AUDIO"
+        "android.permission.READ_MEDIA_IMAGES"
       ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/mxrvs.png",
@@ -44,9 +42,12 @@
       [
         "expo-media-library",
         {
-          "photosPermission": "Allow mxrvs to save workout images.",
-          "savePhotosPermission": "Allow mxrvs to save workout images.",
-          "isAccessMediaLocationEnabled": false
+          "photosPermission": "Allow mxrvs to access meal and workout images.",
+          "savePhotosPermission": "Allow mxrvs to save meal and workout images.",
+          "isAccessMediaLocationEnabled": false,
+          "granularPermissions": [
+            "photo"
+          ]
         }
       ]
     ],

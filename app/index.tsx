@@ -4,7 +4,7 @@ import * as LocalAuthentication from "expo-local-authentication";
 import { useRouter } from "expo-router";
 import { useEffect } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
-import { supabase } from "../lib/supabase";
+import { supabase, supabaseConfigError } from "../lib/supabase";
 
 export default function Index() {
   const router = useRouter();
@@ -12,38 +12,42 @@ export default function Index() {
 
   useEffect(() => {
     async function routeUser() {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+      try {
+        if (supabaseConfigError) {
+          router.replace("/auth");
+          return;
+        }
 
-      // ❌ No session → go to auth
-      if (!session) {
-        router.replace("/auth");
-        return;
-      }
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
 
-      // ✅ Check biometrics
-      const hasHardware = await LocalAuthentication.hasHardwareAsync();
-      const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+        if (!session) {
+          router.replace("/auth");
+          return;
+        }
 
-      // ❌ No biometrics → go straight in
-      if (!hasHardware || !isEnrolled) {
-        router.replace("/(tabs)/home" as any);
-        return;
-      }
+        const hasHardware = await LocalAuthentication.hasHardwareAsync();
+        const isEnrolled = await LocalAuthentication.isEnrolledAsync();
 
-      // ✅ Ask for fingerprint
-      const result = await LocalAuthentication.authenticateAsync({
-        promptMessage: "Unlock mxrvs",
-        fallbackLabel: "Use passcode",
-        cancelLabel: "Cancel",
-      });
+        if (!hasHardware || !isEnrolled) {
+          router.replace("/(tabs)/home" as any);
+          return;
+        }
 
-      if (result.success) {
-        router.replace("/(tabs)/home" as any);
-      } else {
-        // ❗ DO NOT sign out here
-        // Just send back to auth so user can retry
+        const result = await LocalAuthentication.authenticateAsync({
+          promptMessage: "Unlock mxrvs",
+          fallbackLabel: "Use passcode",
+          cancelLabel: "Cancel",
+        });
+
+        if (result.success) {
+          router.replace("/(tabs)/home" as any);
+        } else {
+          router.replace("/auth");
+        }
+      } catch (error) {
+        console.error("Failed to route user", error);
         router.replace("/auth");
       }
     }
