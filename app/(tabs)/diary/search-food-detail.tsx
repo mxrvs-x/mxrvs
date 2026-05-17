@@ -1,5 +1,6 @@
 import ThemedAlert from "@/components/ThemedAlert";
 import { supabase } from "@/lib/supabase";
+import { readJsonResponse } from "@/lib/fetchJson";
 import { useTheme } from "@/lib/theme";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { ChevronDown, X } from "lucide-react-native";
@@ -134,6 +135,44 @@ function getUsdaNutrient(
   const first = matches[0];
 
   return Number(first?.amount ?? first?.value ?? first?.nutrient?.amount ?? 0);
+}
+
+function normalizeUsdaPayload(food: any, existingFoodId?: string | null) {
+  const externalId = String(food.fdcId ?? food.external_id ?? "");
+
+  return {
+    foodId: existingFoodId ?? undefined,
+    source: "usda_fdc" as const,
+    external_id: externalId,
+    name: food.description ?? food.name ?? `USDA Food ${externalId}`,
+    brand: food.brandOwner ?? food.brandName ?? food.brand ?? "USDA",
+    serving_size: n(food.servingSize) || 100,
+    serving_unit: food.servingSizeUnit ?? "g",
+    calories: getUsdaNutrient(food, ["energy"], ["kcal"]),
+    protein_g: getUsdaNutrient(food, ["protein"]),
+    carbs_g: getUsdaNutrient(food, [
+      "carbohydrate, by difference",
+      "carbohydrate",
+    ]),
+    fat_g: getUsdaNutrient(food, ["total lipid", "total fat", "fat"]),
+    fiber_g: getUsdaNutrient(food, ["fiber"]),
+    sugar_g: getUsdaNutrient(food, ["total sugars", "sugars, total", "sugars"]),
+    sodium_mg: getUsdaNutrient(food, ["sodium"]),
+    cholesterol_mg: getUsdaNutrient(food, ["cholesterol"]),
+    potassium_mg: getUsdaNutrient(food, ["potassium"]),
+    calcium_mg: getUsdaNutrient(food, ["calcium"]),
+    iron_mg: getUsdaNutrient(food, ["iron"]),
+    magnesium_mg: getUsdaNutrient(food, ["magnesium"]),
+    zinc_mg: getUsdaNutrient(food, ["zinc"]),
+    vitamin_a_mcg: getUsdaNutrient(food, ["vitamin a, rae", "vitamin a"]),
+    vitamin_c_mg: getUsdaNutrient(food, ["vitamin c"]),
+    vitamin_d_mcg: getUsdaNutrient(food, [
+      "vitamin d",
+      "vitamin d (d2 + d3)",
+    ]),
+    vitamin_b12_mcg: getUsdaNutrient(food, ["vitamin b-12", "vitamin b12"]),
+    raw_data: food,
+  } satisfies NormalizedFood;
 }
 
 function buildServingOptions(food: NormalizedFood | null): FoodServing[] {
@@ -326,85 +365,56 @@ export default function SearchFoodDetailScreen() {
       }
 
       if (resultType === "usda") {
-        const apiKey = process.env.EXPO_PUBLIC_USDA_API_KEY;
+        const fallback = normalizeUsdaPayload(parsedPayload);
+        const fallbackOptions = buildServingOptions(fallback);
+
+        setFood(fallback);
+        setSelectedServing(fallbackOptions[0]);
+        setQuantity("1");
+
+        const apiKey = process.env.EXPO_PUBLIC_USDA_API_KEY?.trim();
 
         if (!apiKey) {
-          showAlert("Missing API key", "Missing EXPO_PUBLIC_USDA_API_KEY.");
-
+          showAlert(
+            "USDA details unavailable",
+            "Showing available search-result data because the USDA API key is missing.",
+          );
           return;
         }
 
         const response = await fetch(
-          `${USDA_DETAIL_URL}/${parsedPayload.fdcId}?api_key=${apiKey}`,
+          `${USDA_DETAIL_URL}/${encodeURIComponent(
+            parsedPayload.fdcId,
+          )}?api_key=${encodeURIComponent(apiKey)}`,
+          {
+            headers: {
+              Accept: "application/json",
+            },
+          },
         );
 
-        const json = await response.json();
+        let json: any;
 
-        if (!response.ok) {
-          throw new Error(JSON.stringify(json));
+        try {
+          json = await readJsonResponse(response, "USDA food detail");
+
+          if (!response.ok) {
+            throw new Error(JSON.stringify(json));
+          }
+        } catch (error) {
+          console.log("Diary USDA food detail error:", error);
+          showAlert(
+            "USDA details unavailable",
+            "Showing available search-result data for this food.",
+          );
+          return;
         }
 
         const externalId = String(parsedPayload.fdcId);
 
         const existingFoodId = await findExistingFoodId("usda_fdc", externalId);
 
-        const normalized: NormalizedFood = {
-          foodId: existingFoodId ?? undefined,
-
-          source: "usda_fdc",
-
-          external_id: externalId,
-
-          name: json.description ?? parsedPayload.name,
-
-          brand:
-            json.brandOwner ?? json.brandName ?? parsedPayload.brand ?? "USDA",
-
-          serving_size: 100,
-          serving_unit: "g",
-
-          calories: getUsdaNutrient(json, ["energy"], ["kcal"]),
-
-          protein_g: getUsdaNutrient(json, ["protein"]),
-
-          carbs_g: getUsdaNutrient(json, [
-            "carbohydrate, by difference",
-            "carbohydrate",
-          ]),
-
-          fat_g: getUsdaNutrient(json, ["total lipid", "total fat", "fat"]),
-
-          fiber_g: getUsdaNutrient(json, ["fiber"]),
-
-          sugar_g: getUsdaNutrient(json, [
-            "total sugars",
-            "sugars, total",
-            "sugars",
-          ]),
-
-          sodium_mg: getUsdaNutrient(json, ["sodium"]),
-
-          cholesterol_mg: getUsdaNutrient(json, ["cholesterol"]),
-
-          potassium_mg: getUsdaNutrient(json, ["potassium"]),
-          calcium_mg: getUsdaNutrient(json, ["calcium"]),
-          iron_mg: getUsdaNutrient(json, ["iron"]),
-          magnesium_mg: getUsdaNutrient(json, ["magnesium"]),
-          zinc_mg: getUsdaNutrient(json, ["zinc"]),
-
-          vitamin_a_mcg: getUsdaNutrient(json, ["vitamin a, rae", "vitamin a"]),
-          vitamin_c_mg: getUsdaNutrient(json, ["vitamin c"]),
-          vitamin_d_mcg: getUsdaNutrient(json, [
-            "vitamin d",
-            "vitamin d (d2 + d3)",
-          ]),
-          vitamin_b12_mcg: getUsdaNutrient(json, [
-            "vitamin b-12",
-            "vitamin b12",
-          ]),
-
-          raw_data: json,
-        };
+        const normalized = normalizeUsdaPayload(json, existingFoodId);
 
         const options = buildServingOptions(normalized);
 

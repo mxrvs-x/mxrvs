@@ -1,8 +1,7 @@
-import { requestFitnessPermissions } from "@/lib/appPermissions";
+import AppUpdateGate from "@/components/AppUpdateGate";
 import { AppThemeProvider, useTheme } from "@/lib/theme";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
@@ -12,6 +11,7 @@ function RootStack() {
   return (
     <>
       <StatusBar style={theme.mode === "dark" ? "light" : "dark"} />
+      <AppUpdateGate />
 
       <Stack
         screenOptions={{
@@ -32,10 +32,6 @@ function RootStack() {
 }
 
 export default function RootLayout() {
-  useEffect(() => {
-    requestFitnessPermissions();
-  }, []);
-
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>

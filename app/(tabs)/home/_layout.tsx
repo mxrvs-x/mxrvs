@@ -1,6 +1,6 @@
 import { useTheme } from "@/lib/theme";
 import { Drawer } from "expo-router/drawer";
-import { Home, User2 } from "lucide-react-native";
+import { Astroid, ChartNoAxesCombined, Home, User2 } from "lucide-react-native";
 
 export default function HomeDrawerLayout() {
   const theme = useTheme();
@@ -40,6 +40,26 @@ export default function HomeDrawerLayout() {
         options={{
           title: "Profile",
           drawerIcon: ({ color, size }) => <User2 color={color} size={size} />,
+        }}
+      />
+
+      <Drawer.Screen
+        name="reports"
+        options={{
+          title: "Reports",
+          drawerIcon: ({ color, size }) => (
+            <ChartNoAxesCombined color={color} size={size} />
+          ),
+        }}
+      />
+
+      <Drawer.Screen
+        name="gemini-nutrition"
+        options={{
+          title: "Macro Intelligence",
+          drawerIcon: ({ color, size }) => (
+            <Astroid color={color} size={size} />
+          ),
         }}
       />
     </Drawer>

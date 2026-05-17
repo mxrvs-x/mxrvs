@@ -210,7 +210,7 @@ export default function MacroProgressCard({
         current={totals.calories}
         target={targets.calories}
         unit="kcal"
-        color={theme.colors.textMuted}
+        color={theme.colors.calories}
       />
 
       <MacroProgressRow
@@ -219,7 +219,7 @@ export default function MacroProgressCard({
         current={totals.protein_g}
         target={targets.protein_g}
         unit="g"
-        color={theme.colors.primary}
+        color={theme.colors.protein}
       />
 
       <MacroProgressRow
@@ -228,7 +228,7 @@ export default function MacroProgressCard({
         current={totals.carbs_g}
         target={targets.carbs_g}
         unit="g"
-        color="#22C7D8"
+        color={theme.colors.carbs}
       />
 
       <MacroProgressRow
@@ -237,7 +237,7 @@ export default function MacroProgressCard({
         current={totals.fat_g}
         target={targets.fat_g}
         unit="g"
-        color="#F04423"
+        color={theme.colors.fat}
       />
     </Pressable>
   );

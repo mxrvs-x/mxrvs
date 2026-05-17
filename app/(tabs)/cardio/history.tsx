@@ -16,6 +16,7 @@ import {
   View,
 } from "react-native";
 import { X, ExpandIcon } from "lucide-react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type CardioSession = {
   id: string;
@@ -31,6 +32,7 @@ type CardioSession = {
 
 export default function CardioHistoryScreen() {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const Text = (props: any) => (
     <RNText {...props} style={[{ color: theme.colors.text }, props.style]} />
   );
@@ -268,35 +270,16 @@ export default function CardioHistoryScreen() {
   }
 
   return (
-    <>
-      {/* ✅ STACK SCREEN (ONLY ADDITION, NO OTHER CHANGES) */}
-      <Stack.Screen
-        options={{
-          headerShown: true,
-          headerShadowVisible: false,
-          headerTitle: "",
-          headerBackVisible: false,
-          headerStyle: {
-            backgroundColor: theme.colors.surface,
-          },
-          headerLeft: () => (
-            <Pressable
-              onPress={() => router.back()}
-              style={{
-                width: 46,
-                height: 46,
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <X size={30} color={theme.colors.text} />
-            </Pressable>
-          ),
-        }}
+    <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
+      <Stack.Screen options={{ headerShown: false }} />
+      <HistoryHeader
+        theme={theme}
+        topInset={insets.top}
+        onClose={() => router.back()}
       />
 
       <FlatList
-        style={{ flex: 1, backgroundColor: theme.colors.background }}
+        style={{ flex: 1 }}
         data={filteredSessions}
         keyExtractor={(item) => item.id}
         contentContainerStyle={{ padding: 16, paddingBottom: 20 }}
@@ -671,7 +654,41 @@ export default function CardioHistoryScreen() {
           </Pressable>
         )}
       />
-    </>
+    </View>
+  );
+}
+
+function HistoryHeader({
+  theme,
+  topInset,
+  onClose,
+}: {
+  theme: AppTheme;
+  topInset: number;
+  onClose: () => void;
+}) {
+  return (
+    <View
+      style={{
+        backgroundColor: theme.colors.surface,
+        paddingTop: topInset,
+        height: topInset + 56,
+        justifyContent: "center",
+      }}
+    >
+      <Pressable
+        onPress={onClose}
+        style={{
+          width: 46,
+          height: 46,
+          alignItems: "center",
+          justifyContent: "center",
+          marginLeft: 4,
+        }}
+      >
+        <X size={30} color={theme.colors.text} />
+      </Pressable>
+    </View>
   );
 }
 

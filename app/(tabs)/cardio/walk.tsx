@@ -18,6 +18,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type WalkSource = "outdoor" | "treadmill";
 
@@ -251,6 +252,7 @@ function resetSession() {
 
 export default function WalkScreen() {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const Text = (props: any) => (
     <RNText {...props} style={[{ color: theme.colors.text }, props.style]} />
   );
@@ -322,16 +324,20 @@ export default function WalkScreen() {
 
     async function initLocation() {
       try {
-        const permission = await Location.requestForegroundPermissionsAsync();
+        const permission = await Location.getForegroundPermissionsAsync();
         const granted = permission.status === "granted";
 
         setLocationPermissionGranted(granted);
 
         if (!granted) return;
 
-        const current = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
+        const current =
+          (await Location.getLastKnownPositionAsync()) ||
+          (await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          }));
+
+        if (!current) return;
 
         setWalkSession({
           region: {
@@ -349,6 +355,12 @@ export default function WalkScreen() {
 
     initLocation();
   }, [session.walkSource, session.tracking]);
+
+  useEffect(() => {
+    return () => {
+      stopWatchers(); // Make sure this actually clears everything
+    };
+  }, []);
 
   function showAlert({
     title,
@@ -370,7 +382,7 @@ export default function WalkScreen() {
     setAlertConfirmText(confirmText);
     setAlertCancelText(cancelText);
     setAlertDanger(danger);
-    setAlertOnConfirm(() => onConfirm);
+    setAlertOnConfirm(() => () => onConfirm?.());
     setAlertOpen(true);
   }
 
@@ -506,20 +518,30 @@ export default function WalkScreen() {
 
     startTimer();
 
-    pedometerRef = Pedometer.watchStepCount((result) => {
-      const rawSteps = result.steps;
-      const previousRawSteps = lastRawStepsRef;
-      const delta = Math.max(0, rawSteps - previousRawSteps);
+    try {
+      const pedometerAvailable = await Pedometer.isAvailableAsync().catch(
+        () => false,
+      );
 
-      lastRawStepsRef = rawSteps;
+      if (pedometerAvailable) {
+        pedometerRef = Pedometer.watchStepCount((result) => {
+          const rawSteps = result.steps;
+          const previousRawSteps = lastRawStepsRef;
+          const delta = Math.max(0, rawSteps - previousRawSteps);
 
-      if (getWalkSession().isPaused) return;
+          lastRawStepsRef = rawSteps;
 
-      setWalkSession((prev) => ({
-        ...prev,
-        steps: prev.steps + delta,
-      }));
-    });
+          if (getWalkSession().isPaused) return;
+
+          setWalkSession((prev) => ({
+            ...prev,
+            steps: prev.steps + delta,
+          }));
+        });
+      }
+    } catch (error) {
+      console.log("Start walk pedometer error:", error);
+    }
 
     if (currentSource === "treadmill") return;
 
@@ -565,7 +587,8 @@ export default function WalkScreen() {
 
       showAlert({
         title: "Location unavailable",
-        message: "Could not start GPS tracking. Please check location services and try again.",
+        message:
+          "Could not start GPS tracking. Please check location services and try again.",
         danger: true,
       });
     }
@@ -806,21 +829,23 @@ export default function WalkScreen() {
                   backgroundColor: theme.colors.surfaceAlt,
                 }}
               >
-                <SafeRouteMap
-                  region={session.region}
-                  fallbackRegion={{
-                    latitude: 14.5995,
-                    longitude: 120.9842,
-                    latitudeDelta: 0.05,
-                    longitudeDelta: 0.05,
-                  }}
-                  route={session.route}
-                  showUserLocation={locationPermissionGranted}
-                  fallbackTitle="Walk GPS ready"
-                  fallbackMessage="Set a Google Maps API key to show the native map in Android builds."
-                  textColor={theme.colors.text}
-                  mutedTextColor={theme.colors.textMuted}
-                />
+                {session.walkSource === "outdoor" && (
+                  <SafeRouteMap
+                    region={session.region}
+                    fallbackRegion={{
+                      latitude: 14.5995,
+                      longitude: 120.9842,
+                      latitudeDelta: 0.05,
+                      longitudeDelta: 0.05,
+                    }}
+                    route={session.route}
+                    showUserLocation={locationPermissionGranted}
+                    fallbackTitle="Walk GPS ready"
+                    fallbackMessage="Set a Google Maps API key to show the native map in Android builds."
+                    textColor={theme.colors.text}
+                    mutedTextColor={theme.colors.textMuted}
+                  />
+                )}
               </View>
 
               <Text
@@ -1004,9 +1029,7 @@ export default function WalkScreen() {
             style={{
               flex: 1,
               backgroundColor:
-                theme.mode === "dark"
-                  ? "rgba(0,0,0,0.65)"
-                  : "rgba(0,0,0,0.35)",
+                theme.mode === "dark" ? "rgba(0,0,0,0.65)" : "rgba(0,0,0,0.35)",
               justifyContent: "flex-end",
             }}
           >
@@ -1016,7 +1039,9 @@ export default function WalkScreen() {
                 backgroundColor: theme.colors.surface,
                 borderTopLeftRadius: 24,
                 borderTopRightRadius: 24,
-                padding: 20,
+                paddingHorizontal: 20,
+                paddingTop: 20,
+                paddingBottom: Math.max(20, insets.bottom + 20),
               }}
             >
               <Text style={{ fontSize: 22, fontWeight: "900" }}>
@@ -1116,7 +1141,9 @@ export default function WalkScreen() {
                   alignItems: "center",
                 }}
               >
-                <Text style={{ color: theme.colors.surface, fontWeight: "900" }}>
+                <Text
+                  style={{ color: theme.colors.surface, fontWeight: "900" }}
+                >
                   Save Walk
                 </Text>
               </Pressable>

@@ -1,6 +1,12 @@
 import { useTheme } from "@/lib/theme";
 import { Tabs } from "expo-router";
-import { Activity, Apple, BookOpen, Dumbbell, Home } from "lucide-react-native";
+import {
+  Activity,
+  SaladIcon,
+  ListTodo,
+  Dumbbell,
+  LayoutDashboard,
+} from "lucide-react-native";
 
 export default function TabsLayout() {
   const theme = useTheme();
@@ -23,7 +29,7 @@ export default function TabsLayout() {
         options={{
           title: "Home",
           tabBarIcon: ({ color, size }) => (
-            <Home color={color} size={size} />
+            <LayoutDashboard color={color} size={size} />
           ),
         }}
       />
@@ -31,9 +37,9 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="diary"
         options={{
-          title: "Diary",
+          title: "Logs",
           tabBarIcon: ({ color, size }) => (
-            <BookOpen color={color} size={size} />
+            <ListTodo color={color} size={size} />
           ),
         }}
       />
@@ -43,7 +49,7 @@ export default function TabsLayout() {
         options={{
           title: "Foods",
           tabBarIcon: ({ color, size }) => (
-            <Apple color={color} size={size} />
+            <SaladIcon color={color} size={size} />
           ),
         }}
       />

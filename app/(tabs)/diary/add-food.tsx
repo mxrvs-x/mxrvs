@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { readJsonResponse } from "@/lib/fetchJson";
 import { useTheme } from "@/lib/theme";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { Check, Search, SlidersHorizontal, X } from "lucide-react-native";
@@ -49,6 +50,7 @@ type UsdaFoodResult = {
   brand?: string | null;
   dataType: string;
   foodCategory?: string | null;
+  raw?: UsdaFood;
 };
 
 type FoodResult = LocalFoodResult | UsdaFoodResult;
@@ -60,6 +62,9 @@ type UsdaFood = {
   brandOwner?: string;
   brandName?: string;
   foodCategory?: string;
+  servingSize?: number;
+  servingSizeUnit?: string;
+  foodNutrients?: unknown[];
 };
 
 const USDA_RANDOM_QUERIES = [
@@ -89,6 +94,12 @@ const USDA_RANDOM_QUERIES = [
   "carrot",
   "peanut butter",
 ];
+
+const DETAIL_NUTRIENT_IDS = new Set([
+  1008, 1003, 1004, 1005, 1079, 2000, 1258, 1257, 1292, 1293, 1210, 1211, 1212,
+  1213, 1214, 1215, 1216, 1217, 1218, 1219, 1220, 1221, 1222, 1223, 1224, 1225,
+  1226, 1227,
+]);
 
 function n(value: any) {
   return Number(value ?? 0);
@@ -167,6 +178,7 @@ function mapUsdaFood(food: UsdaFood): UsdaFoodResult {
     brand: food.brandOwner ?? food.brandName ?? null,
     dataType: food.dataType,
     foodCategory: food.foodCategory ?? null,
+    raw: food,
   };
 }
 
@@ -174,6 +186,29 @@ function filterToSource(value: DatabaseFilter): FoodSource | null {
   if (value === "custom") return "custom";
   if (value === "usda") return "usda_fdc";
   return null;
+}
+
+function compactUsdaFoodPayload(food: UsdaFoodResult) {
+  const nutrients = Array.isArray(food.raw?.foodNutrients)
+    ? food.raw.foodNutrients.filter((item: any) =>
+        DETAIL_NUTRIENT_IDS.has(item?.nutrientId ?? item?.nutrient?.id),
+      )
+    : undefined;
+
+  return {
+    resultType: "usda",
+    fdcId: food.fdcId,
+    name: food.name,
+    brand: food.brand ?? null,
+    dataType: food.dataType,
+    foodCategory: food.foodCategory ?? null,
+    description: food.raw?.description ?? food.name,
+    brandOwner: food.raw?.brandOwner,
+    brandName: food.raw?.brandName,
+    servingSize: food.raw?.servingSize,
+    servingSizeUnit: food.raw?.servingSizeUnit,
+    foodNutrients: nutrients,
+  };
 }
 
 export default function AddFoodScreen() {
@@ -323,7 +358,7 @@ export default function AddFoodScreen() {
     if (databaseFilter === "custom") return [];
     if (searchText.trim().length < 2) return [];
 
-    const apiKey = process.env.EXPO_PUBLIC_USDA_API_KEY;
+    const apiKey = process.env.EXPO_PUBLIC_USDA_API_KEY?.trim();
 
     if (!apiKey) {
       console.log("Missing EXPO_PUBLIC_USDA_API_KEY");
@@ -332,24 +367,33 @@ export default function AddFoodScreen() {
 
     const url =
       "https://api.nal.usda.gov/fdc/v1/foods/search" +
-      `?api_key=${apiKey}` +
+      `?api_key=${encodeURIComponent(apiKey)}` +
       `&query=${encodeURIComponent(searchText.trim())}` +
       `&pageSize=50` +
       `&pageNumber=1`;
 
-    const response = await fetch(url);
-    const json = await response.json();
+    try {
+      const response = await fetch(url, {
+        headers: {
+          Accept: "application/json",
+        },
+      });
+      const json = await readJsonResponse(response, "USDA search");
 
-    if (!response.ok) {
-      console.log("USDA error:", json);
+      if (!response.ok) {
+        console.log("USDA error:", json);
+        return [];
+      }
+
+      return ((json.foods ?? []) as UsdaFood[]).map(mapUsdaFood);
+    } catch (error) {
+      console.log("USDA search error:", error);
       return [];
     }
-
-    return ((json.foods ?? []) as UsdaFood[]).map(mapUsdaFood);
   }
 
   async function fetchRandomUsdaFoods() {
-    const apiKey = process.env.EXPO_PUBLIC_USDA_API_KEY;
+    const apiKey = process.env.EXPO_PUBLIC_USDA_API_KEY?.trim();
 
     if (!apiKey) {
       console.log("Missing EXPO_PUBLIC_USDA_API_KEY");
@@ -365,20 +409,29 @@ export default function AddFoodScreen() {
 
     const url =
       "https://api.nal.usda.gov/fdc/v1/foods/search" +
-      `?api_key=${apiKey}` +
+      `?api_key=${encodeURIComponent(apiKey)}` +
       `&query=${encodeURIComponent(randomQuery)}` +
       `&pageSize=50` +
       `&pageNumber=${randomPage}`;
 
-    const response = await fetch(url);
-    const json = await response.json();
+    try {
+      const response = await fetch(url, {
+        headers: {
+          Accept: "application/json",
+        },
+      });
+      const json = await readJsonResponse(response, "Random USDA foods");
 
-    if (!response.ok) {
-      console.log("Random USDA error:", json);
+      if (!response.ok) {
+        console.log("Random USDA error:", json);
+        return [];
+      }
+
+      return ((json.foods ?? []) as UsdaFood[]).map(mapUsdaFood);
+    } catch (error) {
+      console.log("Random USDA search error:", error);
       return [];
     }
-
-    return ((json.foods ?? []) as UsdaFood[]).map(mapUsdaFood);
   }
 
   const searchFoodsAjax = useCallback(
@@ -465,11 +518,14 @@ export default function AddFoodScreen() {
   }
 
   function openFood(item: FoodResult) {
+    const payload =
+      item.resultType === "usda" ? compactUsdaFoodPayload(item) : item;
+
     router.push({
       pathname: "/(tabs)/diary/search-food-detail" as any,
       params: {
         resultType: item.resultType,
-        payload: encodeURIComponent(JSON.stringify(item)),
+        payload: encodeURIComponent(JSON.stringify(payload)),
         mealType: String(mealType),
         date: String(date),
       },

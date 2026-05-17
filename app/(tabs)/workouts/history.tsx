@@ -16,6 +16,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type WorkoutType = "push" | "pull" | "legs" | "upper" | "lower" | "rest";
 
@@ -50,6 +51,7 @@ function isWorkoutType(value?: string | string[]): value is WorkoutType {
 export default function WorkoutHistoryScreen() {
   const router = useRouter();
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ split?: WorkoutType }>();
 
   const currentSplit: WorkoutType = isWorkoutType(params.split)
@@ -269,74 +271,32 @@ export default function WorkoutHistoryScreen() {
 
   if (loading) {
     return (
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: theme.colors.background,
-          justifyContent: "center",
-        }}
-      >
-        <Stack.Screen
-          options={{
-            headerShown: true,
-            headerShadowVisible: false,
-            headerBackVisible: false,
-            headerTitle: "",
-            headerStyle: {
-              backgroundColor: theme.colors.surface,
-            },
-            headerTintColor: theme.colors.text,
-            headerLeft: () => (
-              <Pressable
-                onPress={handleClosePress}
-                style={{
-                  width: 42,
-                  height: 42,
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <X size={30} color={theme.colors.text} />
-              </Pressable>
-            ),
-          }}
+      <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
+        <Stack.Screen options={{ headerShown: false }} />
+        <HistoryHeader
+          theme={theme}
+          topInset={insets.top}
+          onClose={handleClosePress}
         />
 
-        <ActivityIndicator color={theme.colors.primary} />
+        <View style={{ flex: 1, justifyContent: "center" }}>
+          <ActivityIndicator color={theme.colors.primary} />
+        </View>
       </View>
     );
   }
 
   return (
-    <>
-      <Stack.Screen
-        options={{
-          headerShown: true,
-          headerShadowVisible: false,
-          headerBackVisible: false,
-          headerTitle: "",
-          headerStyle: {
-            backgroundColor: theme.colors.surface,
-          },
-          headerTintColor: theme.colors.text,
-          headerLeft: () => (
-            <Pressable
-              onPress={handleClosePress}
-              style={{
-                width: 42,
-                height: 42,
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <X size={30} color={theme.colors.text} />
-            </Pressable>
-          ),
-        }}
+    <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
+      <Stack.Screen options={{ headerShown: false }} />
+      <HistoryHeader
+        theme={theme}
+        topInset={insets.top}
+        onClose={handleClosePress}
       />
 
       <FlatList
-        style={{ flex: 1, backgroundColor: theme.colors.background }}
+        style={{ flex: 1 }}
         data={filteredSessions}
         keyExtractor={(item) => item.id}
         contentContainerStyle={{
@@ -743,7 +703,41 @@ export default function WorkoutHistoryScreen() {
           </Pressable>
         )}
       />
-    </>
+    </View>
+  );
+}
+
+function HistoryHeader({
+  theme,
+  topInset,
+  onClose,
+}: {
+  theme: ReturnType<typeof useTheme>;
+  topInset: number;
+  onClose: () => void;
+}) {
+  return (
+    <View
+      style={{
+        backgroundColor: theme.colors.surface,
+        paddingTop: topInset,
+        height: topInset + 56,
+        justifyContent: "center",
+      }}
+    >
+      <Pressable
+        onPress={onClose}
+        style={{
+          width: 46,
+          height: 46,
+          alignItems: "center",
+          justifyContent: "center",
+          marginLeft: 4,
+        }}
+      >
+        <X size={30} color={theme.colors.text} />
+      </Pressable>
+    </View>
   );
 }
 

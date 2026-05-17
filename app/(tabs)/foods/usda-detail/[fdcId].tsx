@@ -1,3 +1,4 @@
+import { readJsonResponse } from "@/lib/fetchJson";
 import { useTheme } from "@/lib/theme";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { ChevronDown, ChevronUp, X } from "lucide-react-native";
@@ -180,12 +181,53 @@ function formatNumber(value?: number | null) {
   return Math.round(safeValue).toString();
 }
 
+function getParamValue(value?: string | string[]) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function parsePayload(value?: string | string[]) {
+  const raw = getParamValue(value);
+
+  if (!raw) return null;
+
+  try {
+    return JSON.parse(decodeURIComponent(raw)) as FoodDetail;
+  } catch {
+    return null;
+  }
+}
+
+function buildUsdaFoodUrl(fdcId: string, apiKey: string) {
+  return (
+    `https://api.nal.usda.gov/fdc/v1/food/${encodeURIComponent(fdcId)}` +
+    `?api_key=${encodeURIComponent(apiKey.trim())}`
+  );
+}
+
+function minimalFood(fdcId?: string | string[]): FoodDetail | null {
+  const foodId = getParamValue(fdcId);
+
+  if (!foodId) return null;
+
+  return {
+    fdcId: Number(foodId) || 0,
+    description: `USDA Food ${foodId}`,
+    dataType: "FoodData Central",
+    foodNutrients: [],
+  };
+}
+
 export default function UsdaFoodDetailScreen() {
-  const { fdcId } = useLocalSearchParams<{ fdcId: string }>();
+  const { fdcId, payload } = useLocalSearchParams<{
+    fdcId: string;
+    payload?: string | string[];
+  }>();
 
   const router = useRouter();
   const theme = useTheme();
   const screenWidth = Dimensions.get("window").width;
+  const fallbackFood = useMemo(() => parsePayload(payload), [payload]);
+  const minimalFallbackFood = useMemo(() => minimalFood(fdcId), [fdcId]);
 
   const [food, setFood] = useState<FoodDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -193,37 +235,72 @@ export default function UsdaFoodDetailScreen() {
   const [showFullNutrition, setShowFullNutrition] = useState(false);
 
   useEffect(() => {
+    let isMounted = true;
+
     async function fetchFoodDetail() {
       try {
-        const apiKey = process.env.EXPO_PUBLIC_USDA_API_KEY;
+        const initialFood = fallbackFood ?? minimalFallbackFood;
+
+        if (initialFood) {
+          setFood(initialFood);
+          setLoading(false);
+          setStatus("");
+        } else {
+          setLoading(true);
+        }
+
+        const apiKey = process.env.EXPO_PUBLIC_USDA_API_KEY?.trim();
 
         if (!apiKey) {
           setStatus("Missing EXPO_PUBLIC_USDA_API_KEY in .env");
           return;
         }
 
-        const url = `https://api.nal.usda.gov/fdc/v1/food/${fdcId}?api_key=${apiKey}`;
+        const foodId = getParamValue(fdcId);
 
-        const response = await fetch(url);
-        const json = await response.json();
+        if (!foodId) {
+          setStatus("Missing USDA food id.");
+          return;
+        }
+
+        const response = await fetch(buildUsdaFoodUrl(foodId, apiKey), {
+          headers: {
+            Accept: "application/json",
+          },
+        });
+        const json = await readJsonResponse(response, "USDA food detail");
 
         if (!response.ok) {
           setStatus(`USDA error: ${JSON.stringify(json)}`);
           return;
         }
 
+        if (!isMounted) return;
+
         setFood(json);
+        setStatus("");
       } catch (err) {
         const message =
           err instanceof Error ? err.message : JSON.stringify(err);
-        setStatus(`Error: ${message}`);
+
+        console.log("USDA food detail error:", message);
+
+        setStatus(
+          fallbackFood
+            ? "Full USDA details are temporarily unavailable. Showing the food data from search results."
+            : "USDA food details are temporarily unavailable. Please try this food again later.",
+        );
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     }
 
     fetchFoodDetail();
-  }, [fdcId]);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [fallbackFood, fdcId, minimalFallbackFood]);
 
   const sections = useMemo(() => {
     const macros = MACROS.map((target) => getNutrientValue(food, target));
@@ -441,6 +518,29 @@ export default function UsdaFoodDetailScreen() {
             Nutrition values are usually per 100g
           </Text>
         )}
+
+        {status ? (
+          <View
+            style={{
+              marginTop: 14,
+              borderRadius: 14,
+              padding: 12,
+              backgroundColor: theme.colors.surface,
+              borderWidth: 1,
+              borderColor: theme.colors.border,
+            }}
+          >
+            <Text
+              style={{
+                color: theme.colors.textMuted,
+                lineHeight: 18,
+                fontWeight: "700",
+              }}
+            >
+              {status}
+            </Text>
+          </View>
+        ) : null}
 
         <MacroDistributionChart macros={sections.macros} theme={theme} />
 

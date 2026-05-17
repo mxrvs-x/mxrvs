@@ -18,6 +18,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type RunSource = "outdoor" | "treadmill";
 
@@ -252,6 +253,7 @@ function resetSession() {
 
 export default function RunScreen() {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const Text = (props: any) => (
     <RNText {...props} style={[{ color: theme.colors.text }, props.style]} />
   );
@@ -323,16 +325,20 @@ export default function RunScreen() {
 
     async function initLocation() {
       try {
-        const permission = await Location.requestForegroundPermissionsAsync();
+        const permission = await Location.getForegroundPermissionsAsync();
         const granted = permission.status === "granted";
 
         setLocationPermissionGranted(granted);
 
         if (!granted) return;
 
-        const current = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
+        const current =
+          (await Location.getLastKnownPositionAsync()) ||
+          (await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          }));
+
+        if (!current) return;
 
         setRunSession({
           region: {
@@ -350,6 +356,12 @@ export default function RunScreen() {
 
     initLocation();
   }, [session.runSource, session.tracking]);
+
+  useEffect(() => {
+    return () => {
+      stopWatchers(); // Make sure this actually clears everything
+    };
+  }, []);
 
   function showAlert({
     title,
@@ -371,7 +383,7 @@ export default function RunScreen() {
     setAlertConfirmText(confirmText);
     setAlertCancelText(cancelText);
     setAlertDanger(danger);
-    setAlertOnConfirm(() => onConfirm);
+    setAlertOnConfirm(() => () => onConfirm?.());
     setAlertOpen(true);
   }
 
@@ -507,20 +519,30 @@ export default function RunScreen() {
 
     startTimer();
 
-    pedometerRef = Pedometer.watchStepCount((result) => {
-      const rawSteps = result.steps;
-      const previousRawSteps = lastRawStepsRef;
-      const delta = Math.max(0, rawSteps - previousRawSteps);
+    try {
+      const pedometerAvailable = await Pedometer.isAvailableAsync().catch(
+        () => false,
+      );
 
-      lastRawStepsRef = rawSteps;
+      if (pedometerAvailable) {
+        pedometerRef = Pedometer.watchStepCount((result) => {
+          const rawSteps = result.steps;
+          const previousRawSteps = lastRawStepsRef;
+          const delta = Math.max(0, rawSteps - previousRawSteps);
 
-      if (getRunSession().isPaused) return;
+          lastRawStepsRef = rawSteps;
 
-      setRunSession((prev) => ({
-        ...prev,
-        steps: prev.steps + delta,
-      }));
-    });
+          if (getRunSession().isPaused) return;
+
+          setRunSession((prev) => ({
+            ...prev,
+            steps: prev.steps + delta,
+          }));
+        });
+      }
+    } catch (error) {
+      console.log("Start run pedometer error:", error);
+    }
 
     if (currentSource === "treadmill") return;
 
@@ -566,7 +588,8 @@ export default function RunScreen() {
 
       showAlert({
         title: "Location unavailable",
-        message: "Could not start GPS tracking. Please check location services and try again.",
+        message:
+          "Could not start GPS tracking. Please check location services and try again.",
         danger: true,
       });
     }
@@ -807,21 +830,23 @@ export default function RunScreen() {
                   backgroundColor: theme.colors.surfaceAlt,
                 }}
               >
-                <SafeRouteMap
-                  region={session.region}
-                  fallbackRegion={{
-                    latitude: 14.5995,
-                    longitude: 120.9842,
-                    latitudeDelta: 0.05,
-                    longitudeDelta: 0.05,
-                  }}
-                  route={session.route}
-                  showUserLocation={locationPermissionGranted}
-                  fallbackTitle="Run GPS ready"
-                  fallbackMessage="Set a Google Maps API key to show the native map in Android builds."
-                  textColor={theme.colors.text}
-                  mutedTextColor={theme.colors.textMuted}
-                />
+                {session.runSource === "outdoor" && (
+                  <SafeRouteMap
+                    region={session.region}
+                    fallbackRegion={{
+                      latitude: 14.5995,
+                      longitude: 120.9842,
+                      latitudeDelta: 0.05,
+                      longitudeDelta: 0.05,
+                    }}
+                    route={session.route}
+                    showUserLocation={locationPermissionGranted}
+                    fallbackTitle="Run GPS ready"
+                    fallbackMessage="Set a Google Maps API key to show the native map in Android builds."
+                    textColor={theme.colors.text}
+                    mutedTextColor={theme.colors.textMuted}
+                  />
+                )}
               </View>
 
               <Text
@@ -1015,7 +1040,9 @@ export default function RunScreen() {
                 backgroundColor: theme.colors.surface,
                 borderTopLeftRadius: 24,
                 borderTopRightRadius: 24,
-                padding: 20,
+                paddingHorizontal: 20,
+                paddingTop: 20,
+                paddingBottom: Math.max(20, insets.bottom + 20),
               }}
             >
               <Text style={{ fontSize: 22, fontWeight: "900" }}>

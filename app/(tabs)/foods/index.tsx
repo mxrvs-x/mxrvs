@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { readJsonResponse } from "@/lib/fetchJson";
 import { useTheme } from "@/lib/theme";
 import { Stack, useRouter } from "expo-router";
 import { CircleX, Plus, Search } from "lucide-react-native";
@@ -35,6 +36,9 @@ type UsdaFood = {
   dataType?: string;
   brandOwner?: string;
   brandName?: string;
+  servingSize?: number;
+  servingSizeUnit?: string;
+  foodNutrients?: unknown[];
 };
 
 type FoodResult =
@@ -47,9 +51,34 @@ type FoodResult =
       food: UsdaFood;
     };
 
+const DETAIL_NUTRIENT_IDS = new Set([
+  1008, 1003, 1004, 1005, 1079, 2000, 1258, 1257, 1292, 1293, 1210, 1211, 1212,
+  1213, 1214, 1215, 1216, 1217, 1218, 1219, 1220, 1221, 1222, 1223, 1224, 1225,
+  1226, 1227,
+]);
+
 function sourceLabel(source: string) {
   if (source === "usda_fdc") return "USDA";
   return "CUSTOM";
+}
+
+function compactUsdaFoodPayload(food: UsdaFood) {
+  const nutrients = Array.isArray(food.foodNutrients)
+    ? food.foodNutrients.filter((item: any) =>
+        DETAIL_NUTRIENT_IDS.has(item?.nutrientId ?? item?.nutrient?.id),
+      )
+    : undefined;
+
+  return {
+    fdcId: food.fdcId,
+    description: food.description,
+    dataType: food.dataType ?? "FoodData Central",
+    brandOwner: food.brandOwner,
+    brandName: food.brandName,
+    servingSize: food.servingSize,
+    servingSizeUnit: food.servingSizeUnit,
+    foodNutrients: nutrients,
+  };
 }
 
 export default function FoodsTab() {
@@ -170,14 +199,38 @@ export default function FoodsTab() {
         .order("created_at", { ascending: false })
         .limit(30);
 
-      const apiKey = process.env.EXPO_PUBLIC_USDA_API_KEY;
+      const apiKey = process.env.EXPO_PUBLIC_USDA_API_KEY?.trim();
+
+      let usdaError: string | null = null;
 
       const usdaPromise = apiKey
         ? fetch(
-            `https://api.nal.usda.gov/fdc/v1/foods/search?api_key=${apiKey}&query=${encodeURIComponent(
+            `https://api.nal.usda.gov/fdc/v1/foods/search?api_key=${encodeURIComponent(apiKey)}&query=${encodeURIComponent(
               query,
             )}&pageSize=25`,
-          ).then((res) => res.json())
+            {
+              headers: {
+                Accept: "application/json",
+              },
+            },
+          )
+            .then(async (res) => {
+              const json = await readJsonResponse(res, "USDA search");
+
+              if (!res.ok) {
+                throw new Error(JSON.stringify(json));
+              }
+
+              return json;
+            })
+            .catch((error) => {
+              usdaError =
+                error instanceof Error
+                  ? error.message
+                  : "USDA search is unavailable.";
+
+              return null;
+            })
         : Promise.resolve(null);
 
       const [savedResponse, usdaResponse] = await Promise.all([
@@ -207,6 +260,8 @@ export default function FoodsTab() {
 
       if (!apiKey) {
         setStatus("Missing EXPO_PUBLIC_USDA_API_KEY in .env");
+      } else if (usdaError) {
+        setStatus(`USDA search unavailable: ${usdaError}`);
       } else {
         setStatus("");
       }
@@ -488,7 +543,15 @@ export default function FoodsTab() {
             return (
               <Pressable
                 onPress={() =>
-                  router.push(`/foods/usda-detail/${item.food.fdcId}` as any)
+                  router.push({
+                    pathname: "/foods/usda-detail/[fdcId]" as any,
+                    params: {
+                      fdcId: String(item.food.fdcId),
+                      payload: encodeURIComponent(
+                        JSON.stringify(compactUsdaFoodPayload(item.food)),
+                      ),
+                    },
+                  })
                 }
                 style={{
                   minHeight: 64,

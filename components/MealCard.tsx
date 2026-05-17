@@ -1,3 +1,4 @@
+import ThemedAlert from "@/components/ThemedAlert";
 import { AppTheme } from "@/lib/theme";
 import { useRouter } from "expo-router";
 import {
@@ -9,7 +10,7 @@ import {
   Share2,
 } from "lucide-react-native";
 import { useRef, useState } from "react";
-import { Alert, Pressable, Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import { captureRef } from "react-native-view-shot";
 import * as Sharing from "expo-sharing";
@@ -41,11 +42,7 @@ export type MealFoodLog = {
   } | null;
 };
 
-const MACRO_COLORS = {
-  protein: "#16A34A",
-  carbs: "#F97316",
-  fat: "#D97706",
-};
+
 
 function n(value?: number | null) {
   return Number(value ?? 0);
@@ -92,17 +89,17 @@ function MacroDonutChart({
     {
       key: "Protein",
       value: proteinCalories,
-      color: MACRO_COLORS.protein,
+      color: theme.colors.protein,
     },
     {
       key: "Carbs",
       value: carbsCalories,
-      color: MACRO_COLORS.carbs,
+      color: theme.colors.carbs,
     },
     {
       key: "Fat",
       value: fatCalories,
-      color: MACRO_COLORS.fat,
+      color: theme.colors.fat,
     },
   ];
 
@@ -201,6 +198,9 @@ export default function MealCard({
   const [isOpen, setIsOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportCardReady, setExportCardReady] = useState(false);
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [alertTitle, setAlertTitle] = useState("");
+  const [alertMessage, setAlertMessage] = useState("");
   const exportCardRef = useRef<View>(null);
 
   const mealTotals = logs.reduce(
@@ -222,6 +222,12 @@ export default function MealCard({
   const proteinPercent = macroPercent(proteinCalories, macroCaloriesTotal);
   const carbsPercent = macroPercent(carbsCalories, macroCaloriesTotal);
   const fatPercent = macroPercent(fatCalories, macroCaloriesTotal);
+
+  function showAlert(title: string, message: string) {
+    setAlertTitle(title);
+    setAlertMessage(message);
+    setAlertOpen(true);
+  }
 
   function waitForExportCard() {
     return new Promise<void>((resolve) => {
@@ -255,7 +261,7 @@ export default function MealCard({
       const uri = await captureMealImage();
 
       if (!uri) {
-        Alert.alert("Export Failed", "Meal image is not ready yet.");
+        showAlert("Export Failed", "Meal image is not ready yet.");
         return;
       }
 
@@ -264,7 +270,7 @@ export default function MealCard({
       ]);
 
       if (!permission.granted) {
-        Alert.alert(
+        showAlert(
           "Permission Required",
           "Please allow photo access so mxrvs can save meal images.",
         );
@@ -273,10 +279,10 @@ export default function MealCard({
 
       await MediaLibrary.saveToLibraryAsync(uri);
 
-      Alert.alert("Saved", "Meal image saved to your gallery.");
+      showAlert("Saved", "Meal image saved to your gallery.");
     } catch (error) {
       console.log("Export meal image error:", error);
-      Alert.alert(
+      showAlert(
         "Export Failed",
         "Something went wrong while saving the meal image.",
       );
@@ -294,12 +300,12 @@ export default function MealCard({
       const uri = await captureMealImage();
 
       if (!uri) {
-        Alert.alert("Share Failed", "Meal image is not ready yet.");
+        showAlert("Share Failed", "Meal image is not ready yet.");
         return;
       }
 
       if (!(await Sharing.isAvailableAsync())) {
-        Alert.alert("Sharing Unavailable", "Sharing is not available here.");
+        showAlert("Sharing Unavailable", "Sharing is not available here.");
         return;
       }
 
@@ -310,7 +316,7 @@ export default function MealCard({
       });
     } catch (error) {
       console.log("Share meal image error:", error);
-      Alert.alert(
+      showAlert(
         "Share Failed",
         "Something went wrong while sharing the meal image.",
       );
@@ -706,7 +712,7 @@ export default function MealCard({
                 style={{
                   fontSize: 14,
                   fontWeight: "900",
-                  color: MACRO_COLORS.protein,
+                  color: theme.colors.protein,
                 }}
               >
                 Protein ({proteinPercent}%) -{" "}
@@ -717,7 +723,7 @@ export default function MealCard({
                 style={{
                   fontSize: 14,
                   fontWeight: "900",
-                  color: MACRO_COLORS.carbs,
+                  color: theme.colors.carbs,
                   marginTop: 6,
                 }}
               >
@@ -728,7 +734,7 @@ export default function MealCard({
                 style={{
                   fontSize: 14,
                   fontWeight: "900",
-                  color: MACRO_COLORS.fat,
+                  color: theme.colors.fat,
                   marginTop: 6,
                 }}
               >
@@ -851,6 +857,12 @@ export default function MealCard({
           </View>
         </View>
       </View>
+      <ThemedAlert
+        visible={alertOpen}
+        title={alertTitle}
+        message={alertMessage}
+        onClose={() => setAlertOpen(false)}
+      />
     </>
   );
 }

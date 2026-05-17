@@ -100,11 +100,11 @@ export const darkTheme = {
     danger: "#EF4444",
     info: "#38BDF8",
 
-    calories: "#38BDF8",
-    protein: "#22C55E",
-    carbs: "#F97316",
-    fat: "#FACC15",
-    fiber: "#A855F7",
+    calories: "#9DA0AD",
+    protein: "#4ADE80",
+    carbs: "#22D3EE",
+    fat: "#FB923C",
+    fiber: "#A78BFA",
 
     push: "#EF4444",
     pull: "#3B82F6",
@@ -160,11 +160,11 @@ export const lightTheme = {
     danger: "#DC2626",
     info: "#0284C7",
 
-    calories: "#0284C7",
-    protein: "#16A34A",
-    carbs: "#EA580C",
-    fat: "#CA8A04",
-    fiber: "#9333EA",
+    calories: "#9DA0AD",
+    protein: "#22C55E",
+    carbs: "#06B6D4",
+    fat: "#F97316",
+    fiber: "#8B5CF6",
 
     push: "#DC2626",
     pull: "#2563EB",
