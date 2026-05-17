@@ -14,7 +14,6 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const SERVING_UNITS = ["g", "ml", "serving", "piece", "cup", "tbsp", "tsp"];
 
@@ -26,7 +25,6 @@ type NutrientInput = {
 export default function CreateCustomFoodScreen() {
   const router = useRouter();
   const theme = useTheme();
-  const insets = useSafeAreaInsets();
   const screenWidth = Dimensions.get("window").width;
 
   const [saving, setSaving] = useState(false);
@@ -196,7 +194,10 @@ export default function CreateCustomFoodScreen() {
       showAlert("Food created", "Custom food has been added.");
 
       setTimeout(() => {
-        router.back();
+        router.dismissTo({
+          pathname: "/foods" as any,
+          params: { refresh: Date.now().toString() },
+        });
       }, 700);
     } catch (error: any) {
       showAlert("Error", error.message ?? "Failed to create food.");

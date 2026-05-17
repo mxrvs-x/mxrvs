@@ -1,7 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import { readJsonResponse } from "@/lib/fetchJson";
 import { useTheme } from "@/lib/theme";
-import { Stack, useRouter } from "expo-router";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { CircleX, Plus, Search } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -83,6 +83,7 @@ function compactUsdaFoodPayload(food: UsdaFood) {
 
 export default function FoodsTab() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ refresh?: string }>();
   const theme = useTheme();
   const screenWidth = Dimensions.get("window").width;
 
@@ -325,6 +326,20 @@ export default function FoodsTab() {
       searchRequestRef.current += 1;
     };
   }, []);
+
+  useEffect(() => {
+    if (!params.refresh) return;
+
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+
+    searchRequestRef.current += 1;
+    setSearch("");
+    setStatus("");
+    setRefreshing(false);
+    loadCustomFoods();
+  }, [params.refresh]);
 
   return (
     <>

@@ -6,6 +6,7 @@ import {
 } from "@/lib/geminiNutrition";
 import { supabase } from "@/lib/supabase";
 import { AppTheme, useTheme } from "@/lib/theme";
+import { useRouter } from "expo-router";
 import { Astroid, Plus, SendHorizonal, Sparkles } from "lucide-react-native";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -26,6 +27,15 @@ type ChatMessage = {
   text: string;
   analysis?: NutritionAnalysis | null;
 };
+
+type MealType = "breakfast" | "snack" | "lunch" | "dinner";
+
+const MEAL_OPTIONS: { key: MealType; label: string }[] = [
+  { key: "breakfast", label: "Breakfast" },
+  { key: "snack", label: "Snack" },
+  { key: "lunch", label: "Lunch" },
+  { key: "dinner", label: "Dinner" },
+];
 
 const EXAMPLE_PROMPT =
   "Analyze this recipe: 200g chicken breast, 150g cooked rice, 1 tbsp olive oil, 80g broccoli. 1 serving.";
@@ -52,6 +62,14 @@ function parseServingGrams(value?: string | null) {
   return match ? Number(match[1]) : 100;
 }
 
+function formatDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
 function formatMacro(value?: number | null, unit = "g") {
   if (value === null || value === undefined) return "Missing";
   if (unit === "kcal" || unit === "mg") return `${Math.round(value)} ${unit}`;
@@ -75,6 +93,7 @@ function analysisKey(analysis?: NutritionAnalysis | null) {
 
 export default function GeminiNutritionScreen() {
   const theme = useTheme();
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
 
@@ -82,6 +101,8 @@ export default function GeminiNutritionScreen() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [loggingMealType, setLoggingMealType] = useState<MealType | null>(null);
+  const [mealPickerOpen, setMealPickerOpen] = useState(false);
   const [savedAnalysisKeys, setSavedAnalysisKeys] = useState<Set<string>>(
     () => new Set(),
   );
@@ -96,8 +117,7 @@ export default function GeminiNutritionScreen() {
   const latestAnalysisKey = analysisKey(latestAnalysis);
   const latestAnalysisSaved =
     Boolean(latestAnalysisKey) && savedAnalysisKeys.has(latestAnalysisKey);
-  const showAddButton =
-    Boolean(latestAnalysis) && macroReady(latestAnalysis) && !latestAnalysisSaved;
+  const canUseLatestAnalysis = Boolean(latestAnalysis) && macroReady(latestAnalysis);
 
   function showAlert(title: string, message: string) {
     setAlertTitle(title);
@@ -201,7 +221,7 @@ export default function GeminiNutritionScreen() {
   }
 
   async function addLatestToCustomFoods() {
-    if (!macroReady(latestAnalysis) || saving) return;
+    if (!macroReady(latestAnalysis) || saving || latestAnalysisSaved) return;
 
     const analysis = latestAnalysis!;
     const macros = analysis.macro_breakdown;
@@ -251,6 +271,65 @@ export default function GeminiNutritionScreen() {
       showAlert("Could not add food", error?.message ?? "Please try again.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function addLatestToDiary(mealType: MealType) {
+    if (!macroReady(latestAnalysis) || loggingMealType) return;
+
+    const analysis = latestAnalysis!;
+    const macros = analysis.macro_breakdown;
+    const servingSize = parseServingGrams(
+      analysis.food_summary.estimated_serving_size,
+    );
+
+    try {
+      setLoggingMealType(mealType);
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError) throw userError;
+
+      if (!user) {
+        showAlert("Not signed in", "Please sign in first.");
+        return;
+      }
+
+      const { error } = await supabase.from("food_logs").insert({
+        user_id: user.id,
+        food_id: null,
+        food_name: analysis.food_summary.name.trim() || "Gemini Recipe",
+        food_brand: "Gemini estimate",
+        food_source: "custom",
+        external_id: null,
+        date: formatDateKey(new Date()),
+        meal_type: mealType,
+        quantity: 1,
+        unit: "serving",
+        serving_size: servingSize,
+        serving_unit: "g",
+        calories: Math.round(n(macros.calories)),
+        protein_g: n(macros.protein_g),
+        carbs_g: n(macros.carbohydrates_g),
+        fat_g: n(macros.fat_g),
+        fiber_g: n(macros.fiber_g),
+        sugar_g: n(macros.sugar_g),
+        sodium_mg: Math.round(n(macros.sodium_mg)),
+        cholesterol_mg: 0,
+      });
+
+      if (error) throw error;
+
+      setMealPickerOpen(false);
+      showAlert("Added to diary", `Gemini estimate was added to ${mealType}.`);
+      router.push("/(tabs)/diary");
+    } catch (error: any) {
+      showAlert("Could not add to diary", error?.message ?? "Please try again.");
+    } finally {
+      setLoggingMealType(null);
     }
   }
 
@@ -345,64 +424,134 @@ export default function GeminiNutritionScreen() {
           gap: 10,
         }}
       >
-        {showAddButton ? (
-          <Pressable
-            onPress={addLatestToCustomFoods}
-            disabled={!macroReady(latestAnalysis) || saving}
-            style={{
-              minHeight: 44,
-              borderRadius: theme.radius.md,
-              backgroundColor: macroReady(latestAnalysis)
-                ? theme.colors.primary
-                : theme.colors.surfaceAlt,
-              alignItems: "center",
-              justifyContent: "center",
-              flexDirection: "row",
-              gap: 8,
-              opacity: saving ? 0.7 : 1,
-            }}
-          >
-            {saving ? (
-              <ActivityIndicator color={theme.colors.textInverse} />
-            ) : (
-              <Plus
-                size={18}
-                color={
-                  macroReady(latestAnalysis)
-                    ? theme.colors.textInverse
-                    : theme.colors.textMuted
-                }
-              />
-            )}
-            <Text
-              style={{
-                color: macroReady(latestAnalysis)
-                  ? theme.colors.textInverse
-                  : theme.colors.textMuted,
-                fontWeight: "900",
-              }}
-            >
-              Add Latest Estimate to Custom Foods
-            </Text>
-          </Pressable>
-        ) : null}
+        {canUseLatestAnalysis ? (
+          <View style={{ gap: 8 }}>
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              <Pressable
+                onPress={addLatestToCustomFoods}
+                disabled={saving || latestAnalysisSaved}
+                style={{
+                  flex: 1,
+                  minHeight: 44,
+                  borderRadius: theme.radius.md,
+                  backgroundColor: latestAnalysisSaved
+                    ? theme.colors.surfaceAlt
+                    : theme.colors.primary,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexDirection: "row",
+                  gap: 8,
+                  paddingHorizontal: 10,
+                  opacity: saving ? 0.7 : 1,
+                }}
+              >
+                {saving ? (
+                  <ActivityIndicator color={theme.colors.textInverse} />
+                ) : (
+                  <Plus
+                    size={18}
+                    color={
+                      latestAnalysisSaved
+                        ? theme.colors.textMuted
+                        : theme.colors.textInverse
+                    }
+                  />
+                )}
+                <Text
+                  numberOfLines={2}
+                  style={{
+                    color: latestAnalysisSaved
+                      ? theme.colors.textMuted
+                      : theme.colors.textInverse,
+                    fontWeight: "900",
+                    textAlign: "center",
+                  }}
+                >
+                  {latestAnalysisSaved ? "Saved to Custom" : "Custom Foods"}
+                </Text>
+              </Pressable>
 
-        {latestAnalysisSaved ? (
-          <View
-            style={{
-              minHeight: 38,
-              borderRadius: theme.radius.md,
-              backgroundColor: theme.colors.surfaceAlt,
-              alignItems: "center",
-              justifyContent: "center",
-              paddingHorizontal: 12,
-            }}
-          >
-            <Text
-              style={{ color: theme.colors.textMuted, fontWeight: "900" }}
-            >
-              Latest estimate is already in custom foods.
-            </Text>
+              <Pressable
+                onPress={() => setMealPickerOpen((value) => !value)}
+                disabled={!!loggingMealType}
+                style={{
+                  flex: 1,
+                  minHeight: 44,
+                  borderRadius: theme.radius.md,
+                  backgroundColor: mealPickerOpen
+                    ? theme.colors.primaryDark
+                    : theme.colors.primary,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexDirection: "row",
+                  gap: 8,
+                  paddingHorizontal: 10,
+                  opacity: loggingMealType ? 0.7 : 1,
+                }}
+              >
+                <Plus size={18} color={theme.colors.textInverse} />
+                <Text
+                  style={{
+                    color: theme.colors.textInverse,
+                    fontWeight: "900",
+                  }}
+                >
+                  Diary
+                </Text>
+              </Pressable>
+            </View>
+
+            {mealPickerOpen ? (
+              <View
+                style={{
+                  borderRadius: theme.radius.md,
+                  borderWidth: 1,
+                  borderColor: theme.colors.border,
+                  backgroundColor: theme.colors.background,
+                  padding: 10,
+                  gap: 8,
+                }}
+              >
+                <Text
+                  style={{ color: theme.colors.text, fontWeight: "900" }}
+                >
+                  Choose meal
+                </Text>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                  {MEAL_OPTIONS.map((meal) => {
+                    const logging = loggingMealType === meal.key;
+
+                    return (
+                      <Pressable
+                        key={meal.key}
+                        onPress={() => addLatestToDiary(meal.key)}
+                        disabled={!!loggingMealType}
+                        style={{
+                          minHeight: 38,
+                          borderRadius: theme.radius.pill,
+                          paddingHorizontal: 14,
+                          alignItems: "center",
+                          justifyContent: "center",
+                          backgroundColor: theme.colors.surface,
+                          borderWidth: 1,
+                          borderColor: theme.colors.border,
+                          opacity: loggingMealType && !logging ? 0.5 : 1,
+                        }}
+                      >
+                        <Text
+                          style={{
+                            color: theme.colors.text,
+                            fontWeight: "900",
+                          }}
+                        >
+                          {logging ? "Adding..." : meal.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+            ) : null}
           </View>
         ) : null}
 
