@@ -1,50 +1,42 @@
-# Welcome to your Expo app 👋
+# mxrvs
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+This repository is split into separate mobile and web apps using npm workspaces.
 
-## Get started
+- `apps/mobile` contains the Expo Router mobile app.
+- `apps/web` contains the Next.js web app.
 
-1. Install dependencies
+## Get Started
 
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+Install dependencies:
 
 ```bash
-npm run reset-project
+npm install
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Start the mobile app:
 
-## Learn more
+```bash
+npm run mobile
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+Start the web app:
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+```bash
+npm run web
+```
 
-## Join the community
+The mobile app keeps its Expo file-based routes in `apps/mobile/app`. The web app uses the Next.js app router in `apps/web/app`.
 
-Join our community of developers creating universal apps.
+## Useful Scripts
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+- `npm run mobile` starts Expo.
+- `npm run mobile:android` runs the Android development build.
+- `npm run mobile:ios` runs the iOS development build.
+- `npm run mobile:web` starts Expo web for the mobile project.
+- `npm run web` starts the Next.js development server.
+- `npm run web:build` builds the Next.js web app.
+- `npm run lint` runs linting across workspaces.
+
+## Environment
+
+The Expo config in `apps/mobile/app.config.js` reads `.env` from either `apps/mobile/.env` or the repository root `.env`.
