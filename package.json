@@ -15,5 +15,8 @@
     "web:build": "npm run build -w @mxrvs/web",
     "web:start": "npm run start -w @mxrvs/web",
     "lint": "npm run lint --workspaces --if-present"
+  },
+  "dependencies": {
+    "expo-updates": "~29.0.17"
   }
 }
