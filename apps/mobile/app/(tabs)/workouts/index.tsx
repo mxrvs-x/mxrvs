@@ -1,3 +1,16 @@
+import { isOnline } from "@/lib/offlineCardio";
+import { resolveOfflineUserId } from "@/lib/offlineUser";
+import {
+  cacheWorkoutSets,
+  cacheWorkouts,
+  getCachedWorkoutExercises,
+  getCachedWorkoutSets,
+  getCachedWorkouts,
+  getOfflineWorkouts,
+  mapCachedWorkout,
+  mapOfflineWorkout,
+  syncOfflineWorkouts,
+} from "@/lib/offlineWorkouts";
 import { supabase } from "@/lib/supabase";
 import { useTheme } from "@/lib/theme";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -23,6 +36,7 @@ type Workout = {
   created_at: string;
   set_count?: number;
   total_volume?: number;
+  offline?: boolean;
 };
 
 type WorkoutSet = {
@@ -112,24 +126,56 @@ export default function WorkoutIndexScreen() {
   async function loadWorkoutData(showLoader = true) {
     if (showLoader) setLoading(true);
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const online = await isOnline();
+    const userId = await resolveOfflineUserId();
 
-    if (!user) {
+    if (!userId) {
       setLoading(false);
       setRefreshing(false);
       return;
     }
 
     const today = getTodayDateString();
+    let offlineWorkouts = (await getOfflineWorkouts()).map(mapOfflineWorkout);
+    const cachedWorkouts = await getCachedWorkouts();
+    const cachedSets = await getCachedWorkoutSets();
+    const mappedCachedWorkouts = cachedWorkouts.map((workout) =>
+      mapCachedWorkout(workout, cachedSets),
+    );
+
+    if (!online) {
+      const cachedExercises = await getCachedWorkoutExercises();
+      const cachedDates = new Set(
+        mappedCachedWorkouts.map((workout) => workout.workout_date),
+      );
+      const merged = [
+        ...offlineWorkouts.filter(
+          (workout) => !cachedDates.has(workout.workout_date),
+        ),
+        ...mappedCachedWorkouts,
+      ].sort((a, b) => b.created_at.localeCompare(a.created_at));
+
+      setRecentWorkouts(merged.slice(0, 5) as Workout[]);
+      setExerciseCount(cachedExercises.length);
+      setTodayWorkout(
+        (merged.find((workout) => workout.workout_date === today) as
+          | Workout
+          | undefined) || null,
+      );
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+
+    await syncOfflineWorkouts();
+    offlineWorkouts = (await getOfflineWorkouts()).map(mapOfflineWorkout);
 
     const [{ data: workouts }, { count }, { data: todayWorkouts }] =
       await Promise.all([
         supabase
           .from("workouts")
           .select("*")
-          .eq("user_id", user.id)
+          .eq("user_id", userId)
           .order("workout_date", { ascending: false })
           .order("created_at", { ascending: false })
           .limit(5),
@@ -137,12 +183,12 @@ export default function WorkoutIndexScreen() {
         supabase
           .from("exercises")
           .select("id", { count: "exact", head: true })
-          .eq("user_id", user.id),
+          .eq("user_id", userId),
 
         supabase
           .from("workouts")
           .select("*")
-          .eq("user_id", user.id)
+          .eq("user_id", userId)
           .eq("workout_date", today)
           .order("created_at", { ascending: false })
           .limit(1),
@@ -160,7 +206,9 @@ export default function WorkoutIndexScreen() {
         .in("workout_id", workoutIds);
 
       setRows = (workoutSets || []) as WorkoutSet[];
+      await cacheWorkoutSets(setRows);
     }
+    await cacheWorkouts(workoutRows);
 
     const mappedWorkouts = workoutRows.map((workout) => {
       const workoutSets = setRows.filter(
@@ -178,9 +226,19 @@ export default function WorkoutIndexScreen() {
       };
     });
 
-    setRecentWorkouts(mappedWorkouts);
+    setRecentWorkouts(
+      [...offlineWorkouts, ...mappedWorkouts]
+        .sort((a, b) => b.created_at.localeCompare(a.created_at))
+        .slice(0, 5) as Workout[],
+    );
     setExerciseCount(count || 0);
-    setTodayWorkout(((todayWorkouts || [])[0] as Workout) || null);
+    setTodayWorkout(
+      ((todayWorkouts || [])[0] as Workout) ||
+        ((offlineWorkouts.find((workout) => workout.workout_date === today) as
+          | Workout
+          | undefined) ||
+          null),
+    );
 
     setLoading(false);
     setRefreshing(false);
@@ -435,6 +493,7 @@ export default function WorkoutIndexScreen() {
           scrollEnabled={false}
           renderItem={({ item }) => (
             <Pressable
+              disabled={item.offline}
               onPress={() =>
                 router.push({
                   pathname: "/workouts/[id]",
@@ -451,6 +510,7 @@ export default function WorkoutIndexScreen() {
                 borderWidth: 1,
                 borderColor: theme.colors.border,
                 marginBottom: 10,
+                opacity: item.offline ? 0.75 : 1,
               }}
             >
               <View
@@ -498,6 +558,11 @@ export default function WorkoutIndexScreen() {
               {item.notes ? (
                 <Text style={{ marginTop: 8, color: theme.colors.textMuted }}>
                   {item.notes}
+                </Text>
+              ) : null}
+              {item.offline ? (
+                <Text style={{ marginTop: 8, color: theme.colors.warning }}>
+                  Waiting to sync
                 </Text>
               ) : null}
             </Pressable>

@@ -3,6 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import NetInfo from "@react-native-community/netinfo";
 
 const OFFLINE_CREATINE_KEY = "offline_creatine_logs";
+const CACHED_CREATINE_KEY = "cached_creatine_logs";
 const OFFLINE_CREATINE_USER_ID_KEY = "offline_creatine_user_id";
 
 export type CreatineLog = {
@@ -63,6 +64,15 @@ export async function getOfflineCreatineLogs() {
   return raw ? (JSON.parse(raw) as OfflineCreatineLog[]) : [];
 }
 
+export async function getCachedCreatineLogs() {
+  const raw = await AsyncStorage.getItem(CACHED_CREATINE_KEY);
+  return raw ? (JSON.parse(raw) as CreatineLog[]) : [];
+}
+
+export async function cacheCreatineLogs(logs: CreatineLog[]) {
+  await AsyncStorage.setItem(CACHED_CREATINE_KEY, JSON.stringify(logs));
+}
+
 async function setOfflineCreatineLogs(logs: OfflineCreatineLog[]) {
   await AsyncStorage.setItem(OFFLINE_CREATINE_KEY, JSON.stringify(logs));
 }
@@ -92,6 +102,18 @@ export async function syncOfflineCreatineLogs() {
 
   for (const log of logs) {
     const { temp_id, ...payload } = log;
+
+    const { data: existing, error: existingError } = await supabase
+      .from("creatine_logs")
+      .select("id")
+      .eq("user_id", log.user_id)
+      .eq("date", log.date)
+      .maybeSingle();
+
+    if (!existingError && existing) {
+      await removeOfflineCreatineLog(temp_id);
+      continue;
+    }
 
     const { error } = await supabase
       .from("creatine_logs")
@@ -126,13 +148,18 @@ export async function loadCreatineLogs() {
     id: log.temp_id,
     offline: true,
   }));
+  const cachedLogs = await getCachedCreatineLogs();
 
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
   if (!user || !online) {
-    return mappedOffline.sort((a, b) => b.date.localeCompare(a.date));
+    const cachedDates = new Set(cachedLogs.map((log) => log.date));
+    return [
+      ...mappedOffline.filter((log) => !cachedDates.has(log.date)),
+      ...cachedLogs,
+    ].sort((a, b) => b.date.localeCompare(a.date));
   }
 
   await cacheOfflineCreatineUserId(user.id);
@@ -153,6 +180,7 @@ export async function loadCreatineLogs() {
   const onlineLogs = ((data || []) as CreatineLog[]).filter(
     (log) => !offlineDates.has(log.date),
   );
+  await cacheCreatineLogs((data || []) as CreatineLog[]);
 
   return [...mappedOffline, ...onlineLogs].sort((a, b) =>
     b.date.localeCompare(a.date),

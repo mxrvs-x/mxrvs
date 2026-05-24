@@ -3,7 +3,9 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import NetInfo from "@react-native-community/netinfo";
 
 const OFFLINE_CARDIO_KEY = "offline_cardio_sessions";
+const CACHED_CARDIO_KEY = "cached_cardio_sessions";
 const OFFLINE_CARDIO_USER_ID_KEY = "offline_cardio_user_id";
+const OFFLINE_CARDIO_WEIGHT_KG_KEY = "offline_cardio_weight_kg";
 
 export type OfflineCardioSession = {
   temp_id: string;
@@ -22,6 +24,10 @@ export type OfflineCardioSession = {
   created_at: string;
 };
 
+export type CachedCardioSession = Omit<OfflineCardioSession, "temp_id"> & {
+  id: string;
+};
+
 export async function isOnline() {
   const state = await NetInfo.fetch();
   return Boolean(state.isConnected && state.isInternetReachable !== false);
@@ -30,6 +36,23 @@ export async function isOnline() {
 export async function getOfflineCardioSessions() {
   const raw = await AsyncStorage.getItem(OFFLINE_CARDIO_KEY);
   return raw ? (JSON.parse(raw) as OfflineCardioSession[]) : [];
+}
+
+export async function getCachedCardioSessions() {
+  const raw = await AsyncStorage.getItem(CACHED_CARDIO_KEY);
+  return raw ? (JSON.parse(raw) as CachedCardioSession[]) : [];
+}
+
+export async function cacheCardioSessions(sessions: CachedCardioSession[]) {
+  await AsyncStorage.setItem(CACHED_CARDIO_KEY, JSON.stringify(sessions));
+}
+
+export function mapOfflineCardioSession(session: OfflineCardioSession) {
+  return {
+    ...session,
+    id: session.temp_id,
+    offline: true,
+  };
 }
 
 export async function saveOfflineCardioSession(session: OfflineCardioSession) {
@@ -45,6 +68,21 @@ export async function cacheOfflineCardioUserId(userId: string) {
 
 export async function getOfflineCardioUserId() {
   return AsyncStorage.getItem(OFFLINE_CARDIO_USER_ID_KEY);
+}
+
+export async function cacheOfflineBodyWeightKg(weightKg: number | null) {
+  const safeWeight = Number(weightKg);
+
+  if (!Number.isFinite(safeWeight) || safeWeight <= 0) return;
+
+  await AsyncStorage.setItem(OFFLINE_CARDIO_WEIGHT_KG_KEY, String(safeWeight));
+}
+
+export async function getOfflineBodyWeightKg() {
+  const raw = await AsyncStorage.getItem(OFFLINE_CARDIO_WEIGHT_KG_KEY);
+  const weight = Number(raw);
+
+  return Number.isFinite(weight) && weight > 0 ? weight : null;
 }
 
 export async function resolveCardioUserId() {
@@ -82,6 +120,18 @@ export async function syncOfflineCardioSessions() {
 
   for (const session of sessions) {
     const { temp_id, ...payload } = session;
+
+    const { data: existing, error: existingError } = await supabase
+      .from("cardio_sessions")
+      .select("id")
+      .eq("user_id", session.user_id)
+      .eq("session_date", session.session_date)
+      .limit(1);
+
+    if (!existingError && existing && existing.length > 0) {
+      await removeOfflineCardioSession(temp_id);
+      continue;
+    }
 
     const { error } = await supabase.from("cardio_sessions").insert(payload);
 

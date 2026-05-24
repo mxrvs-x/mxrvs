@@ -2,6 +2,14 @@ import ThemedAlert from "@/components/ThemedAlert";
 import { SafeRouteMap, type MapRegion } from "@/components/SafeRouteMap";
 import { requestFitnessPermissions } from "@/lib/appPermissions";
 import {
+  drainBackgroundCardioRoutePoints,
+  type BackgroundCardioRoutePoint,
+  startBackgroundCardioLocation,
+  stopBackgroundCardioLocation,
+} from "@/lib/backgroundCardioLocation";
+import {
+  cacheOfflineBodyWeightKg,
+  getOfflineBodyWeightKg,
   isOnline,
   resolveCardioUserId,
   saveOfflineCardioSession,
@@ -205,15 +213,49 @@ function handleLocationUpdate(location: Location.LocationObject) {
   }));
 }
 
+function backgroundPointToLocation(
+  point: BackgroundCardioRoutePoint,
+): Location.LocationObject {
+  return {
+    timestamp: point.timestamp,
+    coords: {
+      latitude: point.latitude,
+      longitude: point.longitude,
+      accuracy: point.accuracy,
+      altitude: null,
+      altitudeAccuracy: null,
+      heading: null,
+      speed: null,
+    },
+  };
+}
+
+async function syncBackgroundWalkRoutePoints() {
+  const points = await drainBackgroundCardioRoutePoints();
+
+  points.forEach((point) => {
+    handleLocationUpdate(backgroundPointToLocation(point));
+  });
+}
+
 async function getUserBodyStats() {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const cachedWeightKg = await getOfflineBodyWeightKg();
+  let user = null;
+
+  try {
+    const {
+      data: { user: currentUser },
+    } = await supabase.auth.getUser();
+
+    user = currentUser;
+  } catch (error) {
+    console.log("Load walk user for body stats error:", error);
+  }
 
   if (!user) {
     return {
       heightCm: null,
-      weightKg: null,
+      weightKg: cachedWeightKg,
     };
   }
 
@@ -241,13 +283,17 @@ async function getUserBodyStats() {
   if (latestWeightLog.error) {
     console.log("Load walk weight log error:", latestWeightLog.error);
   }
+  const weightKg = latestWeightLog.data?.weight_kg
+    ? Number(latestWeightLog.data.weight_kg)
+    : cachedWeightKg;
+
+  await cacheOfflineBodyWeightKg(weightKg);
+
   return {
     heightCm: latestBodyStats.data?.height_cm
       ? Number(latestBodyStats.data.height_cm)
       : null,
-    weightKg: latestWeightLog.data?.weight_kg
-      ? Number(latestWeightLog.data.weight_kg)
-      : null,
+    weightKg,
   };
 }
 
@@ -271,6 +317,8 @@ function stopWatchers() {
 
   pedometerRef?.remove();
   pedometerRef = null;
+
+  void stopBackgroundCardioLocation();
 
   if (timerRef) {
     clearInterval(timerRef);
@@ -345,6 +393,7 @@ export default function WalkScreen() {
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
       if (state === "active" && getWalkSession().tracking) {
+        void syncBackgroundWalkRoutePoints();
         setWalkSession({
           seconds: elapsedSeconds(),
         });
@@ -505,7 +554,7 @@ export default function WalkScreen() {
 
     if (session.walkSource === "treadmill") {
       if (!heightCm) {
-        return "Add your height in Profile to estimate treadmill/home distance from sensor steps.";
+        return "Add a saved height to estimate treadmill/home distance from sensor steps.";
       }
 
       return "Distance estimated from sensor steps and your height. You can correct it before saving.";
@@ -628,6 +677,16 @@ export default function WalkScreen() {
         },
         handleLocationUpdate,
       );
+
+      const backgroundLocation = await startBackgroundCardioLocation();
+
+      if (!backgroundLocation.started) {
+        showAlert({
+          title: "Background GPS Limited",
+          message:
+            "Distance may pause while the app is locked or minimized until background location is enabled in a new build and allowed in settings.",
+        });
+      }
     } catch (error) {
       console.log("Start walk location error:", error);
       stopWatchers();
@@ -642,7 +701,9 @@ export default function WalkScreen() {
     }
   }
 
-  function stopWalking() {
+  async function stopWalking() {
+    await syncBackgroundWalkRoutePoints();
+
     const current = getWalkSession();
 
     const activeMs =

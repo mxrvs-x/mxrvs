@@ -1,3 +1,14 @@
+import { isOnline } from "@/lib/offlineCardio";
+import { resolveOfflineUserId } from "@/lib/offlineUser";
+import {
+  cacheWorkoutSets,
+  cacheWorkouts,
+  getCachedWorkoutExercises,
+  getCachedWorkoutSets,
+  getCachedWorkouts,
+  getOfflineWorkouts,
+  syncOfflineWorkouts,
+} from "@/lib/offlineWorkouts";
 import { supabase } from "@/lib/supabase";
 import { AppTheme, useTheme } from "@/lib/theme";
 import {
@@ -128,11 +139,10 @@ export default function WorkoutReportsScreen() {
   async function loadReports(showLoader = false) {
     if (showLoader) setLoading(true);
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const online = await isOnline();
+    const userId = await resolveOfflineUserId();
 
-    if (!user) {
+    if (!userId) {
       setReports([]);
       setSelectedExerciseId(null);
       setLoading(false);
@@ -140,29 +150,87 @@ export default function WorkoutReportsScreen() {
       return;
     }
 
+    let offlineWorkouts = await getOfflineWorkouts();
+    let offlineSets = offlineWorkouts.flatMap((workout) =>
+      workout.sets.map((set) => ({
+        workout_id: workout.temp_id,
+        exercise_id: set.exercise_id,
+        set_number: set.set_number,
+        reps: set.reps,
+        weight_kg: set.weight_kg,
+      })),
+    );
+    let offlineWorkoutRows = offlineWorkouts.map((workout) => ({
+      id: workout.temp_id,
+      workout_date: workout.workout_date,
+      workout_type: workout.workout_type,
+      created_at: workout.created_at,
+    }));
+    const cachedExercises = await getCachedWorkoutExercises();
+    const cachedWorkoutRows = (await getCachedWorkouts()) as Workout[];
+    const cachedSetRows = (await getCachedWorkoutSets()) as WorkoutSet[];
+
+    if (!online) {
+      const cachedDates = new Set(
+        cachedWorkoutRows.map((workout) => workout.workout_date),
+      );
+      buildReports(
+        [
+          ...((offlineWorkoutRows as Workout[]).filter(
+            (workout) => !cachedDates.has(workout.workout_date),
+          )),
+          ...cachedWorkoutRows,
+        ],
+        [...(offlineSets as WorkoutSet[]), ...cachedSetRows],
+        cachedExercises,
+      );
+      return;
+    }
+
+    await syncOfflineWorkouts();
+    offlineWorkouts = await getOfflineWorkouts();
+    offlineSets = offlineWorkouts.flatMap((workout) =>
+      workout.sets.map((set) => ({
+        workout_id: workout.temp_id,
+        exercise_id: set.exercise_id,
+        set_number: set.set_number,
+        reps: set.reps,
+        weight_kg: set.weight_kg,
+      })),
+    );
+    offlineWorkoutRows = offlineWorkouts.map((workout) => ({
+      id: workout.temp_id,
+      workout_date: workout.workout_date,
+      workout_type: workout.workout_type,
+      created_at: workout.created_at,
+    }));
+
     const { data: workoutData, error: workoutError } = await supabase
       .from("workouts")
       .select("id, workout_date, workout_type, created_at")
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .order("workout_date", { ascending: true })
       .order("created_at", { ascending: true });
 
     if (workoutError) {
       console.log("Load workout report workouts error:", workoutError);
-      setReports([]);
-      setLoading(false);
-      setRefreshing(false);
+      buildReports(
+        offlineWorkoutRows as Workout[],
+        offlineSets as WorkoutSet[],
+        cachedExercises,
+      );
       return;
     }
 
-    const workouts = (workoutData || []) as Workout[];
+    const workouts = [
+      ...offlineWorkoutRows,
+      ...((workoutData || []) as Workout[]),
+    ] as Workout[];
+    await cacheWorkouts((workoutData || []) as Workout[]);
     const workoutIds = workouts.map((workout) => workout.id);
 
     if (workoutIds.length === 0) {
-      setReports([]);
-      setSelectedExerciseId(null);
-      setLoading(false);
-      setRefreshing(false);
+      buildReports(workouts, offlineSets as WorkoutSet[], cachedExercises);
       return;
     }
 
@@ -173,13 +241,15 @@ export default function WorkoutReportsScreen() {
 
     if (setError) {
       console.log("Load workout report sets error:", setError);
-      setReports([]);
-      setLoading(false);
-      setRefreshing(false);
+      buildReports(workouts, offlineSets as WorkoutSet[], cachedExercises);
       return;
     }
 
-    const sets = ((setData || []) as WorkoutSet[]).filter(hasReportableSet);
+    const sets = [
+      ...offlineSets,
+      ...((setData || []) as WorkoutSet[]),
+    ].filter(hasReportableSet);
+    await cacheWorkoutSets((setData || []) as WorkoutSet[]);
     const exerciseIds = Array.from(new Set(sets.map((set) => set.exercise_id)));
 
     let exercises: Exercise[] = [];
@@ -194,9 +264,17 @@ export default function WorkoutReportsScreen() {
         console.log("Load workout report exercises error:", exerciseError);
       }
 
-      exercises = (exerciseData || []) as Exercise[];
+      exercises = [...cachedExercises, ...((exerciseData || []) as Exercise[])];
     }
 
+    buildReports(workouts, sets, exercises);
+  }
+
+  function buildReports(
+    workouts: Workout[],
+    sets: WorkoutSet[],
+    exercises: Exercise[],
+  ) {
     const workoutMap = new Map(workouts.map((workout) => [workout.id, workout]));
     const exerciseMap = new Map(exercises.map((exercise) => [exercise.id, exercise]));
     const grouped = new Map<string, Map<string, ExercisePoint>>();
@@ -283,7 +361,7 @@ export default function WorkoutReportsScreen() {
       return () => {
         theme.setSessionTheme("default");
       };
-    }, [currentSplit, theme]),
+    }, [currentSplit, theme]), // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   async function onRefresh() {

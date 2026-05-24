@@ -1,3 +1,16 @@
+import ActivityCalendar from "@/components/ActivityCalendar";
+import { isOnline } from "@/lib/offlineCardio";
+import { resolveOfflineUserId } from "@/lib/offlineUser";
+import {
+  cacheWorkoutSets,
+  cacheWorkouts,
+  getCachedWorkoutSets,
+  getCachedWorkouts,
+  getOfflineWorkouts,
+  mapCachedWorkout,
+  mapOfflineWorkout,
+  syncOfflineWorkouts,
+} from "@/lib/offlineWorkouts";
 import { supabase } from "@/lib/supabase";
 import { useTheme } from "@/lib/theme";
 import {
@@ -6,7 +19,7 @@ import {
   useLocalSearchParams,
   useRouter,
 } from "expo-router";
-import { BarChart3, X, ExpandIcon } from "lucide-react-native";
+import { BarChart3, X } from "lucide-react-native";
 import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -29,6 +42,7 @@ type Workout = {
   created_at: string;
   set_count?: number;
   total_volume?: number;
+  offline?: boolean;
 };
 
 type WorkoutSet = {
@@ -62,11 +76,7 @@ export default function WorkoutHistoryScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const today = new Date();
-  const [calendarMonth, setCalendarMonth] = useState(today.getMonth());
-  const [calendarYear, setCalendarYear] = useState(today.getFullYear());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [calendarExpanded, setCalendarExpanded] = useState(false);
 
   function handleClosePress() {
     router.back();
@@ -75,27 +85,53 @@ export default function WorkoutHistoryScreen() {
   async function loadSessions(showLoader = false) {
     if (showLoader) setLoading(true);
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const online = await isOnline();
+    const userId = await resolveOfflineUserId();
 
-    if (!user) {
+    if (!userId) {
       setSessions([]);
       setLoading(false);
       setRefreshing(false);
       return;
     }
 
+    let offlineWorkouts = (await getOfflineWorkouts()).map(mapOfflineWorkout);
+    const cachedWorkouts = await getCachedWorkouts();
+    const cachedSets = await getCachedWorkoutSets();
+    const mappedCachedWorkouts = cachedWorkouts.map((workout) =>
+      mapCachedWorkout(workout, cachedSets),
+    );
+
+    if (!online) {
+      const cachedDates = new Set(
+        mappedCachedWorkouts.map((workout) => workout.workout_date),
+      );
+      setSessions(
+        [
+          ...offlineWorkouts.filter(
+            (workout) => !cachedDates.has(workout.workout_date),
+          ),
+          ...mappedCachedWorkouts,
+        ] as Workout[],
+      );
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+
+    await syncOfflineWorkouts();
+    offlineWorkouts = (await getOfflineWorkouts()).map(mapOfflineWorkout);
+
     const { data, error } = await supabase
       .from("workouts")
       .select("*")
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .order("workout_date", { ascending: false })
       .order("created_at", { ascending: false });
 
     if (error) {
       console.log("Load workout history error:", error);
-      setSessions([]);
+      setSessions([...offlineWorkouts, ...mappedCachedWorkouts] as Workout[]);
       setLoading(false);
       setRefreshing(false);
       return;
@@ -113,7 +149,9 @@ export default function WorkoutHistoryScreen() {
         .in("workout_id", workoutIds);
 
       setRows = (workoutSets || []) as WorkoutSet[];
+      await cacheWorkoutSets(setRows);
     }
+    await cacheWorkouts(workoutRows);
 
     const mappedWorkouts = workoutRows.map((workout) => {
       const workoutSets = setRows.filter(
@@ -131,7 +169,13 @@ export default function WorkoutHistoryScreen() {
       };
     });
 
-    setSessions(mappedWorkouts);
+    setSessions(
+      [...offlineWorkouts, ...mappedWorkouts].sort((a, b) => {
+        const dateCompare = b.workout_date.localeCompare(a.workout_date);
+        if (dateCompare !== 0) return dateCompare;
+        return b.created_at.localeCompare(a.created_at);
+      }) as Workout[],
+    );
     setLoading(false);
     setRefreshing(false);
   }
@@ -152,13 +196,6 @@ export default function WorkoutHistoryScreen() {
     await loadSessions(false);
   }
 
-  function toDateKey(date: Date) {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
-  }
-
   const activeDates = useMemo(() => {
     const map: Record<string, number> = {};
 
@@ -173,76 +210,6 @@ export default function WorkoutHistoryScreen() {
     if (!selectedDate) return sessions;
     return sessions.filter((s) => s.workout_date === selectedDate);
   }, [sessions, selectedDate]);
-
-  const weekDays = useMemo(() => {
-    const now = new Date();
-    const dayOfWeek = now.getDay();
-    const start = new Date(now);
-    start.setDate(now.getDate() - dayOfWeek);
-
-    return Array.from({ length: 7 }).map((_, index) => {
-      const d = new Date(start);
-      d.setDate(start.getDate() + index);
-
-      return {
-        day: d.getDate(),
-        date: toDateKey(d),
-        label: ["S", "M", "T", "W", "T", "F", "S"][index],
-      };
-    });
-  }, []);
-
-  const monthDays = useMemo(() => {
-    const firstDay = new Date(calendarYear, calendarMonth, 1);
-    const lastDay = new Date(calendarYear, calendarMonth + 1, 0);
-
-    const firstWeekday = firstDay.getDay();
-    const totalDays = lastDay.getDate();
-
-    const days: {
-      date: string | null;
-      day: number | null;
-    }[] = [];
-
-    for (let i = 0; i < firstWeekday; i++) {
-      days.push({ date: null, day: null });
-    }
-
-    for (let day = 1; day <= totalDays; day++) {
-      const date = new Date(calendarYear, calendarMonth, day);
-
-      days.push({
-        date: toDateKey(date),
-        day,
-      });
-    }
-
-    return days;
-  }, [calendarMonth, calendarYear]);
-
-  function changeMonth(direction: "prev" | "next") {
-    const nextDate = new Date(calendarYear, calendarMonth, 1);
-
-    if (direction === "prev") {
-      nextDate.setMonth(nextDate.getMonth() - 1);
-    } else {
-      nextDate.setMonth(nextDate.getMonth() + 1);
-    }
-
-    setCalendarMonth(nextDate.getMonth());
-    setCalendarYear(nextDate.getFullYear());
-    setSelectedDate(null);
-  }
-
-  function monthTitle() {
-    return new Date(calendarYear, calendarMonth, 1).toLocaleDateString(
-      "en-PH",
-      {
-        month: "long",
-        year: "numeric",
-      },
-    );
-  }
 
   function formatWorkoutType(type: WorkoutType) {
     const labels: Record<WorkoutType, string> = {
@@ -360,259 +327,13 @@ export default function WorkoutHistoryScreen() {
               </Pressable>
             </View>
 
-            <View
-              style={{
-                marginTop: 16,
-                backgroundColor: theme.colors.surface,
-                borderRadius: 20,
-                padding: 14,
-              }}
-            >
-              {!calendarExpanded ? (
-                <>
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      marginBottom: 10,
-                    }}
-                  >
-                    <Text
-                      style={{
-                        fontSize: 16,
-                        fontWeight: "900",
-                        color: theme.colors.text,
-                      }}
-                    >
-                      This Week
-                    </Text>
-
-                    <Pressable
-                      onPress={() => setCalendarExpanded(true)}
-                      style={{
-                        paddingVertical: 8,
-                        paddingHorizontal: 12,
-                      }}
-                    >
-                      <ExpandIcon size={18} color={theme.colors.primary} />
-                    </Pressable>
-                  </View>
-
-                  <View style={{ flexDirection: "row", gap: 6 }}>
-                    {weekDays.map((item) => {
-                      const isSelected = selectedDate === item.date;
-                      const isToday = item.date === toDateKey(new Date());
-                      const hasWorkout = activeDates[item.date] > 0;
-
-                      return (
-                        <Pressable
-                          key={item.date}
-                          onPress={() => handleDatePress(item.date)}
-                          style={{
-                            flex: 1,
-                            backgroundColor: isSelected
-                              ? theme.colors.primary
-                              : isToday
-                                ? theme.colors.primarySoft
-                                : theme.colors.background,
-                            borderRadius: 14,
-                            paddingVertical: 10,
-                            alignItems: "center",
-                          }}
-                        >
-                          <Text
-                            style={{
-                              fontSize: 11,
-                              color: isSelected
-                                ? theme.colors.textInverse
-                                : theme.colors.textMuted,
-                              fontWeight: "800",
-                            }}
-                          >
-                            {item.label}
-                          </Text>
-
-                          <Text
-                            style={{
-                              marginTop: 4,
-                              fontSize: 15,
-                              fontWeight: "900",
-                              color: isSelected
-                                ? theme.colors.textInverse
-                                : theme.colors.text,
-                            }}
-                          >
-                            {item.day}
-                          </Text>
-
-                          <Text style={{ fontSize: 12, marginTop: 2 }}>
-                            {hasWorkout ? "🏋️" : ""}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                </>
-              ) : (
-                <>
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      marginBottom: 12,
-                    }}
-                  >
-                    <Pressable
-                      onPress={() => changeMonth("prev")}
-                      style={{
-                        backgroundColor: theme.colors.surfaceAlt,
-                        width: 34,
-                        height: 34,
-                        borderRadius: 17,
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      <Text
-                        style={{
-                          fontSize: 18,
-                          fontWeight: "900",
-                          color: theme.colors.text,
-                        }}
-                      >
-                        ‹
-                      </Text>
-                    </Pressable>
-
-                    <Text
-                      style={{
-                        fontSize: 16,
-                        fontWeight: "900",
-                        color: theme.colors.text,
-                      }}
-                    >
-                      {monthTitle()}
-                    </Text>
-
-                    <Pressable
-                      onPress={() => changeMonth("next")}
-                      style={{
-                        backgroundColor: theme.colors.surfaceAlt,
-                        width: 34,
-                        height: 34,
-                        borderRadius: 17,
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      <Text
-                        style={{
-                          fontSize: 18,
-                          fontWeight: "900",
-                          color: theme.colors.text,
-                        }}
-                      >
-                        ›
-                      </Text>
-                    </Pressable>
-                  </View>
-
-                  <View style={{ flexDirection: "row", marginBottom: 6 }}>
-                    {["S", "M", "T", "W", "T", "F", "S"].map((d, index) => (
-                      <Text
-                        key={`${d}-${index}`}
-                        style={{
-                          flex: 1,
-                          textAlign: "center",
-                          color: theme.colors.textMuted,
-                          fontWeight: "800",
-                          fontSize: 11,
-                        }}
-                      >
-                        {d}
-                      </Text>
-                    ))}
-                  </View>
-
-                  <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
-                    {monthDays.map((item, index) => {
-                      const isSelected = item.date === selectedDate;
-                      const isToday = item.date === toDateKey(new Date());
-                      const hasWorkout = item.date
-                        ? activeDates[item.date] > 0
-                        : false;
-
-                      return (
-                        <Pressable
-                          key={`${item.date || "empty"}-${index}`}
-                          disabled={!item.date}
-                          onPress={() => {
-                            if (item.date) handleDatePress(item.date);
-                          }}
-                          style={{
-                            width: `${100 / 7}%`,
-                            paddingVertical: 4,
-                            alignItems: "center",
-                          }}
-                        >
-                          {item.day ? (
-                            <View
-                              style={{
-                                width: 34,
-                                height: 40,
-                                borderRadius: 14,
-                                overflow: "hidden",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                backgroundColor: isSelected
-                                  ? theme.colors.primary
-                                  : isToday
-                                    ? theme.colors.primarySoft
-                                    : "transparent",
-                                borderWidth: isSelected || isToday ? 1 : 0,
-                                borderColor: isSelected
-                                  ? theme.colors.primary
-                                  : "transparent",
-                              }}
-                            >
-                              <Text
-                                style={{
-                                  fontSize: 13,
-                                  fontWeight: "900",
-                                  color: isSelected
-                                    ? theme.colors.textInverse
-                                    : theme.colors.text,
-                                }}
-                              >
-                                {item.day}
-                              </Text>
-
-                              <Text style={{ fontSize: 10 }}>
-                                {hasWorkout ? "🏋️" : ""}
-                              </Text>
-                            </View>
-                          ) : (
-                            <View style={{ width: 34, height: 40 }} />
-                          )}
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                  <Pressable
-                    onPress={() => setCalendarExpanded(false)}
-                    style={{
-                      padding: 10,
-                      alignItems: "center",
-                    }}
-                  >
-                    <X size={24} color={theme.colors.primary} />
-                  </Pressable>
-                </>
-              )}
-            </View>
-
+            <ActivityCalendar
+              activeDates={activeDates}
+              marker="🏋️"
+              selectedDate={selectedDate}
+              onSelectDate={handleDatePress}
+              clearSelectionOnMonthChange={() => setSelectedDate(null)}
+            />
             <View
               style={{
                 marginTop: 20,
@@ -661,6 +382,7 @@ export default function WorkoutHistoryScreen() {
         }
         renderItem={({ item }) => (
           <Pressable
+            disabled={item.offline}
             onPress={() =>
               router.push({
                 pathname: "/workouts/[id]",
@@ -680,6 +402,7 @@ export default function WorkoutHistoryScreen() {
                 item.workout_type === currentSplit
                   ? theme.colors.primary
                   : theme.colors.border,
+              opacity: item.offline ? 0.75 : 1,
             }}
           >
             <View
@@ -702,6 +425,7 @@ export default function WorkoutHistoryScreen() {
 
                 <Text style={{ color: theme.colors.textMuted, marginTop: 2 }}>
                   {item.notes ? item.notes : "Workout session"}
+                  {item.offline ? " - waiting to sync" : ""}
                 </Text>
               </View>
 

@@ -1,4 +1,5 @@
 import ThemedAlert from "@/components/ThemedAlert";
+import { cacheOfflineUser } from "@/lib/offlineUser";
 import { useTheme } from "@/lib/theme";
 import * as LocalAuthentication from "expo-local-authentication";
 import { useRouter } from "expo-router";
@@ -132,7 +133,7 @@ export default function AuthScreen() {
     Keyboard.dismiss();
     setLoading(true);
 
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email: email.trim(),
       password,
     });
@@ -150,8 +151,11 @@ export default function AuthScreen() {
 
     await SecureStore.setItemAsync(SAVED_EMAIL_KEY, email.trim());
     await SecureStore.setItemAsync(BIOMETRIC_ENABLED_KEY, "true");
+    if (data.user) {
+      await cacheOfflineUser(data.user);
+    }
 
-    router.replace("/(tabs)/home" as any);
+    router.replace("/(tabs)/workouts" as any);
   }
 
   async function loginWithFingerprint() {
@@ -184,7 +188,8 @@ export default function AuthScreen() {
     setLoading(false);
 
     if (session) {
-      router.replace("/(tabs)/home" as any);
+      await cacheOfflineUser(session.user);
+      router.replace("/(tabs)/workouts" as any);
     } else {
       showAlert({
         title: "Session Expired",
@@ -280,7 +285,7 @@ export default function AuthScreen() {
                   fontSize: theme.fontSize.md,
                 }}
               >
-                Login to track your fitness, food, and progress.
+                Login to track your workouts and cardio.
               </Text>
 
               {supabaseConfigError ? (

@@ -1,5 +1,11 @@
 import AddExerciseModal from "@/components/AddExerciseModal";
 import ThemedAlert from "@/components/ThemedAlert";
+import { isOnline } from "@/lib/offlineCardio";
+import { resolveOfflineUserId } from "@/lib/offlineUser";
+import {
+  cacheWorkoutExercises,
+  getCachedWorkoutExercises,
+} from "@/lib/offlineWorkouts";
 import { supabase } from "@/lib/supabase";
 import { useTheme } from "@/lib/theme";
 import {
@@ -165,11 +171,16 @@ export default function WorkoutSetupScreen() {
   async function loadExercises() {
     setLoading(true);
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const online = await isOnline();
+    const userId = await resolveOfflineUserId();
 
-    if (!user) {
+    if (!userId) {
+      setLoading(false);
+      return;
+    }
+
+    if (!online) {
+      setExercises((await getCachedWorkoutExercises()) as Exercise[]);
       setLoading(false);
       return;
     }
@@ -177,7 +188,7 @@ export default function WorkoutSetupScreen() {
     const { data, error } = await supabase
       .from("exercises")
       .select("*")
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .order("movement_type", { ascending: true })
       .order("name", { ascending: true });
 
@@ -190,7 +201,9 @@ export default function WorkoutSetupScreen() {
       });
     }
 
-    setExercises((data || []) as Exercise[]);
+    const nextExercises = (data || []) as Exercise[];
+    setExercises(nextExercises);
+    await cacheWorkoutExercises(nextExercises);
     setLoading(false);
   }
   function openAddModal() {

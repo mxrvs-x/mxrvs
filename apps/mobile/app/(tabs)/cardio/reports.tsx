@@ -1,5 +1,8 @@
 import {
+  cacheCardioSessions,
+  getCachedCardioSessions,
   getOfflineCardioSessions,
+  mapOfflineCardioSession,
   syncOfflineCardioSessions,
 } from "@/lib/offlineCardio";
 import { supabase } from "@/lib/supabase";
@@ -146,26 +149,25 @@ export default function CardioReportsScreen() {
       await syncOfflineCardioSessions();
     }
 
-    const offlineSessions = await getOfflineCardioSessions();
-    const mappedOffline: CardioSession[] = offlineSessions.map((session) => ({
-      id: session.temp_id,
-      cardio_type: session.cardio_type,
-      cardio_source: session.cardio_source,
-      session_date: session.session_date,
-      distance_km: session.distance_km,
-      duration_seconds: session.duration_seconds,
-      calories_burned: session.calories_burned,
-      steps: session.steps,
-      created_at: session.created_at,
-      offline: true,
-    }));
+    const cachedSessions = (await getCachedCardioSessions()) as CardioSession[];
+    const mappedOffline = (await getOfflineCardioSessions()).map(
+      mapOfflineCardioSession,
+    ) as CardioSession[];
 
     const {
       data: { user },
     } = await supabase.auth.getUser();
 
     if (!user || !isOnline) {
-      setSessions(mappedOffline);
+      const cachedDates = new Set(cachedSessions.map((session) => session.session_date));
+      setSessions(
+        [
+          ...mappedOffline.filter(
+            (session) => !cachedDates.has(session.session_date),
+          ),
+          ...cachedSessions,
+        ] as CardioSession[],
+      );
       setLoading(false);
       setRefreshing(false);
       return;
@@ -182,12 +184,13 @@ export default function CardioReportsScreen() {
 
     if (error) {
       console.log("Load cardio reports error:", error);
-      setSessions(mappedOffline);
+      setSessions([...mappedOffline, ...cachedSessions] as CardioSession[]);
       setLoading(false);
       setRefreshing(false);
       return;
     }
 
+    await cacheCardioSessions(data as any);
     setSessions([...mappedOffline, ...((data || []) as CardioSession[])]);
     setLoading(false);
     setRefreshing(false);

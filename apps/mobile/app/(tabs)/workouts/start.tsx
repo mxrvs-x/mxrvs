@@ -1,5 +1,15 @@
 import ExerciseSessionModal from "@/components/ExerciseSessionModal";
 import ThemedAlert from "@/components/ThemedAlert";
+import { isOnline } from "@/lib/offlineCardio";
+import { resolveOfflineUserId } from "@/lib/offlineUser";
+import {
+  cacheWorkoutExercises,
+  getCachedWorkouts,
+  createOfflineWorkout,
+  getCachedWorkoutExercises,
+  getOfflineWorkouts,
+  syncOfflineWorkouts,
+} from "@/lib/offlineWorkouts";
 import { supabase } from "@/lib/supabase";
 import { useTheme } from "@/lib/theme";
 import { Audio } from "expo-av";
@@ -327,23 +337,52 @@ export default function StartWorkoutScreen() {
   async function loadInitialData() {
     setLoading(true);
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const online = await isOnline();
+    const userId = await resolveOfflineUserId();
 
-    if (!user) {
+    if (!userId) {
       setLoading(false);
       return;
     }
 
     const today = getTodayDateString();
+    const offlineWorkouts = await getOfflineWorkouts();
+    const offlineTodayWorkout = offlineWorkouts.find(
+      (workout) => workout.workout_date === today,
+    );
+    const cachedTodayWorkout = (await getCachedWorkouts()).find(
+      (workout) => workout.workout_date === today,
+    );
+
+    if (!online) {
+      const cachedExercises = await getCachedWorkoutExercises(todaySplit.type);
+      setExercises(cachedExercises as Exercise[]);
+      setTodayWorkout(
+        cachedTodayWorkout
+          ? (cachedTodayWorkout as Workout)
+          : offlineTodayWorkout
+          ? {
+              id: offlineTodayWorkout.temp_id,
+              workout_date: offlineTodayWorkout.workout_date,
+              workout_type: offlineTodayWorkout.workout_type,
+              notes: offlineTodayWorkout.notes,
+              duration_minutes: offlineTodayWorkout.duration_minutes,
+              created_at: offlineTodayWorkout.created_at,
+            }
+          : null,
+      );
+      setLoading(false);
+      return;
+    }
+
+    await syncOfflineWorkouts();
 
     const [{ data: exerciseData, error: exerciseError }, { data: todayData }] =
       await Promise.all([
         supabase
           .from("exercises")
           .select("*")
-          .eq("user_id", user.id)
+          .eq("user_id", userId)
           .eq("movement_type", todaySplit.type)
           .order("is_compound", { ascending: false })
           .order("name", { ascending: true }),
@@ -351,7 +390,7 @@ export default function StartWorkoutScreen() {
         supabase
           .from("workouts")
           .select("*")
-          .eq("user_id", user.id)
+          .eq("user_id", userId)
           .eq("workout_date", today)
           .order("created_at", { ascending: false })
           .limit(1),
@@ -366,8 +405,27 @@ export default function StartWorkoutScreen() {
       });
     }
 
-    setExercises((exerciseData || []) as Exercise[]);
-    setTodayWorkout(((todayData || [])[0] as Workout) || null);
+    const cached = await getCachedWorkoutExercises();
+    const nextExercises = (exerciseData || []) as Exercise[];
+    await cacheWorkoutExercises([
+      ...cached.filter((exercise) => exercise.movement_type !== todaySplit.type),
+      ...nextExercises,
+    ]);
+
+    setExercises(nextExercises);
+    setTodayWorkout(
+      ((todayData || [])[0] as Workout) ||
+        (offlineTodayWorkout
+          ? {
+              id: offlineTodayWorkout.temp_id,
+              workout_date: offlineTodayWorkout.workout_date,
+              workout_type: offlineTodayWorkout.workout_type,
+              notes: offlineTodayWorkout.notes,
+              duration_minutes: offlineTodayWorkout.duration_minutes,
+              created_at: offlineTodayWorkout.created_at,
+            }
+          : null),
+    );
 
     setLoading(false);
   }
@@ -633,21 +691,52 @@ export default function StartWorkoutScreen() {
 
     stopWorkoutTicker();
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const userId = await resolveOfflineUserId();
 
-    if (!user) {
+    if (!userId) {
       setSaving(false);
       return;
     }
 
     const durationMinutes = Math.max(1, Math.round(finalElapsedSeconds / 60));
+    const offlineSets = current.sets.map((set) => ({
+      exercise_id: set.exercise_id,
+      exercise_name: set.exercise_name,
+      set_number: set.set_number,
+      reps: Number(set.reps),
+      weight_kg: Number(set.weight_kg),
+      rest_seconds: Number(set.rest_seconds) || null,
+    }));
+
+    async function saveOfflineCopy() {
+      await createOfflineWorkout({
+        workout_date: getTodayDateString(),
+        workout_type: todaySplit.type,
+        duration_minutes: durationMinutes,
+        notes: current.notes.trim() || null,
+        sets: offlineSets,
+      });
+
+      setSaving(false);
+      resetWorkoutSession();
+      showAlert({
+        title: "Workout saved offline",
+        message: "It will sync to Supabase when you are online.",
+        confirmText: "OK",
+        onConfirm: () => router.back(),
+      });
+    }
+
+    if (!(await isOnline())) {
+      await saveOfflineCopy();
+      return;
+    }
 
     const { data: workout, error: workoutError } = await supabase
       .from("workouts")
       .insert({
-        user_id: user.id,
+        user_id: userId,
+        workout_date: getTodayDateString(),
         workout_type: todaySplit.type,
         duration_minutes: durationMinutes,
         notes: current.notes.trim() || null,
@@ -657,23 +746,18 @@ export default function StartWorkoutScreen() {
 
     if (workoutError || !workout) {
       console.log("Create workout error:", workoutError);
-      showAlert({
-        title: "Error",
-        message: "Could not create workout.",
-        danger: true,
-      });
-      setSaving(false);
+      await saveOfflineCopy();
       return;
     }
 
-    const rows = current.sets.map((set) => ({
-      user_id: user.id,
+    const rows = offlineSets.map((set) => ({
+      user_id: userId,
       workout_id: workout.id,
       exercise_id: set.exercise_id,
       set_number: set.set_number,
-      reps: Number(set.reps),
-      weight_kg: Number(set.weight_kg),
-      rest_seconds: Number(set.rest_seconds) || null,
+      reps: set.reps,
+      weight_kg: set.weight_kg,
+      rest_seconds: set.rest_seconds,
     }));
 
     const { error: setsError } = await supabase
@@ -682,12 +766,8 @@ export default function StartWorkoutScreen() {
 
     if (setsError) {
       console.log("Save sets error:", setsError);
-      showAlert({
-        title: "Error",
-        message: "Workout created but sets failed to save.",
-        danger: true,
-      });
-      setSaving(false);
+      await supabase.from("workouts").delete().eq("id", workout.id);
+      await saveOfflineCopy();
       return;
     }
 

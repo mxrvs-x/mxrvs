@@ -4,8 +4,8 @@ import * as LocalAuthentication from "expo-local-authentication";
 import { useRouter } from "expo-router";
 import { useEffect } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
-import NetInfo from "@react-native-community/netinfo";
 import { cacheOfflineCardioUserId } from "../lib/offlineCardio";
+import { cacheOfflineUser } from "../lib/offlineUser";
 import { supabase, supabaseConfigError } from "../lib/supabase";
 
 export default function Index() {
@@ -15,11 +15,8 @@ export default function Index() {
   useEffect(() => {
     async function routeUser() {
       try {
-        const net = await NetInfo.fetch();
-        const offline = !net.isConnected || net.isInternetReachable === false;
-
         if (supabaseConfigError) {
-          router.replace(offline ? ("/(tabs)/cardio" as any) : "/auth");
+          router.replace("/auth");
           return;
         }
 
@@ -28,22 +25,18 @@ export default function Index() {
         } = await supabase.auth.getSession();
 
         if (!session) {
-          router.replace(offline ? ("/(tabs)/cardio" as any) : "/auth");
+          router.replace("/auth");
           return;
         }
 
         await cacheOfflineCardioUserId(session.user.id);
-
-        if (offline) {
-          router.replace("/(tabs)/cardio" as any);
-          return;
-        }
+        await cacheOfflineUser(session.user);
 
         const hasHardware = await LocalAuthentication.hasHardwareAsync();
         const isEnrolled = await LocalAuthentication.isEnrolledAsync();
 
         if (!hasHardware || !isEnrolled) {
-          router.replace("/(tabs)/home" as any);
+          router.replace("/(tabs)/workouts" as any);
           return;
         }
 
@@ -54,7 +47,7 @@ export default function Index() {
         });
 
         if (result.success) {
-          router.replace("/(tabs)/home" as any);
+          router.replace("/(tabs)/workouts" as any);
         } else {
           router.replace("/auth");
         }

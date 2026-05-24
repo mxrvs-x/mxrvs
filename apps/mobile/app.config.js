@@ -39,27 +39,12 @@ function loadLocalEnv() {
 
 loadLocalEnv();
 
-if (!process.env.EXPO_PUBLIC_GEMINI_API_KEY && process.env.GEMINI_API_KEY) {
-  process.env.EXPO_PUBLIC_GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-}
-
 module.exports = ({ config }) => {
   const mapsApiKey = process.env.MAPS_API_KEY;
-  const geminiApiKey =
-    process.env.EXPO_PUBLIC_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
-  const fatSecretOAuth1RestApiConsumerKey =
-    process.env.FATSECRET_OAUTH1_REST_API_CONSUMER_KEY;
-  const fatSecretOAuth1RestApiConsumerSecret =
-    process.env.FATSECRET_OAUTH1_REST_API_CONSUMER_SECRET;
 
   return {
     ...config,
-    extra: {
-      ...config.extra,
-      geminiApiKey,
-      fatSecretOAuth1RestApiConsumerKey,
-      fatSecretOAuth1RestApiConsumerSecret,
-    },
+    extra: config.extra,
     android: {
       ...config.android,
       config: mapsApiKey

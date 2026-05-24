@@ -1,6 +1,9 @@
 import { AppTheme, useTheme } from "@/lib/theme";
 import {
+  cacheCardioSessions,
+  getCachedCardioSessions,
   getOfflineCardioSessions,
+  mapOfflineCardioSession,
   syncOfflineCardioSessions,
 } from "@/lib/offlineCardio";
 import { supabase } from "@/lib/supabase";
@@ -54,27 +57,28 @@ export default function CardioHome() {
       await syncOfflineCardioSessions();
     }
 
-    const offlineSessions = await getOfflineCardioSessions();
-
-    const mappedOffline: CardioSession[] = offlineSessions.map((s) => ({
-      id: s.temp_id,
-      cardio_type: s.cardio_type,
-      cardio_source: s.cardio_source,
-      session_date: s.session_date,
-      distance_km: s.distance_km,
-      duration_seconds: s.duration_seconds,
-      calories_burned: s.calories_burned,
-      is_mock: s.is_mock,
-      offline: true,
-    }));
+    const cachedSessions = (await getCachedCardioSessions()) as CardioSession[];
+    const mappedOffline = (await getOfflineCardioSessions()).map(
+      mapOfflineCardioSession,
+    ) as CardioSession[];
 
     const {
       data: { user },
     } = await supabase.auth.getUser();
 
     if (!user || !isOnline) {
-      setSessions(mappedOffline.slice(0, 5));
-      setWeeklySessions(mappedOffline);
+      const cachedDates = new Set(cachedSessions.map((session) => session.session_date));
+      const merged = [
+        ...mappedOffline.filter((session) => !cachedDates.has(session.session_date)),
+        ...cachedSessions,
+      ].sort(
+        (a, b) =>
+          new Date(b.session_date).getTime() -
+          new Date(a.session_date).getTime(),
+      );
+
+      setSessions(merged.slice(0, 5));
+      setWeeklySessions(merged);
       setLoading(false);
       setRefreshing(false);
       return;
@@ -107,6 +111,9 @@ export default function CardioHome() {
 
     if (recentError) console.log("Load recent cardio error:", recentError);
     if (weeklyError) console.log("Load weekly cardio error:", weeklyError);
+    if (weeklyData) {
+      await cacheCardioSessions(weeklyData as any);
+    }
 
     const combinedRecent = [...mappedOffline, ...(recentData || [])]
       .sort(

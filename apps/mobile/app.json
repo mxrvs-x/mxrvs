@@ -22,7 +22,6 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.anonymous.mxrvs",
       "infoPlist": {
-        "NSCameraUsageDescription": "Allow mxrvs to scan nutrition facts labels.",
         "NSMotionUsageDescription": "Allow mxrvs to count your steps during your runs.",
         "NSLocationWhenInUseUsageDescription": "Allow mxrvs to track your running routes."
       }
@@ -31,32 +30,15 @@
       "package": "com.anonymous.mxrvs",
       "permissions": [
         "android.permission.ACTIVITY_RECOGNITION",
-        "android.permission.CAMERA",
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION",
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE",
-        "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.WRITE_EXTERNAL_STORAGE",
-        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
-        "android.permission.READ_MEDIA_IMAGES",
-        "android.permission.READ_MEDIA_VIDEO",
-        "android.permission.READ_MEDIA_AUDIO",
-        "android.permission.POST_NOTIFICATIONS",
-        "android.permission.ACTIVITY_RECOGNITION",
-        "android.permission.CAMERA",
-        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.FOREGROUND_SERVICE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
         "android.permission.READ_MEDIA_IMAGES",
-        "android.permission.READ_MEDIA_VIDEO",
-        "android.permission.READ_MEDIA_AUDIO",
-        "android.permission.POST_NOTIFICATIONS",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.POST_NOTIFICATIONS"
       ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/mxrvs.png",
@@ -68,22 +50,12 @@
       "expo-notifications",
       "expo-secure-store",
       [
-        "expo-camera",
-        {
-          "cameraPermission": "Allow mxrvs to scan nutrition facts labels."
-        }
-      ],
-      [
-        "expo-image-picker",
-        {
-          "photosPermission": "Allow mxrvs to import nutrition facts photos."
-        }
-      ],
-      [
         "expo-location",
         {
           "locationAlwaysAndWhenInUsePermission": "Allow mxrvs to track your runs.",
-          "isAndroidBackgroundLocationEnabled": false
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
         }
       ],
       [
@@ -95,8 +67,8 @@
       [
         "expo-media-library",
         {
-          "photosPermission": "Allow mxrvs to access meal and workout images.",
-          "savePhotosPermission": "Allow mxrvs to save meal and workout images."
+          "photosPermission": "Allow mxrvs to access workout and cardio images.",
+          "savePhotosPermission": "Allow mxrvs to save workout and cardio images."
         }
       ]
     ],
@@ -108,9 +80,6 @@
       "policy": "appVersion"
     },
     "extra": {
-      "geminiApiKey": "AIzaSyDicc_6hy9cN45qp0ze89TkicUYaRxOJFY",
-      "fatSecretOAuth1RestApiConsumerKey": "32dbab394f0c41b58a696c5711ae6261",
-      "fatSecretOAuth1RestApiConsumerSecret": "f284ed5fdf874573b4ece3de3ac4d8fe",
       "router": {},
       "eas": {
         "projectId": "bf2a8954-6ab4-499b-a7cb-51de808fae29"

@@ -1,4 +1,4 @@
-import { AppTheme, useTheme } from "@/lib/theme";
+import { useTheme } from "@/lib/theme";
 import { Stack } from "expo-router";
 
 export default function CardioLayout() {

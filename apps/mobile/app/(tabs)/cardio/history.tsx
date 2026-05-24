@@ -1,6 +1,10 @@
+import ActivityCalendar from "@/components/ActivityCalendar";
 import { AppTheme, useTheme } from "@/lib/theme";
 import {
+  cacheCardioSessions,
+  getCachedCardioSessions,
   getOfflineCardioSessions,
+  mapOfflineCardioSession,
   syncOfflineCardioSessions,
 } from "@/lib/offlineCardio";
 import { supabase } from "@/lib/supabase";
@@ -15,7 +19,7 @@ import {
   Text as RNText,
   View,
 } from "react-native";
-import { BarChart3, X, ExpandIcon } from "lucide-react-native";
+import { BarChart3, X } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type CardioSession = {
@@ -43,11 +47,7 @@ export default function CardioHistoryScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const today = new Date();
-  const [calendarMonth, setCalendarMonth] = useState(today.getMonth());
-  const [calendarYear, setCalendarYear] = useState(today.getFullYear());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [calendarExpanded, setCalendarExpanded] = useState(false);
 
   async function loadSessions(showLoader = false) {
     if (showLoader) setLoading(true);
@@ -61,26 +61,29 @@ export default function CardioHistoryScreen() {
       await syncOfflineCardioSessions();
     }
 
-    const offlineSessions = await getOfflineCardioSessions();
-
-    const mappedOffline: CardioSession[] = offlineSessions.map((s) => ({
-      id: s.temp_id,
-      cardio_type: s.cardio_type,
-      cardio_source: s.cardio_source,
-      session_date: s.session_date,
-      distance_km: s.distance_km,
-      duration_seconds: s.duration_seconds,
-      calories_burned: s.calories_burned,
-      is_mock: s.is_mock,
-      offline: true,
-    }));
+    const cachedSessions = (await getCachedCardioSessions()) as CardioSession[];
+    const mappedOffline = (await getOfflineCardioSessions()).map(
+      mapOfflineCardioSession,
+    ) as CardioSession[];
 
     const {
       data: { user },
     } = await supabase.auth.getUser();
 
     if (!user || !isOnline) {
-      setSessions(mappedOffline);
+      const cachedDates = new Set(cachedSessions.map((session) => session.session_date));
+      setSessions(
+        [
+          ...mappedOffline.filter(
+            (session) => !cachedDates.has(session.session_date),
+          ),
+          ...cachedSessions,
+        ].sort(
+          (a, b) =>
+            new Date(b.session_date).getTime() -
+            new Date(a.session_date).getTime(),
+        ),
+      );
       setLoading(false);
       setRefreshing(false);
       return;
@@ -97,11 +100,13 @@ export default function CardioHistoryScreen() {
 
     if (error) {
       console.log("Load cardio history error:", error);
-      setSessions(mappedOffline);
+      setSessions([...mappedOffline, ...cachedSessions]);
       setLoading(false);
       setRefreshing(false);
       return;
     }
+
+    await cacheCardioSessions(data as any);
 
     const combined = [...mappedOffline, ...(data || [])].sort(
       (a, b) =>
@@ -124,13 +129,6 @@ export default function CardioHistoryScreen() {
     await loadSessions(false);
   }
 
-  function toDateKey(date: Date) {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
-  }
-
   const activeDates = useMemo(() => {
     const map: Record<string, number> = {};
 
@@ -145,73 +143,6 @@ export default function CardioHistoryScreen() {
     if (!selectedDate) return sessions;
     return sessions.filter((s) => s.session_date === selectedDate);
   }, [sessions, selectedDate]);
-
-  const weekDays = useMemo(() => {
-    const now = new Date();
-    const dayOfWeek = now.getDay();
-    const start = new Date(now);
-    start.setDate(now.getDate() - dayOfWeek);
-
-    return Array.from({ length: 7 }).map((_, index) => {
-      const d = new Date(start);
-      d.setDate(start.getDate() + index);
-
-      return {
-        day: d.getDate(),
-        date: toDateKey(d),
-        label: ["S", "M", "T", "W", "T", "F", "S"][index],
-      };
-    });
-  }, []);
-
-  const monthDays = useMemo(() => {
-    const firstDay = new Date(calendarYear, calendarMonth, 1);
-    const lastDay = new Date(calendarYear, calendarMonth + 1, 0);
-
-    const firstWeekday = firstDay.getDay();
-    const totalDays = lastDay.getDate();
-
-    const days: {
-      date: string | null;
-      day: number | null;
-    }[] = [];
-
-    for (let i = 0; i < firstWeekday; i++) {
-      days.push({ date: null, day: null });
-    }
-
-    for (let day = 1; day <= totalDays; day++) {
-      const date = new Date(calendarYear, calendarMonth, day);
-
-      days.push({
-        date: toDateKey(date),
-        day,
-      });
-    }
-
-    return days;
-  }, [calendarMonth, calendarYear]);
-
-  function changeMonth(direction: "prev" | "next") {
-    const nextDate = new Date(calendarYear, calendarMonth, 1);
-
-    if (direction === "prev") nextDate.setMonth(nextDate.getMonth() - 1);
-    else nextDate.setMonth(nextDate.getMonth() + 1);
-
-    setCalendarMonth(nextDate.getMonth());
-    setCalendarYear(nextDate.getFullYear());
-    setSelectedDate(null);
-  }
-
-  function monthTitle() {
-    return new Date(calendarYear, calendarMonth, 1).toLocaleDateString(
-      "en-PH",
-      {
-        month: "long",
-        year: "numeric",
-      },
-    );
-  }
 
   function formatTime(sec: number) {
     if (!sec) return "0:00";
@@ -330,228 +261,13 @@ export default function CardioHistoryScreen() {
               </Pressable>
             </View>
 
-            <View
-              style={{
-                marginTop: 16,
-                backgroundColor: theme.colors.surface,
-                borderRadius: 20,
-                padding: 14,
-              }}
+            <ActivityCalendar
+              activeDates={activeDates}
+              marker="🔥"
+              selectedDate={selectedDate}
+              onSelectDate={handleDatePress}
+              clearSelectionOnMonthChange={() => setSelectedDate(null)}
             >
-              {!calendarExpanded ? (
-                <>
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      marginBottom: 10,
-                    }}
-                  >
-                    <Text style={{ fontSize: 16, fontWeight: "900" }}>
-                      This Week
-                    </Text>
-
-                    <Pressable
-                      onPress={() => setCalendarExpanded(true)}
-                      style={{
-                        backgroundColor: theme.colors.surfaceAlt,
-                        paddingVertical: 8,
-                        paddingHorizontal: 12,
-                        borderRadius: 12,
-                      }}
-                    >
-                      <ExpandIcon size={18} color={theme.colors.primary} />
-                    </Pressable>
-                  </View>
-
-                  <View style={{ flexDirection: "row", gap: 6 }}>
-                    {weekDays.map((item) => {
-                      const isSelected = selectedDate === item.date;
-                      const isToday = item.date === toDateKey(new Date());
-                      const hasActivity = activeDates[item.date] > 0;
-
-                      return (
-                        <Pressable
-                          key={item.date}
-                          onPress={() => handleDatePress(item.date)}
-                          style={{
-                            flex: 1,
-                            backgroundColor: isSelected
-                              ? theme.colors.text
-                              : isToday
-                                ? theme.colors.surfaceAlt
-                                : theme.colors.background,
-                            borderRadius: 14,
-                            paddingVertical: 10,
-                            alignItems: "center",
-                          }}
-                        >
-                          <Text
-                            style={{
-                              fontSize: 11,
-                              color: isSelected
-                                ? theme.colors.surface
-                                : theme.colors.textFaint,
-                              fontWeight: "800",
-                            }}
-                          >
-                            {item.label}
-                          </Text>
-
-                          <Text
-                            style={{
-                              marginTop: 4,
-                              fontSize: 15,
-                              fontWeight: "900",
-                              color: isSelected
-                                ? theme.colors.surface
-                                : theme.colors.text,
-                            }}
-                          >
-                            {item.day}
-                          </Text>
-
-                          <Text style={{ fontSize: 12, marginTop: 2 }}>
-                            {hasActivity ? "🔥" : ""}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                </>
-              ) : (
-                <>
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      marginBottom: 12,
-                    }}
-                  >
-                    <Pressable
-                      onPress={() => changeMonth("prev")}
-                      style={{
-                        backgroundColor: theme.colors.surfaceAlt,
-                        width: 34,
-                        height: 34,
-                        borderRadius: 17,
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      <Text style={{ fontSize: 18, fontWeight: "900" }}>‹</Text>
-                    </Pressable>
-
-                    <Text style={{ fontSize: 16, fontWeight: "900" }}>
-                      {monthTitle()}
-                    </Text>
-
-                    <Pressable
-                      onPress={() => changeMonth("next")}
-                      style={{
-                        backgroundColor: theme.colors.surfaceAlt,
-                        width: 34,
-                        height: 34,
-                        borderRadius: 17,
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      <Text style={{ fontSize: 18, fontWeight: "900" }}>›</Text>
-                    </Pressable>
-                  </View>
-
-                  <View style={{ flexDirection: "row", marginBottom: 6 }}>
-                    {["S", "M", "T", "W", "T", "F", "S"].map((d, index) => (
-                      <Text
-                        key={`${d}-${index}`}
-                        style={{
-                          flex: 1,
-                          textAlign: "center",
-                          color: theme.colors.textFaint,
-                          fontWeight: "800",
-                          fontSize: 11,
-                        }}
-                      >
-                        {d}
-                      </Text>
-                    ))}
-                  </View>
-
-                  <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
-                    {monthDays.map((item, index) => {
-                      const isSelected = item.date === selectedDate;
-                      const isToday = item.date === toDateKey(new Date());
-                      const hasActivity = item.date
-                        ? activeDates[item.date] > 0
-                        : false;
-
-                      return (
-                        <Pressable
-                          key={`${item.date || "empty"}-${index}`}
-                          disabled={!item.date}
-                          onPress={() => {
-                            if (item.date) handleDatePress(item.date);
-                          }}
-                          style={{
-                            width: `${100 / 7}%`,
-                            paddingVertical: 4,
-                            alignItems: "center",
-                          }}
-                        >
-                          {item.day ? (
-                            <View
-                              style={{
-                                width: 34,
-                                height: 40,
-                                borderRadius: 14,
-                                alignItems: "center",
-                                justifyContent: "center",
-                                backgroundColor: isSelected
-                                  ? theme.colors.text
-                                  : isToday
-                                    ? theme.colors.surfaceAlt
-                                    : "transparent",
-                              }}
-                            >
-                              <Text
-                                style={{
-                                  fontSize: 13,
-                                  fontWeight: "900",
-                                  color: isSelected
-                                    ? theme.colors.surface
-                                    : theme.colors.text,
-                                }}
-                              >
-                                {item.day}
-                              </Text>
-
-                              <Text style={{ fontSize: 10 }}>
-                                {hasActivity ? "🔥" : ""}
-                              </Text>
-                            </View>
-                          ) : (
-                            <View style={{ width: 34, height: 40 }} />
-                          )}
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-
-                  <Pressable
-                    onPress={() => setCalendarExpanded(false)}
-                    style={{
-                      padding: 10,
-                      alignItems: "center",
-                    }}
-                  >
-                    <X size={24} color={theme.colors.danger} />
-                  </Pressable>
-                </>
-              )}
-
               {selectedDate && (
                 <View
                   style={{
@@ -576,8 +292,7 @@ export default function CardioHistoryScreen() {
                   </Pressable>
                 </View>
               )}
-            </View>
-
+            </ActivityCalendar>
             <View
               style={{
                 marginTop: 20,

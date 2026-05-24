@@ -1,5 +1,8 @@
 import AppUpdateGate from "@/components/AppUpdateGate";
 import CreatineReminderGate from "@/components/CreatineReminderGate";
+import OfflineSyncGate from "@/components/OfflineSyncGate";
+import WeightReminderGate from "@/components/WeightReminderGate";
+import "@/lib/backgroundCardioLocation";
 import { AppThemeProvider, useTheme } from "@/lib/theme";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -13,8 +16,9 @@ function RootStack() {
     <>
       <StatusBar style={theme.mode === "dark" ? "light" : "dark"} />
       <AppUpdateGate />
+      <OfflineSyncGate />
       <CreatineReminderGate />
-
+      <WeightReminderGate />
       <Stack
         screenOptions={{
           headerShown: false,
