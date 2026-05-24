@@ -1,7 +1,11 @@
 import ThemedAlert from "@/components/ThemedAlert";
 import { SafeRouteMap, type MapRegion } from "@/components/SafeRouteMap";
 import { requestFitnessPermissions } from "@/lib/appPermissions";
-import { isOnline, saveOfflineCardioSession } from "@/lib/offlineCardio";
+import {
+  isOnline,
+  resolveCardioUserId,
+  saveOfflineCardioSession,
+} from "@/lib/offlineCardio";
 import { supabase } from "@/lib/supabase";
 import { AppTheme, useTheme } from "@/lib/theme";
 import * as Location from "expo-location";
@@ -43,7 +47,7 @@ type RunSession = {
   gpsReady: boolean;
 };
 
-const RUN_STRIDE_M = 1.25;
+const RUNNING_STRIDE_HEIGHT_RATIO = 0.65;
 
 const initialRunSession: RunSession = {
   runSource: "outdoor",
@@ -133,6 +137,14 @@ function isGpsReliable(accuracy: number | null) {
   return accuracy <= 25;
 }
 
+function estimateStepDistanceKm(steps: number, heightCm: number | null) {
+  if (!heightCm || heightCm <= 0) return 0;
+
+  const strideM = (heightCm / 100) * RUNNING_STRIDE_HEIGHT_RATIO;
+
+  return (steps * strideM) / 1000;
+}
+
 function handleLocationUpdate(location: Location.LocationObject) {
   const current = getRunSession();
 
@@ -194,22 +206,50 @@ function handleLocationUpdate(location: Location.LocationObject) {
   }));
 }
 
-async function getUserWeight() {
+async function getUserBodyStats() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) return 70;
+  if (!user) {
+    return {
+      heightCm: null,
+      weightKg: null,
+    };
+  }
 
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("weight_kg")
-    .eq("user_id", user.id)
-    .single();
+  const [latestBodyStats, latestWeightLog] = await Promise.all([
+    supabase
+      .from("body_stats")
+      .select("height_cm")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("body_weight_logs")
+      .select("weight_kg")
+      .eq("user_id", user.id)
+      .order("logged_at", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
 
-  if (error || !data?.weight_kg) return 70;
-
-  return Number(data.weight_kg);
+  if (latestBodyStats.error) {
+    console.log("Load run body stats error:", latestBodyStats.error);
+  }
+  if (latestWeightLog.error) {
+    console.log("Load run weight log error:", latestWeightLog.error);
+  }
+  return {
+    heightCm: latestBodyStats.data?.height_cm
+      ? Number(latestBodyStats.data.height_cm)
+      : null,
+    weightKg: latestWeightLog.data?.weight_kg
+      ? Number(latestWeightLog.data.weight_kg)
+      : null,
+  };
 }
 
 function startTimer() {
@@ -261,7 +301,8 @@ export default function RunScreen() {
   const router = useRouter();
   const session = useRunSession();
 
-  const [bodyWeight, setBodyWeight] = useState(70);
+  const [bodyWeight, setBodyWeight] = useState<number | null>(null);
+  const [heightCm, setHeightCm] = useState<number | null>(null);
   const [finishModalVisible, setFinishModalVisible] = useState(false);
   const [manualDistanceKm, setManualDistanceKm] = useState("");
   const [notes, setNotes] = useState("");
@@ -279,7 +320,7 @@ export default function RunScreen() {
     (() => void) | undefined
   >();
 
-  const stepDistanceKm = (session.steps * RUN_STRIDE_M) / 1000;
+  const stepDistanceKm = estimateStepDistanceKm(session.steps, heightCm);
 
   const displayDistanceKm =
     session.runSource === "outdoor" ? session.gpsDistanceKm : stepDistanceKm;
@@ -293,12 +334,13 @@ export default function RunScreen() {
     session.route.length > 0;
 
   useEffect(() => {
-    async function loadWeight() {
-      const weight = await getUserWeight();
-      setBodyWeight(weight);
+    async function loadBodyStats() {
+      const stats = await getUserBodyStats();
+      setBodyWeight(stats.weightKg);
+      setHeightCm(stats.heightCm);
     }
 
-    loadWeight();
+    loadBodyStats();
   }, []);
 
   useEffect(() => {
@@ -452,6 +494,8 @@ export default function RunScreen() {
   }
 
   function estimateCalories(distanceKm = displayDistanceKm) {
+    if (!bodyWeight) return 0;
+
     return Math.round(bodyWeight * distanceKm * 1.0);
   }
 
@@ -461,7 +505,11 @@ export default function RunScreen() {
     }
 
     if (session.runSource === "treadmill") {
-      return "Distance estimated from running stride. You can correct it before saving.";
+      if (!heightCm) {
+        return "Add your height in Profile to estimate treadmill distance from sensor steps.";
+      }
+
+      return "Distance estimated from sensor steps and your height. You can correct it before saving.";
     }
 
     if (!session.gpsReady) {
@@ -613,9 +661,13 @@ export default function RunScreen() {
       seconds: finalSeconds,
     });
 
+    stopWatchers();
+    lastPointRef = null;
+    lastRawStepsRef = 0;
+
     const finalDistance =
       current.runSource === "treadmill"
-        ? (current.steps * RUN_STRIDE_M) / 1000
+        ? estimateStepDistanceKm(current.steps, heightCm)
         : current.gpsDistanceKm;
 
     setManualDistanceKm(finalDistance.toFixed(2));
@@ -644,16 +696,22 @@ export default function RunScreen() {
       return;
     }
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const userId = await resolveCardioUserId();
 
-    if (!user) return;
+    if (!userId) {
+      showAlert({
+        title: "Offline setup needed",
+        message:
+          "Open the app once while online before saving cardio sessions offline.",
+        danger: true,
+      });
+      return;
+    }
 
     stopWatchers();
 
     const payload = {
-      user_id: user.id,
+      user_id: userId,
       session_date: new Date().toISOString().split("T")[0],
       cardio_type: "running" as const,
       cardio_source: current.runSource,
@@ -841,6 +899,7 @@ export default function RunScreen() {
                     }}
                     route={session.route}
                     showUserLocation={locationPermissionGranted}
+                    strokeColor={theme.colors.primary}
                     fallbackTitle="Run GPS ready"
                     fallbackMessage="Set a Google Maps API key to show the native map in Android builds."
                     textColor={theme.colors.text}
@@ -928,7 +987,7 @@ export default function RunScreen() {
               />
               <StatBox
                 theme={theme}
-                label="Step Distance"
+                label="Sensor Estimate"
                 value={`${stepDistanceKm.toFixed(3)} km`}
               />
             </View>

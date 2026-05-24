@@ -4,6 +4,8 @@ import * as LocalAuthentication from "expo-local-authentication";
 import { useRouter } from "expo-router";
 import { useEffect } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
+import NetInfo from "@react-native-community/netinfo";
+import { cacheOfflineCardioUserId } from "../lib/offlineCardio";
 import { supabase, supabaseConfigError } from "../lib/supabase";
 
 export default function Index() {
@@ -13,8 +15,11 @@ export default function Index() {
   useEffect(() => {
     async function routeUser() {
       try {
+        const net = await NetInfo.fetch();
+        const offline = !net.isConnected || net.isInternetReachable === false;
+
         if (supabaseConfigError) {
-          router.replace("/auth");
+          router.replace(offline ? ("/(tabs)/cardio" as any) : "/auth");
           return;
         }
 
@@ -23,7 +28,14 @@ export default function Index() {
         } = await supabase.auth.getSession();
 
         if (!session) {
-          router.replace("/auth");
+          router.replace(offline ? ("/(tabs)/cardio" as any) : "/auth");
+          return;
+        }
+
+        await cacheOfflineCardioUserId(session.user.id);
+
+        if (offline) {
+          router.replace("/(tabs)/cardio" as any);
           return;
         }
 

@@ -27,6 +27,10 @@ export function SafeRouteMap({
   route: RoutePoint[];
   showUserLocation: boolean;
   strokeWidth?: number;
+  strokeColor?: string;
+  fitRouteToBounds?: boolean;
+  routeFitPadding?: { top: number; right: number; bottom: number; left: number };
+  showStartMarker?: boolean;
   showFinishMarker?: boolean;
   fallbackTitle?: string;
   fallbackMessage?: string;

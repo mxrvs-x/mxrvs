@@ -20,6 +20,7 @@ export default function WorkoutLayout() {
       />
       <Stack.Screen name="start" options={{ headerShown: false }} />
       <Stack.Screen name="history" options={{ headerShown: false }} />
+      <Stack.Screen name="reports" options={{ headerShown: false }} />
       <Stack.Screen name="[id]" options={{ headerShown: false }} />
     </Stack>
   );

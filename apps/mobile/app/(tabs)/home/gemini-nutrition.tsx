@@ -40,16 +40,18 @@ const MEAL_OPTIONS: { key: MealType; label: string }[] = [
 const EXAMPLE_PROMPT =
   "Analyze this recipe: 200g chicken breast, 150g cooked rice, 1 tbsp olive oil, 80g broccoli. 1 serving.";
 
+const BRAND_EXAMPLE_PROMPT =
+  "Find macros per serving for Gardenia Classic White Bread.";
+
 function n(value?: number | null) {
   return Number(value ?? 0);
 }
 
-function macroReady(analysis?: NutritionAnalysis | null) {
+function hasCoreMacros(analysis?: NutritionAnalysis | null) {
   const macros = analysis?.macro_breakdown;
 
   return Boolean(
-    analysis?.can_add_to_custom_food &&
-      macros &&
+    macros &&
       macros.calories !== null &&
       macros.protein_g !== null &&
       macros.carbohydrates_g !== null &&
@@ -117,7 +119,8 @@ export default function GeminiNutritionScreen() {
   const latestAnalysisKey = analysisKey(latestAnalysis);
   const latestAnalysisSaved =
     Boolean(latestAnalysisKey) && savedAnalysisKeys.has(latestAnalysisKey);
-  const canUseLatestAnalysis = Boolean(latestAnalysis) && macroReady(latestAnalysis);
+  const canUseLatestAnalysis =
+    Boolean(latestAnalysis) && hasCoreMacros(latestAnalysis);
 
   function showAlert(title: string, message: string) {
     setAlertTitle(title);
@@ -129,7 +132,11 @@ export default function GeminiNutritionScreen() {
     let active = true;
 
     async function checkExistingFood() {
-      if (!latestAnalysis || !latestAnalysisKey || !macroReady(latestAnalysis)) {
+      if (
+        !latestAnalysis ||
+        !latestAnalysisKey ||
+        !hasCoreMacros(latestAnalysis)
+      ) {
         return;
       }
 
@@ -221,7 +228,7 @@ export default function GeminiNutritionScreen() {
   }
 
   async function addLatestToCustomFoods() {
-    if (!macroReady(latestAnalysis) || saving || latestAnalysisSaved) return;
+    if (!hasCoreMacros(latestAnalysis) || saving || latestAnalysisSaved) return;
 
     const analysis = latestAnalysis!;
     const macros = analysis.macro_breakdown;
@@ -275,7 +282,7 @@ export default function GeminiNutritionScreen() {
   }
 
   async function addLatestToDiary(mealType: MealType) {
-    if (!macroReady(latestAnalysis) || loggingMealType) return;
+    if (!hasCoreMacros(latestAnalysis) || loggingMealType) return;
 
     const analysis = latestAnalysis!;
     const macros = analysis.macro_breakdown;
@@ -390,6 +397,7 @@ export default function GeminiNutritionScreen() {
           <EmptyState
             theme={theme}
             onUseExample={() => setInput(EXAMPLE_PROMPT)}
+            onUseBrandExample={() => setInput(BRAND_EXAMPLE_PROMPT)}
           />
         ) : null}
 
@@ -621,9 +629,11 @@ export default function GeminiNutritionScreen() {
 function EmptyState({
   theme,
   onUseExample,
+  onUseBrandExample,
 }: {
   theme: AppTheme;
   onUseExample: () => void;
+  onUseBrandExample: () => void;
 }) {
   return (
     <View
@@ -647,25 +657,51 @@ function EmptyState({
         Recipe macro assistant
       </Text>
       <Text style={{ color: theme.colors.textMuted, lineHeight: 20, marginTop: 6 }}>
-        Include ingredient amounts and serving count for the best estimate. If
-        measurements are missing, Gemini should ask before calculating.
+        Include ingredient amounts for recipes, or enter a brand and product
+        name to search macros per official serving.
       </Text>
-      <Pressable
-        onPress={onUseExample}
+      <View
         style={{
           marginTop: 14,
-          alignSelf: "flex-start",
-          borderRadius: theme.radius.md,
-          backgroundColor: theme.colors.primary,
-          paddingHorizontal: 14,
-          paddingVertical: 10,
+          flexDirection: "row",
+          flexWrap: "wrap",
+          gap: 8,
         }}
       >
-        <Text style={{ color: theme.colors.textInverse, fontWeight: "900" }}>
-          Use Example
-        </Text>
-      </Pressable>
+        <ExampleButton theme={theme} label="Recipe Example" onPress={onUseExample} />
+        <ExampleButton
+          theme={theme}
+          label="Brand Example"
+          onPress={onUseBrandExample}
+        />
+      </View>
     </View>
+  );
+}
+
+function ExampleButton({
+  theme,
+  label,
+  onPress,
+}: {
+  theme: AppTheme;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={{
+        borderRadius: theme.radius.md,
+        backgroundColor: theme.colors.primary,
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+      }}
+    >
+      <Text style={{ color: theme.colors.textInverse, fontWeight: "900" }}>
+        {label}
+      </Text>
+    </Pressable>
   );
 }
 

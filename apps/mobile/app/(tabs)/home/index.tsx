@@ -511,12 +511,7 @@ function ProgressBadge({
       }}
     >
       <Text style={{ color: theme.colors.text, fontSize: 20, fontWeight: "900" }}>
-        {value}
-      </Text>
-      <Text
-        style={{ color: theme.colors.textMuted, fontSize: 11, fontWeight: "800" }}
-      >
-        percent
+        {value} %
       </Text>
     </View>
   );

@@ -6,7 +6,7 @@ import {
   useLocalSearchParams,
   useRouter,
 } from "expo-router";
-import { X, ExpandIcon } from "lucide-react-native";
+import { BarChart3, X, ExpandIcon } from "lucide-react-native";
 import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -330,6 +330,34 @@ export default function WorkoutHistoryScreen() {
                   Complete workout session history.
                 </Text>
               </View>
+
+              <Pressable
+                onPress={() =>
+                  router.push({
+                    pathname: "/workouts/reports",
+                    params: { split: currentSplit },
+                  } as any)
+                }
+                style={{
+                  height: 42,
+                  paddingHorizontal: 12,
+                  borderRadius: 14,
+                  backgroundColor: theme.colors.primary,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+              >
+                <BarChart3 size={18} color={theme.colors.textInverse} />
+                <Text
+                  style={{
+                    color: theme.colors.textInverse,
+                    fontWeight: "900",
+                  }}
+                >
+                  Reports
+                </Text>
+              </Pressable>
             </View>
 
             <View

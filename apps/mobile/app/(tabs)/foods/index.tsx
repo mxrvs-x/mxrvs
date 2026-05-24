@@ -472,9 +472,7 @@ export default function FoodsTab() {
           }
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{
-            paddingBottom: 40,
-          }}
+          
           refreshControl={
             <RefreshControl
               refreshing={refreshing}

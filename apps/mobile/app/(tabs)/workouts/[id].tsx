@@ -102,6 +102,10 @@ function formatRest(seconds: number | null) {
   return `${min}:${String(sec).padStart(2, "0")}`;
 }
 
+function hasExportableSet(set: DisplaySet) {
+  return Number(set.set_number || 0) > 0 && Number(set.reps || 0) > 0;
+}
+
 export default function WorkoutDetailsScreen() {
   const router = useRouter();
   const theme = useTheme();
@@ -133,41 +137,46 @@ export default function WorkoutDetailsScreen() {
     (() => void) | undefined
   >();
 
-  const totalVolume = sets.reduce((sum, set) => {
+  const exportSets = useMemo(() => sets.filter(hasExportableSet), [sets]);
+
+  const exportTotalVolume = exportSets.reduce((sum, set) => {
     return sum + Number(set.reps || 0) * Number(set.weight_kg || 0);
   }, 0);
 
-  const totalReps = sets.reduce((sum, set) => {
+  const exportTotalReps = exportSets.reduce((sum, set) => {
     return sum + Number(set.reps || 0);
   }, 0);
 
   const groupedExercises = useMemo<GroupedExercise[]>(() => {
-    const grouped = sets.reduce<Record<string, GroupedExercise>>((acc, set) => {
-      const volume = Number(set.reps || 0) * Number(set.weight_kg || 0);
+    const grouped = exportSets.reduce<Record<string, GroupedExercise>>(
+      (acc, set) => {
+        const volume = Number(set.reps || 0) * Number(set.weight_kg || 0);
 
-      if (!acc[set.exercise_id]) {
-        acc[set.exercise_id] = {
-          exercise_id: set.exercise_id,
-          exercise_name: set.exercise_name,
-          muscle_group: set.muscle_group,
-          sets: [],
-          totalVolume: 0,
-          totalReps: 0,
-        };
-      }
+        if (!acc[set.exercise_id]) {
+          acc[set.exercise_id] = {
+            exercise_id: set.exercise_id,
+            exercise_name: set.exercise_name,
+            muscle_group: set.muscle_group,
+            sets: [],
+            totalVolume: 0,
+            totalReps: 0,
+          };
+        }
 
-      acc[set.exercise_id].sets.push(set);
-      acc[set.exercise_id].totalVolume += volume;
-      acc[set.exercise_id].totalReps += Number(set.reps || 0);
+        acc[set.exercise_id].sets.push(set);
+        acc[set.exercise_id].totalVolume += volume;
+        acc[set.exercise_id].totalReps += Number(set.reps || 0);
 
-      return acc;
-    }, {});
+        return acc;
+      },
+      {},
+    );
 
     return Object.values(grouped).map((exercise) => ({
       ...exercise,
       sets: exercise.sets.sort((a, b) => a.set_number - b.set_number),
     }));
-  }, [sets]);
+  }, [exportSets]);
 
   function showAlert({
     title,
@@ -613,13 +622,13 @@ export default function WorkoutDetailsScreen() {
                       marginTop: 6,
                     }}
                   >
-                    {(totalVolume || 0).toLocaleString()} kg
+                    {(exportTotalVolume || 0).toLocaleString()} kg
                   </Text>
 
                   <Text
                     style={{ color: theme.colors.textInverse, marginTop: 8 }}
                   >
-                    {sets.length} sets • {totalReps} reps •{" "}
+                    {exportSets.length} sets • {exportTotalReps} reps •{" "}
                     {workout.duration_minutes || 0} min
                   </Text>
                 </View>
@@ -631,11 +640,11 @@ export default function WorkoutDetailsScreen() {
                     marginTop: 12,
                   }}
                 >
-                  <ExportStat label="Sets" value={`${sets.length}`} />
-                  <ExportStat label="Reps" value={`${totalReps}`} />
+                  <ExportStat label="Sets" value={`${exportSets.length}`} />
+                  <ExportStat label="Reps" value={`${exportTotalReps}`} />
                   <ExportStat
                     label="Volume"
-                    value={`${totalVolume.toLocaleString()} kg`}
+                    value={`${exportTotalVolume.toLocaleString()} kg`}
                   />
                 </View>
 

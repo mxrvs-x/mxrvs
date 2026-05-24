@@ -1,4 +1,5 @@
-import { Text, View } from "react-native";
+import { useEffect, useMemo, useRef } from "react";
+import { Platform, Text, View } from "react-native";
 
 type RoutePoint = {
   latitude: number;
@@ -16,6 +17,7 @@ type MapRegion = {
 type MapsModule = typeof import("react-native-maps");
 
 let mapsModule: MapsModule | null | undefined;
+const DEFAULT_ROUTE_FIT_PADDING = { top: 54, right: 54, bottom: 54, left: 54 };
 
 function getMapsModule() {
   if (mapsModule !== undefined) return mapsModule;
@@ -37,6 +39,10 @@ export function SafeRouteMap({
   route,
   showUserLocation,
   strokeWidth = 5,
+  strokeColor = "#2563EB",
+  fitRouteToBounds = false,
+  routeFitPadding = DEFAULT_ROUTE_FIT_PADDING,
+  showStartMarker = true,
   showFinishMarker = false,
   fallbackTitle = "GPS tracking active",
   fallbackMessage = "Map preview is unavailable in this build.",
@@ -48,6 +54,10 @@ export function SafeRouteMap({
   route: RoutePoint[];
   showUserLocation: boolean;
   strokeWidth?: number;
+  strokeColor?: string;
+  fitRouteToBounds?: boolean;
+  routeFitPadding?: { top: number; right: number; bottom: number; left: number };
+  showStartMarker?: boolean;
   showFinishMarker?: boolean;
   fallbackTitle?: string;
   fallbackMessage?: string;
@@ -55,6 +65,28 @@ export function SafeRouteMap({
   mutedTextColor?: string;
 }) {
   const maps = getMapsModule();
+  const mapRef = useRef<any>(null);
+  const coordinates = useMemo(
+    () =>
+      route.map((point) => ({
+        latitude: point.latitude,
+        longitude: point.longitude,
+      })),
+    [route],
+  );
+
+  useEffect(() => {
+    if (!fitRouteToBounds || coordinates.length < 2) return;
+
+    const timer = setTimeout(() => {
+      mapRef.current?.fitToCoordinates(coordinates, {
+        edgePadding: routeFitPadding,
+        animated: false,
+      });
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [coordinates, fitRouteToBounds, routeFitPadding]);
 
   if (!maps) {
     const current = route[route.length - 1] || region || fallbackRegion;
@@ -105,16 +137,21 @@ export function SafeRouteMap({
   }
 
   const MapView = maps.default;
-  const { Marker, Polyline } = maps;
+  const { Marker, Polyline, PROVIDER_GOOGLE } = maps;
+  const regionProps = fitRouteToBounds
+    ? { initialRegion: region || fallbackRegion }
+    : { region: region || fallbackRegion };
 
   return (
     <MapView
+      ref={mapRef}
       style={{ flex: 1 }}
-      region={region || fallbackRegion}
+      provider={Platform.OS === "android" ? PROVIDER_GOOGLE : undefined}
+      {...regionProps}
       showsUserLocation={showUserLocation}
-      followsUserLocation={showUserLocation}
+      followsUserLocation={showUserLocation && !fitRouteToBounds}
     >
-      {route.length > 0 && (
+      {showStartMarker && route.length > 0 && (
         <Marker
           coordinate={{
             latitude: route[0].latitude,
@@ -136,10 +173,8 @@ export function SafeRouteMap({
 
       {route.length > 1 && (
         <Polyline
-          coordinates={route.map((point) => ({
-            latitude: point.latitude,
-            longitude: point.longitude,
-          }))}
+          coordinates={coordinates}
+          strokeColor={strokeColor}
           strokeWidth={strokeWidth}
         />
       )}

@@ -555,54 +555,6 @@ export default function SearchFoodDetailScreen() {
         totalAmount,
       );
 
-      const potassium = scaled(
-        food,
-        selectedServing,
-        "potassium_mg",
-        totalAmount,
-      );
-
-      const calcium = scaled(food, selectedServing, "calcium_mg", totalAmount);
-
-      const iron = scaled(food, selectedServing, "iron_mg", totalAmount);
-
-      const magnesium = scaled(
-        food,
-        selectedServing,
-        "magnesium_mg",
-        totalAmount,
-      );
-
-      const zinc = scaled(food, selectedServing, "zinc_mg", totalAmount);
-
-      const vitaminA = scaled(
-        food,
-        selectedServing,
-        "vitamin_a_mcg",
-        totalAmount,
-      );
-
-      const vitaminC = scaled(
-        food,
-        selectedServing,
-        "vitamin_c_mg",
-        totalAmount,
-      );
-
-      const vitaminD = scaled(
-        food,
-        selectedServing,
-        "vitamin_d_mcg",
-        totalAmount,
-      );
-
-      const vitaminB12 = scaled(
-        food,
-        selectedServing,
-        "vitamin_b12_mcg",
-        totalAmount,
-      );
-
       const logPayload = {
         user_id: user.id,
 
@@ -632,15 +584,6 @@ export default function SearchFoodDetailScreen() {
         sugar_g: sugar,
         sodium_mg: sodium,
         cholesterol_mg: cholesterol,
-        potassium_mg: potassium,
-        calcium_mg: calcium,
-        iron_mg: iron,
-        magnesium_mg: magnesium,
-        zinc_mg: zinc,
-        vitamin_a_mcg: vitaminA,
-        vitamin_c_mg: vitaminC,
-        vitamin_d_mcg: vitaminD,
-        vitamin_b12_mcg: vitaminB12,
       };
 
       const { error } = await supabase.from("food_logs").insert(logPayload);

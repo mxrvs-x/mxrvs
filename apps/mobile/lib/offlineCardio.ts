@@ -3,6 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import NetInfo from "@react-native-community/netinfo";
 
 const OFFLINE_CARDIO_KEY = "offline_cardio_sessions";
+const OFFLINE_CARDIO_USER_ID_KEY = "offline_cardio_user_id";
 
 export type OfflineCardioSession = {
   temp_id: string;
@@ -36,6 +37,31 @@ export async function saveOfflineCardioSession(session: OfflineCardioSession) {
   const updated = [session, ...existing];
 
   await AsyncStorage.setItem(OFFLINE_CARDIO_KEY, JSON.stringify(updated));
+}
+
+export async function cacheOfflineCardioUserId(userId: string) {
+  await AsyncStorage.setItem(OFFLINE_CARDIO_USER_ID_KEY, userId);
+}
+
+export async function getOfflineCardioUserId() {
+  return AsyncStorage.getItem(OFFLINE_CARDIO_USER_ID_KEY);
+}
+
+export async function resolveCardioUserId() {
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (user?.id) {
+      await cacheOfflineCardioUserId(user.id);
+      return user.id;
+    }
+  } catch (error) {
+    console.log("Resolve cardio user error:", error);
+  }
+
+  return getOfflineCardioUserId();
 }
 
 export async function removeOfflineCardioSession(tempId: string) {

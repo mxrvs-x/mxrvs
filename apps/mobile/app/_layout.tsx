@@ -1,4 +1,5 @@
 import AppUpdateGate from "@/components/AppUpdateGate";
+import CreatineReminderGate from "@/components/CreatineReminderGate";
 import { AppThemeProvider, useTheme } from "@/lib/theme";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -12,6 +13,7 @@ function RootStack() {
     <>
       <StatusBar style={theme.mode === "dark" ? "light" : "dark"} />
       <AppUpdateGate />
+      <CreatineReminderGate />
 
       <Stack
         screenOptions={{

@@ -1,9 +1,12 @@
-import { SafeRouteMap } from "@/components/SafeRouteMap";
+import ThemedAlert from "@/components/ThemedAlert";
+import { SafeRouteMap, type MapRegion } from "@/components/SafeRouteMap";
 import { AppTheme, useTheme } from "@/lib/theme";
 import { supabase } from "@/lib/supabase";
-import { X } from "lucide-react-native";
+import * as MediaLibrary from "expo-media-library";
+import * as Sharing from "expo-sharing";
+import { Download, Share2, X } from "lucide-react-native";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -11,6 +14,7 @@ import {
   Text as RNText,
   View,
 } from "react-native";
+import { captureRef } from "react-native-view-shot";
 
 type RoutePoint = {
   latitude: number;
@@ -39,6 +43,7 @@ type CardioSession = {
 export default function CardioDetailsScreen() {
   const theme = useTheme();
   const router = useRouter();
+  const exportRef = useRef<View>(null);
 
   const Text = (props: any) => (
     <RNText {...props} style={[{ color: theme.colors.text }, props.style]} />
@@ -47,7 +52,13 @@ export default function CardioDetailsScreen() {
   const { id } = useLocalSearchParams();
 
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [session, setSession] = useState<CardioSession | null>(null);
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [alertTitle, setAlertTitle] = useState("");
+  const [alertMessage, setAlertMessage] = useState("");
+  const [alertConfirmText, setAlertConfirmText] = useState("OK");
+  const [alertDanger, setAlertDanger] = useState(false);
 
   useEffect(() => {
     loadSession();
@@ -133,6 +144,112 @@ export default function CardioDetailsScreen() {
     });
   }
 
+  function routeRegion(points: RoutePoint[]): MapRegion | null {
+    if (!points.length) return null;
+
+    const latitudes = points.map((point) => point.latitude);
+    const longitudes = points.map((point) => point.longitude);
+    const minLat = Math.min(...latitudes);
+    const maxLat = Math.max(...latitudes);
+    const minLng = Math.min(...longitudes);
+    const maxLng = Math.max(...longitudes);
+
+    return {
+      latitude: (minLat + maxLat) / 2,
+      longitude: (minLng + maxLng) / 2,
+      latitudeDelta: Math.max((maxLat - minLat) * 1.45, 0.004),
+      longitudeDelta: Math.max((maxLng - minLng) * 1.45, 0.004),
+    };
+  }
+
+  function showAlert({
+    title,
+    message,
+    confirmText = "OK",
+    danger = false,
+  }: {
+    title: string;
+    message: string;
+    confirmText?: string;
+    danger?: boolean;
+  }) {
+    setAlertTitle(title);
+    setAlertMessage(message);
+    setAlertConfirmText(confirmText);
+    setAlertDanger(danger);
+    setAlertOpen(true);
+  }
+
+  async function exportCardioImage(type: "save" | "share") {
+    try {
+      if (!exportRef.current || exporting) return;
+
+      setExporting(true);
+
+      const uri = await captureRef(exportRef.current, {
+        format: "png",
+        quality: 1,
+        result: "tmpfile",
+      });
+
+      if (type === "save") {
+        const permission = await MediaLibrary.requestPermissionsAsync(false, [
+          "photo",
+        ]);
+
+        if (!permission.granted) {
+          setExporting(false);
+
+          showAlert({
+            title: "Permission Required",
+            message:
+              "Please allow photo library access to save your cardio summary.",
+            danger: true,
+          });
+
+          return;
+        }
+
+        await MediaLibrary.saveToLibraryAsync(uri);
+
+        showAlert({
+          title: "Saved",
+          message: "Cardio summary saved to gallery.",
+        });
+      } else {
+        const canShare = await Sharing.isAvailableAsync();
+
+        if (!canShare) {
+          setExporting(false);
+
+          showAlert({
+            title: "Sharing Unavailable",
+            message: "Sharing is not available here.",
+            danger: true,
+          });
+
+          return;
+        }
+
+        await Sharing.shareAsync(uri, {
+          mimeType: "image/png",
+          dialogTitle: "Share Cardio Summary",
+        });
+      }
+
+      setExporting(false);
+    } catch (error) {
+      console.log("Export cardio image error:", error);
+      setExporting(false);
+
+      showAlert({
+        title: "Export Failed",
+        message: "Something went wrong while exporting cardio summary.",
+        danger: true,
+      });
+    }
+  }
+
   if (loading) {
     return (
       <View
@@ -171,6 +288,7 @@ export default function CardioDetailsScreen() {
   }
 
   const route = session.route || [];
+  const savedRouteRegion = routeRegion(route);
 
   const hasRoute =
     session.cardio_source === "outdoor" &&
@@ -203,6 +321,41 @@ export default function CardioDetailsScreen() {
               <X size={30} color={theme.colors.text} />
             </Pressable>
           ),
+          headerRight: () => (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <Pressable
+                onPress={() => exportCardioImage("share")}
+                disabled={exporting}
+                style={{
+                  width: 42,
+                  height: 42,
+                  borderRadius: 21,
+                  backgroundColor: theme.colors.background,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  opacity: exporting ? 0.5 : 1,
+                }}
+              >
+                <Share2 size={20} color={theme.colors.text} />
+              </Pressable>
+
+              <Pressable
+                onPress={() => exportCardioImage("save")}
+                disabled={exporting}
+                style={{
+                  width: 42,
+                  height: 42,
+                  borderRadius: 21,
+                  backgroundColor: theme.colors.primary,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  opacity: exporting ? 0.5 : 1,
+                }}
+              >
+                <Download size={20} color={theme.colors.textInverse} />
+              </Pressable>
+            </View>
+          ),
         }}
       />
 
@@ -212,7 +365,15 @@ export default function CardioDetailsScreen() {
           backgroundColor: theme.colors.background,
         }}
       >
-        <View style={{ padding: 16, paddingBottom: 20 }}>
+        <View
+          ref={exportRef}
+          collapsable={false}
+          style={{
+            padding: 16,
+            paddingBottom: 20,
+            backgroundColor: theme.colors.background,
+          }}
+        >
           <Text style={{ fontSize: 30, fontWeight: "900" }}>{titleText()}</Text>
 
           <Text style={{ color: theme.colors.textMuted, marginTop: 4 }}>
@@ -252,35 +413,35 @@ export default function CardioDetailsScreen() {
             <View
               style={{
                 marginTop: 18,
-                backgroundColor: theme.colors.surface,
-                borderRadius: 24,
-                padding: 12,
+                marginHorizontal: -16,
+                backgroundColor: theme.colors.surfaceAlt,
+                overflow: "hidden",
               }}
             >
               <View
                 style={{
-                  height: 280,
-                  borderRadius: 20,
-                  overflow: "hidden",
+                  height: 330,
                   backgroundColor: theme.colors.surfaceAlt,
                 }}
               >
                 <SafeRouteMap
-                  region={{
-                    latitude: route[0].latitude,
-                    longitude: route[0].longitude,
-                    latitudeDelta: 0.01,
-                    longitudeDelta: 0.01,
-                  }}
-                  fallbackRegion={{
-                    latitude: route[0].latitude,
-                    longitude: route[0].longitude,
-                    latitudeDelta: 0.01,
-                    longitudeDelta: 0.01,
-                  }}
+                  region={savedRouteRegion}
+                  fallbackRegion={
+                    savedRouteRegion || {
+                      latitude: route[0].latitude,
+                      longitude: route[0].longitude,
+                      latitudeDelta: 0.01,
+                      longitudeDelta: 0.01,
+                    }
+                  }
                   route={route}
                   showUserLocation={false}
-                  showFinishMarker
+                  fitRouteToBounds
+                  routeFitPadding={{ top: 58, right: 58, bottom: 58, left: 58 }}
+                  strokeColor={theme.colors.primary}
+                  strokeWidth={6}
+                  showStartMarker={false}
+                  showFinishMarker={false}
                   fallbackTitle="Route saved"
                   fallbackMessage="Set a Google Maps API key to show saved routes in Android builds."
                   textColor={theme.colors.text}
@@ -424,6 +585,15 @@ export default function CardioDetailsScreen() {
           )}
         </View>
       </ScrollView>
+
+      <ThemedAlert
+        visible={alertOpen}
+        title={alertTitle}
+        message={alertMessage}
+        confirmText={alertConfirmText}
+        danger={alertDanger}
+        onClose={() => setAlertOpen(false)}
+      />
     </>
   );
 }

@@ -15,7 +15,7 @@ import {
   Text as RNText,
   View,
 } from "react-native";
-import { X, ExpandIcon } from "lucide-react-native";
+import { BarChart3, X, ExpandIcon } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type CardioSession = {
@@ -288,14 +288,47 @@ export default function CardioHistoryScreen() {
         }
         ListHeaderComponent={
           <View>
-            {/* unchanged UI below */}
-            <Text style={{ fontSize: 30, fontWeight: "900" }}>
-              All Activities
-            </Text>
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 12,
+              }}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 30, fontWeight: "900" }}>
+                  All Activities
+                </Text>
 
-            <Text style={{ color: theme.colors.textMuted, marginTop: 4 }}>
-              Complete cardio history.
-            </Text>
+                <Text style={{ color: theme.colors.textMuted, marginTop: 4 }}>
+                  Complete cardio history.
+                </Text>
+              </View>
+
+              <Pressable
+                onPress={() => router.push("/cardio/reports" as any)}
+                style={{
+                  height: 42,
+                  paddingHorizontal: 12,
+                  borderRadius: 14,
+                  backgroundColor: theme.colors.text,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+              >
+                <BarChart3 size={18} color={theme.colors.surface} />
+                <Text
+                  style={{
+                    color: theme.colors.surface,
+                    fontWeight: "900",
+                  }}
+                >
+                  Reports
+                </Text>
+              </Pressable>
+            </View>
 
             <View
               style={{

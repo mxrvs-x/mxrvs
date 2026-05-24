@@ -1,5 +1,6 @@
 import { useTheme } from "@/lib/theme";
-import { Tabs } from "expo-router";
+import NetInfo from "@react-native-community/netinfo";
+import { Tabs, usePathname, useRouter } from "expo-router";
 import {
   Activity,
   SaladIcon,
@@ -7,9 +8,27 @@ import {
   Dumbbell,
   LayoutDashboard,
 } from "lucide-react-native";
+import { useEffect, useState } from "react";
 
 export default function TabsLayout() {
   const theme = useTheme();
+  const router = useRouter();
+  const pathname = usePathname();
+  const [offline, setOffline] = useState(false);
+
+  useEffect(() => {
+    const subscription = NetInfo.addEventListener((state) => {
+      setOffline(!state.isConnected || state.isInternetReachable === false);
+    });
+
+    return () => subscription();
+  }, []);
+
+  useEffect(() => {
+    if (offline && !pathname.startsWith("/cardio")) {
+      router.replace("/(tabs)/cardio" as any);
+    }
+  }, [offline, pathname, router]);
 
   return (
     <Tabs
@@ -28,6 +47,7 @@ export default function TabsLayout() {
         name="home"
         options={{
           title: "Home",
+          href: offline ? null : undefined,
           tabBarIcon: ({ color, size }) => (
             <LayoutDashboard color={color} size={size} />
           ),
@@ -38,6 +58,7 @@ export default function TabsLayout() {
         name="diary"
         options={{
           title: "Logs",
+          href: offline ? null : undefined,
           tabBarIcon: ({ color, size }) => (
             <ListTodo color={color} size={size} />
           ),
@@ -48,6 +69,7 @@ export default function TabsLayout() {
         name="foods"
         options={{
           title: "Foods",
+          href: offline ? null : undefined,
           tabBarIcon: ({ color, size }) => (
             <SaladIcon color={color} size={size} />
           ),
@@ -58,6 +80,7 @@ export default function TabsLayout() {
         name="workouts"
         options={{
           title: "Workouts",
+          href: offline ? null : undefined,
           tabBarIcon: ({ color, size }) => (
             <Dumbbell color={color} size={size} />
           ),

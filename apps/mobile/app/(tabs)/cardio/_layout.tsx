@@ -42,6 +42,13 @@ export default function CardioLayout() {
       />
 
       <Stack.Screen
+        name="reports"
+        options={{
+          title: "Cardio Reports",
+        }}
+      />
+
+      <Stack.Screen
         name="[id]"
         options={{
           title: "Activity Details",
