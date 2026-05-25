@@ -2,11 +2,11 @@
   "expo": {
     "extra": {
       "eas": {
-        "projectId": "35d92c6a-e2bf-4a69-a521-24440a73a0ed"
+        "projectId": "bf2a8954-6ab4-499b-a7cb-51de808fae29"
       }
     },
     "updates": {
-      "url": "https://u.expo.dev/35d92c6a-e2bf-4a69-a521-24440a73a0ed"
+      "url": "https://u.expo.dev/bf2a8954-6ab4-499b-a7cb-51de808fae29"
     },
     "android": {
       "runtimeVersion": {

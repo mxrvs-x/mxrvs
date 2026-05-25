@@ -1,5 +1,6 @@
 import ExerciseSessionModal from "@/components/ExerciseSessionModal";
 import ThemedAlert from "@/components/ThemedAlert";
+import { toLocalDateKey } from "@/lib/dates";
 import { isOnline } from "@/lib/offlineCardio";
 import { resolveOfflineUserId } from "@/lib/offlineUser";
 import {
@@ -12,20 +13,30 @@ import {
 } from "@/lib/offlineWorkouts";
 import { supabase } from "@/lib/supabase";
 import { useTheme } from "@/lib/theme";
+import {
+  WORKOUT_PLANS,
+  dedupeExercisesByMuscleGroup,
+  formatMuscleGroup,
+  formatWorkoutType,
+  getTodayWorkoutPlan,
+  groupExercisesByMuscleGroup,
+  type WorkoutType,
+  type WorkoutPlan,
+} from "@/lib/workoutPlans";
 import { Audio } from "expo-av";
 import { Stack, useFocusEffect, useRouter } from "expo-router";
-import { X } from "lucide-react-native";
+import { Check, X } from "lucide-react-native";
 import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
 } from "react";
 import {
   ActivityIndicator,
   AppState,
-  FlatList,
   Pressable,
   ScrollView,
   Text,
@@ -33,8 +44,6 @@ import {
   Vibration,
   View,
 } from "react-native";
-
-type WorkoutType = "push" | "pull" | "legs" | "upper" | "lower" | "rest";
 
 type Exercise = {
   id: string;
@@ -76,20 +85,6 @@ type WorkoutSession = {
   restExerciseId: string | null;
   restEndsAtMs: number | null;
 };
-
-const WEEK_SPLIT = [
-  { day: "Sunday", type: "rest" as WorkoutType, label: "Rest" },
-  { day: "Monday", type: "push" as WorkoutType, label: "Push" },
-  { day: "Tuesday", type: "pull" as WorkoutType, label: "Pull" },
-  { day: "Wednesday", type: "legs" as WorkoutType, label: "Legs / Core" },
-  { day: "Thursday", type: "rest" as WorkoutType, label: "Rest" },
-  { day: "Friday", type: "upper" as WorkoutType, label: "Upper Body" },
-  {
-    day: "Saturday",
-    type: "lower" as WorkoutType,
-    label: "Lower / Arms / Core",
-  },
-];
 
 const initialWorkoutSession: WorkoutSession = {
   sessionStarted: false,
@@ -140,12 +135,8 @@ function useWorkoutSession() {
   );
 }
 
-function getTodaySplit() {
-  return WEEK_SPLIT[new Date().getDay()];
-}
-
 function getTodayDateString() {
-  return new Date().toISOString().split("T")[0];
+  return toLocalDateKey();
 }
 
 function getElapsedSeconds(session = workoutSession) {
@@ -239,27 +230,19 @@ function formatRest(seconds: number) {
   return `${min}:${String(sec).padStart(2, "0")}`;
 }
 
-function formatWorkoutType(type: WorkoutType) {
-  const labels: Record<WorkoutType, string> = {
-    push: "Push",
-    pull: "Pull",
-    legs: "Legs / Core",
-    upper: "Upper Body",
-    lower: "Lower / Arms / Core",
-    rest: "Rest",
-  };
-
-  return labels[type];
-}
-
 export default function StartWorkoutScreen() {
   const router = useRouter();
   const theme = useTheme();
-  const todaySplit = useMemo(() => getTodaySplit(), []);
+  const defaultPlan = useMemo(() => {
+    const todayPlan = getTodayWorkoutPlan();
+    return todayPlan.type === "rest" ? WORKOUT_PLANS[0] : todayPlan;
+  }, []);
   const session = useWorkoutSession();
+  const [selectedPlan, setSelectedPlan] = useState<WorkoutPlan>(defaultPlan);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const [closeAlertVisible, setCloseAlertVisible] = useState(false);
 
   const [alertOpen, setAlertOpen] = useState(false);
@@ -274,8 +257,23 @@ export default function StartWorkoutScreen() {
 
   const [todayWorkout, setTodayWorkout] = useState<Workout | null>(null);
   const [exercises, setExercises] = useState<Exercise[]>([]);
+  const [selectedExerciseIds, setSelectedExerciseIds] = useState<Set<string>>(
+    new Set(),
+  );
   const [activeExercise, setActiveExercise] = useState<Exercise | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
+
+  const selectedExercises = useMemo(() => {
+    return exercises.filter((exercise) => selectedExerciseIds.has(exercise.id));
+  }, [exercises, selectedExerciseIds]);
+
+  const visibleExercises = session.sessionStarted
+    ? selectedExercises
+    : exercises;
+
+  const exerciseSections = useMemo(() => {
+    return groupExercisesByMuscleGroup(visibleExercises);
+  }, [visibleExercises]);
 
   const totalVolume = session.sets.reduce((sum, set) => {
     const reps = Number(set.reps) || 0;
@@ -355,7 +353,7 @@ export default function StartWorkoutScreen() {
     );
 
     if (!online) {
-      const cachedExercises = await getCachedWorkoutExercises(todaySplit.type);
+      const cachedExercises = await getCachedWorkoutExercises();
       setExercises(cachedExercises as Exercise[]);
       setTodayWorkout(
         cachedTodayWorkout
@@ -383,7 +381,7 @@ export default function StartWorkoutScreen() {
           .from("exercises")
           .select("*")
           .eq("user_id", userId)
-          .eq("movement_type", todaySplit.type)
+          .order("muscle_group", { ascending: true })
           .order("is_compound", { ascending: false })
           .order("name", { ascending: true }),
 
@@ -406,10 +404,12 @@ export default function StartWorkoutScreen() {
     }
 
     const cached = await getCachedWorkoutExercises();
-    const nextExercises = (exerciseData || []) as Exercise[];
+    const fetchedExercises = (exerciseData || []) as Exercise[];
+    const fetchedIds = new Set(fetchedExercises.map((exercise) => exercise.id));
+    const nextExercises = dedupeExercisesByMuscleGroup(fetchedExercises);
     await cacheWorkoutExercises([
-      ...cached.filter((exercise) => exercise.movement_type !== todaySplit.type),
-      ...nextExercises,
+      ...cached.filter((exercise) => !fetchedIds.has(exercise.id)),
+      ...fetchedExercises,
     ]);
 
     setExercises(nextExercises);
@@ -431,10 +431,10 @@ export default function StartWorkoutScreen() {
   }
 
   function actuallyStartSession() {
-    if (exercises.length === 0) {
+    if (selectedExercises.length === 0) {
       showAlert({
         title: "No exercises",
-        message: "Add exercises for this workout day first.",
+        message: "Select at least one exercise for this workout.",
       });
       return;
     }
@@ -594,6 +594,22 @@ export default function StartWorkoutScreen() {
     });
   }
 
+  function toggleExerciseSelection(exerciseId: string) {
+    if (session.sessionStarted) return;
+
+    setSelectedExerciseIds((current) => {
+      const next = new Set(current);
+
+      if (next.has(exerciseId)) {
+        next.delete(exerciseId);
+      } else {
+        next.add(exerciseId);
+      }
+
+      return next;
+    });
+  }
+
   function removeSet(localId: string) {
     setWorkoutSession((current) => {
       const target = current.sets.find((set) => set.local_id === localId);
@@ -639,7 +655,7 @@ export default function StartWorkoutScreen() {
       return;
     }
 
-    const exercisesWithoutSets = exercises.filter((exercise) => {
+    const exercisesWithoutSets = selectedExercises.filter((exercise) => {
       return !current.sets.some((set) => set.exercise_id === exercise.id);
     });
 
@@ -672,10 +688,18 @@ export default function StartWorkoutScreen() {
   }
 
   async function saveWorkout() {
+    if (savingRef.current) return;
+
     const current = getWorkoutSession();
     const finalElapsedSeconds = getElapsedSeconds(current);
 
+    savingRef.current = true;
     setSaving(true);
+
+    function finishSaving() {
+      savingRef.current = false;
+      setSaving(false);
+    }
 
     setWorkoutSession({
       sessionStarted: false,
@@ -694,7 +718,7 @@ export default function StartWorkoutScreen() {
     const userId = await resolveOfflineUserId();
 
     if (!userId) {
-      setSaving(false);
+      finishSaving();
       return;
     }
 
@@ -711,13 +735,13 @@ export default function StartWorkoutScreen() {
     async function saveOfflineCopy() {
       await createOfflineWorkout({
         workout_date: getTodayDateString(),
-        workout_type: todaySplit.type,
+        workout_type: selectedPlan.type,
         duration_minutes: durationMinutes,
         notes: current.notes.trim() || null,
         sets: offlineSets,
       });
 
-      setSaving(false);
+      finishSaving();
       resetWorkoutSession();
       showAlert({
         title: "Workout saved offline",
@@ -737,7 +761,7 @@ export default function StartWorkoutScreen() {
       .insert({
         user_id: userId,
         workout_date: getTodayDateString(),
-        workout_type: todaySplit.type,
+        workout_type: selectedPlan.type,
         duration_minutes: durationMinutes,
         notes: current.notes.trim() || null,
       })
@@ -771,7 +795,7 @@ export default function StartWorkoutScreen() {
       return;
     }
 
-    setSaving(false);
+    finishSaving();
     resetWorkoutSession();
 
     showAlert({
@@ -800,19 +824,29 @@ export default function StartWorkoutScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      theme.setSessionTheme(todaySplit.type);
+      theme.setSessionTheme(selectedPlan.type);
 
       return () => {
         theme.setSessionTheme("default");
       };
-    }, [todaySplit.type]),
+    }, [selectedPlan.type]),
   );
 
   useEffect(() => {
-    if (todaySplit.type !== "rest") {
-      loadInitialData();
-    }
+    loadInitialData();
   }, []);
+
+  useEffect(() => {
+    const availableIds = new Set(exercises.map((exercise) => exercise.id));
+
+    setSelectedExerciseIds((current) => {
+      const next = new Set(
+        Array.from(current).filter((exerciseId) => availableIds.has(exerciseId)),
+      );
+
+      return next.size === current.size ? current : next;
+    });
+  }, [exercises]);
 
   useEffect(() => {
     if (session.sessionStarted && !workoutTimerRef) {
@@ -852,95 +886,6 @@ export default function StartWorkoutScreen() {
 
     return () => subscription.remove();
   }, []);
-
-  if (todaySplit.type === "rest") {
-    return (
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: theme.colors.background,
-          justifyContent: "center",
-          alignItems: "center",
-          padding: 24,
-        }}
-      >
-        <Stack.Screen
-          options={{
-            headerShown: true,
-            headerShadowVisible: false,
-            headerBackVisible: false,
-            headerTitle: "",
-            headerStyle: {
-              backgroundColor: theme.colors.surface,
-            },
-            headerTintColor: theme.colors.text,
-            headerLeft: () => (
-              <Pressable
-                onPress={() => router.back()}
-                style={{
-                  width: 42,
-                  height: 42,
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <X size={30} color={theme.colors.text} />
-              </Pressable>
-            ),
-          }}
-        />
-
-        <Text style={{ fontSize: 64 }}>😴</Text>
-
-        <Text
-          style={{
-            color: theme.colors.primary,
-            fontSize: 30,
-            fontWeight: "800",
-            marginTop: 16,
-            textAlign: "center",
-          }}
-        >
-          Rest Day
-        </Text>
-
-        <Text
-          style={{
-            color: theme.colors.textMuted,
-            fontSize: 16,
-            marginTop: 12,
-            textAlign: "center",
-          }}
-        >
-          Today is your rest day.
-        </Text>
-
-        <Text
-          style={{
-            color: theme.colors.textMuted,
-            fontSize: 14,
-            marginTop: 8,
-            textAlign: "center",
-            lineHeight: 22,
-          }}
-        >
-          Recover, hydrate, eat well, and come back stronger tomorrow 💪
-        </Text>
-
-        <Text
-          style={{
-            color: theme.colors.textFaint,
-            fontSize: 13,
-            marginTop: 22,
-            textAlign: "center",
-            fontStyle: "italic",
-          }}
-        >
-          {"Growth happens during recovery."}
-        </Text>
-      </View>
-    );
-  }
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
@@ -1009,6 +954,72 @@ export default function StartWorkoutScreen() {
           </View>
         ) : null}
 
+        <Text
+          style={{
+            fontSize: 18,
+            fontWeight: "800",
+            marginTop: 20,
+            color: theme.colors.text,
+          }}
+        >
+          Workout Focus
+        </Text>
+
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={{ marginTop: 10 }}
+          contentContainerStyle={{ gap: 10, paddingRight: 2 }}
+        >
+          {WORKOUT_PLANS.map((plan) => {
+            const active = selectedPlan.type === plan.type;
+
+            return (
+              <Pressable
+                key={plan.type}
+                disabled={session.sessionStarted}
+                onPress={() => setSelectedPlan(plan)}
+                style={{
+                  minWidth: 132,
+                  backgroundColor: active
+                    ? theme.colors.primary
+                    : theme.colors.surface,
+                  borderRadius: 16,
+                  padding: 12,
+                  borderWidth: 1,
+                  borderColor: active
+                    ? theme.colors.primary
+                    : theme.colors.border,
+                  opacity: session.sessionStarted && !active ? 0.45 : 1,
+                }}
+              >
+                <Text
+                  style={{
+                    color: active
+                      ? theme.colors.textInverse
+                      : theme.colors.text,
+                    fontWeight: "900",
+                  }}
+                >
+                  {plan.emoji} {plan.label}
+                </Text>
+
+                <Text
+                  style={{
+                    color: active
+                      ? theme.colors.textInverse
+                      : theme.colors.textMuted,
+                    marginTop: 6,
+                    fontSize: 12,
+                  }}
+                >
+                  Workout type
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+
         <View
           style={{
             backgroundColor: session.isPaused
@@ -1035,7 +1046,7 @@ export default function StartWorkoutScreen() {
           </Text>
 
           <Text style={{ color: theme.colors.textInverse, marginTop: 8 }}>
-            {todaySplit.label} • {session.sets.length} sets •{" "}
+            {selectedPlan.label} • {session.sets.length} sets •{" "}
             {totalVolume.toLocaleString()} kg volume
           </Text>
 
@@ -1087,14 +1098,14 @@ export default function StartWorkoutScreen() {
         {!session.sessionStarted ? (
           <Pressable
             onPress={startSession}
-            disabled={loading || exercises.length === 0}
+            disabled={loading || selectedExercises.length === 0}
             style={{
               backgroundColor: theme.colors.primary,
               borderRadius: 18,
               padding: 18,
               alignItems: "center",
               marginTop: 18,
-              opacity: loading || exercises.length === 0 ? 0.5 : 1,
+              opacity: loading || selectedExercises.length === 0 ? 0.5 : 1,
             }}
           >
             <Text
@@ -1173,7 +1184,7 @@ export default function StartWorkoutScreen() {
             color: theme.colors.text,
           }}
         >
-          Today&apos;s Exercises
+          {session.sessionStarted ? selectedPlan.label : "Select Exercises"}
         </Text>
 
         {loading ? (
@@ -1196,107 +1207,154 @@ export default function StartWorkoutScreen() {
               No exercises found
             </Text>
             <Text style={{ color: theme.colors.textMuted, marginTop: 6 }}>
-              Go to setup and add exercises for this workout day.
+              Go to setup and add exercises to your muscle-group library.
             </Text>
           </View>
         ) : (
-          <FlatList
-            horizontal
-            data={exercises}
-            keyExtractor={(item) => item.id}
-            showsHorizontalScrollIndicator={false}
-            style={{ marginTop: 10 }}
-            contentContainerStyle={{ gap: 12 }}
-            renderItem={({ item }) => {
-              const exerciseSets = session.sets.filter(
-                (set) => set.exercise_id === item.id,
-              );
+          <View style={{ marginTop: 10 }}>
+            {!session.sessionStarted ? (
+              <Text style={{ color: theme.colors.textMuted, marginBottom: 10 }}>
+                {selectedExercises.length} selected
+              </Text>
+            ) : null}
 
-              const volume = exerciseSets.reduce((sum, set) => {
-                return (
-                  sum + (Number(set.reps) || 0) * (Number(set.weight_kg) || 0)
-                );
-              }, 0);
-
-              const isDisabledByRest =
-                session.isResting && session.restExerciseId !== item.id;
-              const isDisabled = isDisabledByRest || session.isPaused;
-
-              return (
-                <Pressable
-                  onPress={() => openExercise(item)}
+            {exerciseSections.map(([group, groupExercises]) => (
+              <View key={group} style={{ marginBottom: 14 }}>
+                <Text
                   style={{
-                    width: 200,
-                    backgroundColor: theme.colors.surface,
-                    borderRadius: 16,
-                    padding: 14,
-                    borderWidth: 1,
-                    borderColor: isDisabledByRest
-                      ? theme.colors.primary
-                      : theme.colors.border,
-                    opacity: isDisabled ? 0.5 : 1,
+                    color: theme.colors.text,
+                    fontWeight: "900",
+                    marginBottom: 8,
                   }}
                 >
-                  <Text
-                    style={{
-                      fontSize: 16,
-                      fontWeight: "800",
-                      color: theme.colors.text,
-                    }}
-                  >
-                    {item.name}
-                  </Text>
+                  {formatMuscleGroup(group)} ({groupExercises.length})
+                </Text>
 
-                  <Text
-                    style={{
-                      color: theme.colors.textMuted,
-                      marginTop: 6,
-                      textTransform: "capitalize",
-                    }}
-                  >
-                    {item.muscle_group}
-                  </Text>
+                {groupExercises.map((item) => {
+                  const exerciseSets = session.sets.filter(
+                    (set) => set.exercise_id === item.id,
+                  );
 
-                  <Text
-                    style={{
-                      color: theme.colors.textMuted,
-                      marginTop: 6,
-                      fontSize: 12,
-                    }}
-                  >
-                    {item.is_compound ? "Compound" : "Isolation"}
-                  </Text>
+                  const volume = exerciseSets.reduce((sum, set) => {
+                    return (
+                      sum +
+                      (Number(set.reps) || 0) * (Number(set.weight_kg) || 0)
+                    );
+                  }, 0);
 
-                  <View
-                    style={{
-                      marginTop: 10,
-                      borderTopWidth: 1,
-                      borderTopColor: theme.colors.border,
-                      paddingTop: 8,
-                    }}
-                  >
-                    <Text
+                  const isSelected = selectedExerciseIds.has(item.id);
+                  const isDisabledByRest =
+                    session.isResting && session.restExerciseId !== item.id;
+                  const isDisabled = isDisabledByRest || session.isPaused;
+
+                  return (
+                    <Pressable
+                      key={item.id}
+                      onPress={() =>
+                        session.sessionStarted
+                          ? openExercise(item)
+                          : toggleExerciseSelection(item.id)
+                      }
                       style={{
-                        fontWeight: "700",
-                        color: theme.colors.text,
+                        backgroundColor: theme.colors.surface,
+                        borderRadius: 16,
+                        padding: 14,
+                        borderWidth: 1,
+                        borderColor:
+                          isSelected || isDisabledByRest
+                            ? theme.colors.primary
+                            : theme.colors.border,
+                        opacity: isDisabled ? 0.5 : 1,
+                        marginBottom: 10,
                       }}
                     >
-                      {exerciseSets.length} sets
-                    </Text>
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "flex-start",
+                          gap: 12,
+                        }}
+                      >
+                        {!session.sessionStarted ? (
+                          <View
+                            style={{
+                              width: 24,
+                              height: 24,
+                              borderRadius: 12,
+                              borderWidth: 1,
+                              borderColor: isSelected
+                                ? theme.colors.primary
+                                : theme.colors.border,
+                              backgroundColor: isSelected
+                                ? theme.colors.primary
+                                : theme.colors.surfaceAlt,
+                              alignItems: "center",
+                              justifyContent: "center",
+                              marginTop: 1,
+                            }}
+                          >
+                            {isSelected ? (
+                              <Check size={16} color={theme.colors.textInverse} />
+                            ) : null}
+                          </View>
+                        ) : null}
 
-                    <Text
-                      style={{
-                        color: theme.colors.textMuted,
-                        fontSize: 12,
-                      }}
-                    >
-                      {volume.toLocaleString()} kg
-                    </Text>
-                  </View>
-                </Pressable>
-              );
-            }}
-          />
+                        <View style={{ flex: 1 }}>
+                          <Text
+                            style={{
+                              fontSize: 16,
+                              fontWeight: "800",
+                              color: theme.colors.text,
+                            }}
+                          >
+                            {item.name}
+                          </Text>
+
+                          <Text
+                            style={{
+                              color: theme.colors.textMuted,
+                              marginTop: 6,
+                            }}
+                          >
+                            {item.is_compound ? "Compound" : "Isolation"}
+                          </Text>
+
+                          {session.sessionStarted ? (
+                            <View
+                              style={{
+                                marginTop: 10,
+                                borderTopWidth: 1,
+                                borderTopColor: theme.colors.border,
+                                paddingTop: 8,
+                              }}
+                            >
+                              <Text
+                                style={{
+                                  fontWeight: "700",
+                                  color: theme.colors.text,
+                                }}
+                              >
+                                {exerciseSets.length} sets
+                              </Text>
+
+                              <Text
+                                style={{
+                                  color: theme.colors.textMuted,
+                                  fontSize: 12,
+                                }}
+                              >
+                                {volume.toLocaleString()} kg
+                              </Text>
+                            </View>
+                          ) : null}
+                        </View>
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ))}
+          </View>
         )}
 
         <Text

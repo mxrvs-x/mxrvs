@@ -11,6 +11,7 @@ import {
 } from "@/lib/offlineWorkouts";
 import { supabase } from "@/lib/supabase";
 import { AppTheme, useTheme } from "@/lib/theme";
+import { isWorkoutType, type WorkoutType } from "@/lib/workoutPlans";
 import {
   Stack,
   useFocusEffect,
@@ -34,8 +35,6 @@ import Svg, {
   Rect,
   Text as SvgText,
 } from "react-native-svg";
-
-type WorkoutType = "push" | "pull" | "legs" | "upper" | "lower" | "rest";
 
 type Workout = {
   id: string;
@@ -79,17 +78,6 @@ type ExerciseReport = {
   totalSets: number;
   totalVolume: number;
 };
-
-function isWorkoutType(value?: string | string[]): value is WorkoutType {
-  return (
-    value === "push" ||
-    value === "pull" ||
-    value === "legs" ||
-    value === "upper" ||
-    value === "lower" ||
-    value === "rest"
-  );
-}
 
 function hasReportableSet(set: WorkoutSet) {
   return Number(set.set_number || 0) > 0 && Number(set.reps || 0) > 0;
@@ -278,16 +266,26 @@ export default function WorkoutReportsScreen() {
     const workoutMap = new Map(workouts.map((workout) => [workout.id, workout]));
     const exerciseMap = new Map(exercises.map((exercise) => [exercise.id, exercise]));
     const grouped = new Map<string, Map<string, ExercisePoint>>();
+    const groupMeta = new Map<string, Exercise>();
 
     sets.forEach((set) => {
       const workout = workoutMap.get(set.workout_id);
       if (!workout) return;
 
-      if (!grouped.has(set.exercise_id)) {
-        grouped.set(set.exercise_id, new Map());
+      const exercise = exerciseMap.get(set.exercise_id);
+      const groupKey = exercise
+        ? `${exercise.name.trim().toLowerCase()}|${exercise.muscle_group || ""}`
+        : set.exercise_id;
+
+      if (exercise && !groupMeta.has(groupKey)) {
+        groupMeta.set(groupKey, exercise);
       }
 
-      const exercisePoints = grouped.get(set.exercise_id)!;
+      if (!grouped.has(groupKey)) {
+        grouped.set(groupKey, new Map());
+      }
+
+      const exercisePoints = grouped.get(groupKey)!;
       const existing = exercisePoints.get(set.workout_id);
       const reps = Number(set.reps || 0);
       const weight = Number(set.weight_kg || 0);
@@ -313,8 +311,8 @@ export default function WorkoutReportsScreen() {
     });
 
     const nextReports = Array.from(grouped.entries())
-      .map(([exerciseId, pointMap]) => {
-        const exercise = exerciseMap.get(exerciseId);
+      .map(([exerciseKey, pointMap]) => {
+        const exercise = groupMeta.get(exerciseKey);
         const points = Array.from(pointMap.values()).sort((a, b) => {
           return a.date.localeCompare(b.date);
         });
@@ -328,7 +326,7 @@ export default function WorkoutReportsScreen() {
         );
 
         return {
-          exercise_id: exerciseId,
+          exercise_id: exerciseKey,
           exercise_name: exercise?.name || "Unknown Exercise",
           muscle_group: exercise?.muscle_group || null,
           points,

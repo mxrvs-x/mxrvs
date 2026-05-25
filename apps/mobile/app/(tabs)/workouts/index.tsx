@@ -1,4 +1,5 @@
 import { isOnline } from "@/lib/offlineCardio";
+import { toLocalDateKey } from "@/lib/dates";
 import { resolveOfflineUserId } from "@/lib/offlineUser";
 import {
   cacheWorkoutSets,
@@ -13,6 +14,11 @@ import {
 } from "@/lib/offlineWorkouts";
 import { supabase } from "@/lib/supabase";
 import { useTheme } from "@/lib/theme";
+import {
+  formatWorkoutType,
+  getTodayWorkoutPlan,
+  type WorkoutType,
+} from "@/lib/workoutPlans";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import {
@@ -24,8 +30,6 @@ import {
   Text,
   View,
 } from "react-native";
-
-type WorkoutType = "push" | "pull" | "legs" | "upper" | "lower" | "rest";
 
 type Workout = {
   id: string;
@@ -45,49 +49,8 @@ type WorkoutSet = {
   weight_kg: number;
 };
 
-const WEEK_SPLIT = [
-  { day: "Monday", type: "push" as WorkoutType, label: "Push", emoji: "🔥" },
-  { day: "Tuesday", type: "pull" as WorkoutType, label: "Pull", emoji: "💪" },
-  {
-    day: "Wednesday",
-    type: "legs" as WorkoutType,
-    label: "Legs / Core",
-    emoji: "🦵",
-  },
-  { day: "Thursday", type: "rest" as WorkoutType, label: "Rest", emoji: "😴" },
-  {
-    day: "Friday",
-    type: "upper" as WorkoutType,
-    label: "Upper Body",
-    emoji: "🏋️",
-  },
-  {
-    day: "Saturday",
-    type: "lower" as WorkoutType,
-    label: "Lower / Arms / Core",
-    emoji: "⚡",
-  },
-  { day: "Sunday", type: "rest" as WorkoutType, label: "Rest", emoji: "😴" },
-];
-
-function getTodaySplit() {
-  const today = new Date().getDay();
-
-  const map: Record<number, (typeof WEEK_SPLIT)[number]> = {
-    0: WEEK_SPLIT[6],
-    1: WEEK_SPLIT[0],
-    2: WEEK_SPLIT[1],
-    3: WEEK_SPLIT[2],
-    4: WEEK_SPLIT[3],
-    5: WEEK_SPLIT[4],
-    6: WEEK_SPLIT[5],
-  };
-
-  return map[today];
-}
-
 function getTodayDateString() {
-  return new Date().toISOString().split("T")[0];
+  return toLocalDateKey();
 }
 
 function formatDate(date: string) {
@@ -96,19 +59,6 @@ function formatDate(date: string) {
     day: "numeric",
     year: "numeric",
   });
-}
-
-function formatWorkoutType(type: WorkoutType) {
-  const labels: Record<WorkoutType, string> = {
-    push: "Push",
-    pull: "Pull",
-    legs: "Legs / Core",
-    upper: "Upper Body",
-    lower: "Lower / Arms / Core",
-    rest: "Rest",
-  };
-
-  return labels[type];
 }
 
 export default function WorkoutIndexScreen() {
@@ -121,7 +71,7 @@ export default function WorkoutIndexScreen() {
   const [todayWorkout, setTodayWorkout] = useState<Workout | null>(null);
   const [exerciseCount, setExerciseCount] = useState(0);
 
-  const todaySplit = useMemo(() => getTodaySplit(), []);
+  const suggestedPlan = useMemo(() => getTodayWorkoutPlan(), []);
 
   async function loadWorkoutData(showLoader = true) {
     if (showLoader) setLoading(true);
@@ -251,8 +201,8 @@ export default function WorkoutIndexScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      theme.setSessionTheme(todaySplit.type);
-    }, [todaySplit.type]),
+      theme.setSessionTheme(suggestedPlan.type);
+    }, [suggestedPlan.type]),
   );
 
   useFocusEffect(
@@ -289,7 +239,7 @@ export default function WorkoutIndexScreen() {
         }}
       >
         <Text style={{ color: theme.colors.textInverse, fontSize: 13 }}>
-          {"Today's Split"}
+          {"Suggested Focus"}
         </Text>
 
         <Text
@@ -300,13 +250,13 @@ export default function WorkoutIndexScreen() {
             marginTop: 6,
           }}
         >
-          {todaySplit.emoji} {todaySplit.label}
+          {suggestedPlan.emoji} {suggestedPlan.label}
         </Text>
 
         <Text style={{ color: theme.colors.textInverse, marginTop: 8 }}>
-          {todaySplit.type === "rest"
+          {suggestedPlan.type === "rest"
             ? "Recovery day. Keep it light, walk, stretch, or rest fully."
-            : "Log your sets, reps, weight, and rest time."}
+            : "You can switch focus when you start a workout."}
         </Text>
       </View>
 
@@ -351,7 +301,7 @@ export default function WorkoutIndexScreen() {
             router.push({
               pathname: "/workouts/setup",
               params: {
-                split: todaySplit.type,
+                split: suggestedPlan.type,
               },
             } as any)
           }
@@ -395,7 +345,7 @@ export default function WorkoutIndexScreen() {
           }}
         >
           <Text style={{ fontSize: 22 }}>
-            {todaySplit.type === "rest" ? "😴" : "🏋️"}
+            {suggestedPlan.type === "rest" ? "😴" : "🏋️"}
           </Text>
 
           <Text
@@ -407,11 +357,7 @@ export default function WorkoutIndexScreen() {
               marginTop: 8,
             }}
           >
-            {todaySplit.type === "rest"
-              ? "Rest Day"
-              : todayWorkout
-                ? "Train Again?"
-                : "Start Workout"}
+            {todayWorkout ? "Train Again?" : "Start Workout"}
           </Text>
 
           <Text
@@ -422,11 +368,7 @@ export default function WorkoutIndexScreen() {
               marginTop: 4,
             }}
           >
-            {todaySplit.type === "rest"
-              ? "Recover well"
-              : todayWorkout
-                ? "Already logged today"
-                : "Log sets, reps, weight"}
+            {todayWorkout ? "Already logged today" : "Choose focus and log"}
           </Text>
         </Pressable>
       </View>
@@ -455,7 +397,7 @@ export default function WorkoutIndexScreen() {
             router.push({
               pathname: "/workouts/history",
               params: {
-                split: todaySplit.type,
+                split: suggestedPlan.type,
               },
             } as any)
           }

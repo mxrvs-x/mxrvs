@@ -1,3 +1,9 @@
+import {
+  MUSCLE_GROUPS,
+  formatMuscleGroup,
+  type MuscleGroup,
+  type WorkoutType,
+} from "@/lib/workoutPlans";
 import { useEffect, useState } from "react";
 import {
   Modal,
@@ -9,13 +15,11 @@ import {
 } from "react-native";
 import { useTheme } from "@/lib/theme";
 
-type MovementType = "push" | "pull" | "legs" | "upper" | "lower";
-
 type ExerciseForm = {
   id?: string;
   name: string;
   muscle_group: string;
-  movement_type: MovementType;
+  movement_type: WorkoutType | null;
   is_compound: boolean;
 };
 
@@ -26,16 +30,6 @@ type Props = {
   onClose: () => void;
   onSave: (form: ExerciseForm) => void | Promise<void>;
 };
-
-const WORKOUT_TYPES: MovementType[] = [
-  "push",
-  "pull",
-  "legs",
-  "upper",
-  "lower",
-];
-
-const MUSCLE_GROUPS = ["chest", "back", "legs", "shoulders", "arms", "core"];
 
 export default function AddExerciseModal({
   visible,
@@ -122,63 +116,6 @@ export default function AddExerciseModal({
               }}
             />
 
-            {/* WORKOUT TYPE */}
-            <Text
-              style={{
-                fontWeight: "700",
-                marginTop: 18,
-                color: theme.colors.text,
-              }}
-            >
-              Workout Type
-            </Text>
-
-            <View
-              style={{
-                flexDirection: "row",
-                flexWrap: "wrap",
-                gap: 8,
-                marginTop: 8,
-              }}
-            >
-              {WORKOUT_TYPES.map((type) => {
-                const active = localForm.movement_type === type;
-
-                return (
-                  <Pressable
-                    key={type}
-                    onPress={() =>
-                      setLocalForm({ ...localForm, movement_type: type })
-                    }
-                    style={{
-                      paddingHorizontal: 12,
-                      paddingVertical: 8,
-                      borderRadius: theme.radius.pill,
-                      backgroundColor: active
-                        ? theme.colors[type]
-                        : theme.colors.surfaceAlt,
-                      borderWidth: 1,
-                      borderColor: active
-                        ? theme.colors[type]
-                        : theme.colors.border,
-                    }}
-                  >
-                    <Text
-                      style={{
-                        color: active
-                          ? theme.colors.textInverse
-                          : theme.colors.text,
-                        fontWeight: "800",
-                        textTransform: "capitalize",
-                      }}
-                    >
-                      {type}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-
             {/* MUSCLE GROUP */}
             <Text
               style={{
@@ -198,7 +135,7 @@ export default function AddExerciseModal({
                 marginTop: 8,
               }}
             >
-              {MUSCLE_GROUPS.map((group) => {
+              {MUSCLE_GROUPS.map((group: MuscleGroup) => {
                 const active = localForm.muscle_group === group;
 
                 return (
@@ -226,10 +163,9 @@ export default function AddExerciseModal({
                           ? theme.colors.textInverse
                           : theme.colors.text,
                         fontWeight: "800",
-                        textTransform: "capitalize",
                       }}
                     >
-                      {group}
+                      {formatMuscleGroup(group)}
                     </Text>
                   </Pressable>
                 );

@@ -54,7 +54,15 @@ export default function AppUpdateGate() {
 
   const checkForUpdates = useCallback(
     async (force = false) => {
-      if (!Updates.isEnabled || runningRef.current) return;
+      if (!Updates.isEnabled) {
+        console.log("OTA updates are disabled for this build/runtime.", {
+          channel: Updates.channel,
+          runtimeVersion: Updates.runtimeVersion,
+        });
+        return;
+      }
+
+      if (runningRef.current) return;
 
       const now = Date.now();
 
@@ -70,6 +78,12 @@ export default function AppUpdateGate() {
 
         if (checkResult.isAvailable || checkResult.isRollBackToEmbedded) {
           await installUpdate();
+        } else {
+          console.log("No OTA update available.", {
+            channel: Updates.channel,
+            runtimeVersion: Updates.runtimeVersion,
+            reason: checkResult.reason,
+          });
         }
       } catch (error) {
         console.log("OTA update check error:", error);

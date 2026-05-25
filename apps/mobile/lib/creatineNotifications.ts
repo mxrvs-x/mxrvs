@@ -12,8 +12,11 @@ import { Platform } from "react-native";
 const CHANNEL_ID = "creatine-reminders";
 const REMINDER_ID_KEY = "creatine_reminder_notification_id";
 const LAST_IMMEDIATE_KEY = "creatine_last_immediate_notification_date";
+const REMINDER_TYPE = "creatine-reminder";
 const MORNING_HOUR = 9;
 const EVENING_HOUR = 21;
+
+let syncPromise: Promise<void> | null = null;
 
 export function configureCreatineNotifications() {
   Notifications.setNotificationHandler({
@@ -67,10 +70,27 @@ function nextReminderDate(hasLoggedToday: boolean) {
 
 async function scheduleNextReminder(hasLoggedToday: boolean) {
   const previousId = await AsyncStorage.getItem(REMINDER_ID_KEY);
+  const scheduledNotifications =
+    await Notifications.getAllScheduledNotificationsAsync().catch(() => []);
 
-  if (previousId) {
-    await Notifications.cancelScheduledNotificationAsync(previousId).catch(
-      () => {},
+  const staleReminderIds = scheduledNotifications
+    .filter((notification) => {
+      const data = notification.content.data;
+
+      return (
+        notification.identifier === previousId ||
+        data?.reminderType === REMINDER_TYPE ||
+        (notification.content.title === "Creatine check-in" &&
+          data?.screen === "creatine")
+      );
+    })
+    .map((notification) => notification.identifier);
+
+  if (staleReminderIds.length > 0) {
+    await Promise.all(
+      staleReminderIds.map((id) =>
+        Notifications.cancelScheduledNotificationAsync(id).catch(() => {}),
+      ),
     );
   }
 
@@ -79,7 +99,7 @@ async function scheduleNextReminder(hasLoggedToday: boolean) {
       title: "Creatine check-in",
       body: "No creatine log for today yet. Take 5g and mark it done.",
       sound: true,
-      data: { screen: "creatine" },
+      data: { screen: "creatine", reminderType: REMINDER_TYPE },
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.DATE,
@@ -121,7 +141,7 @@ async function hasLoggedCreatineToday(userId: string) {
   return Boolean(data);
 }
 
-export async function syncCreatineReminderState({
+async function runCreatineReminderSync({
   allowImmediate = true,
 }: {
   allowImmediate?: boolean;
@@ -154,7 +174,7 @@ export async function syncCreatineReminderState({
           title: "Creatine check-in",
           body: "You have not logged creatine today. Take it now?",
           sound: true,
-          data: { screen: "creatine" },
+          data: { screen: "creatine", reminderType: REMINDER_TYPE },
         },
         trigger: null,
       });
@@ -164,4 +184,18 @@ export async function syncCreatineReminderState({
   } catch (error) {
     console.log("Creatine reminder sync error:", error);
   }
+}
+
+export async function syncCreatineReminderState(
+  options: {
+    allowImmediate?: boolean;
+  } = {},
+) {
+  if (syncPromise) return syncPromise;
+
+  syncPromise = runCreatineReminderSync(options).finally(() => {
+    syncPromise = null;
+  });
+
+  return syncPromise;
 }

@@ -1,9 +1,11 @@
 import { isOnline } from "@/lib/offlineCardio";
 import { resolveOfflineUserId } from "@/lib/offlineUser";
 import { supabase } from "@/lib/supabase";
+import {
+  dedupeExercisesByMuscleGroup,
+  type WorkoutType,
+} from "@/lib/workoutPlans";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-
-export type WorkoutType = "push" | "pull" | "legs" | "upper" | "lower" | "rest";
 
 export type CachedExercise = {
   id: string;
@@ -81,13 +83,11 @@ export async function cacheWorkoutExercises(exercises: CachedExercise[]) {
   await AsyncStorage.setItem(CACHED_EXERCISES_KEY, JSON.stringify(exercises));
 }
 
-export async function getCachedWorkoutExercises(split?: WorkoutType) {
+export async function getCachedWorkoutExercises() {
   const raw = await AsyncStorage.getItem(CACHED_EXERCISES_KEY);
   const exercises = raw ? (JSON.parse(raw) as CachedExercise[]) : [];
 
-  if (!split || split === "rest") return exercises;
-
-  return exercises.filter((exercise) => exercise.movement_type === split);
+  return dedupeExercisesByMuscleGroup(exercises);
 }
 
 export function mapOfflineWorkout(workout: OfflineWorkout) {

@@ -1,6 +1,12 @@
 import ThemedAlert from "@/components/ThemedAlert";
 import { supabase } from "@/lib/supabase";
 import { useTheme } from "@/lib/theme";
+import {
+  formatMuscleGroup,
+  formatWorkoutType,
+  isWorkoutType,
+  type WorkoutType,
+} from "@/lib/workoutPlans";
 import * as MediaLibrary from "expo-media-library";
 import {
   Stack,
@@ -19,8 +25,6 @@ import {
   View,
 } from "react-native";
 import { captureRef } from "react-native-view-shot";
-
-type WorkoutType = "push" | "pull" | "legs" | "upper" | "lower" | "rest";
 
 type Workout = {
   id: string;
@@ -60,30 +64,6 @@ type GroupedExercise = {
   totalVolume: number;
   totalReps: number;
 };
-
-function isWorkoutType(value?: string | string[]): value is WorkoutType {
-  return (
-    value === "push" ||
-    value === "pull" ||
-    value === "legs" ||
-    value === "upper" ||
-    value === "lower" ||
-    value === "rest"
-  );
-}
-
-function formatWorkoutType(type: WorkoutType) {
-  const labels: Record<WorkoutType, string> = {
-    push: "Push",
-    pull: "Pull",
-    legs: "Legs / Core",
-    upper: "Upper Body",
-    lower: "Lower / Arms / Core",
-    rest: "Rest",
-  };
-
-  return labels[type];
-}
 
 function formatDate(date: string) {
   return new Date(date).toLocaleDateString("en-PH", {
@@ -730,7 +710,7 @@ export default function WorkoutDetailsScreen() {
                               textTransform: "capitalize",
                             }}
                           >
-                            {exercise.muscle_group || "No muscle group"}
+                            {formatMuscleGroup(exercise.muscle_group)}
                           </Text>
                         </View>
 
@@ -879,7 +859,7 @@ export default function WorkoutDetailsScreen() {
                   textTransform: "capitalize",
                 }}
               >
-                {item.muscle_group || "No muscle group"}
+                {formatMuscleGroup(item.muscle_group)}
               </Text>
 
               <View

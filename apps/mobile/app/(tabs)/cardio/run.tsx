@@ -1,6 +1,7 @@
 import ThemedAlert from "@/components/ThemedAlert";
 import { SafeRouteMap, type MapRegion } from "@/components/SafeRouteMap";
 import { requestFitnessPermissions } from "@/lib/appPermissions";
+import { toLocalDateKey } from "@/lib/dates";
 import {
   drainBackgroundCardioRoutePoints,
   type BackgroundCardioRoutePoint,
@@ -20,7 +21,7 @@ import * as Location from "expo-location";
 import { Pedometer } from "expo-sensors";
 import { Stack, useRouter } from "expo-router";
 import { X } from "lucide-react-native";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   AppState,
   Modal,
@@ -354,6 +355,8 @@ export default function RunScreen() {
   const [finishModalVisible, setFinishModalVisible] = useState(false);
   const [manualDistanceKm, setManualDistanceKm] = useState("");
   const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const [discardAlertVisible, setDiscardAlertVisible] = useState(false);
   const [locationPermissionGranted, setLocationPermissionGranted] =
     useState(false);
@@ -579,6 +582,7 @@ export default function RunScreen() {
         isPaused: false,
         startedAtMs: Date.now(),
       });
+      startTimer();
       return;
     }
 
@@ -722,9 +726,9 @@ export default function RunScreen() {
       seconds: finalSeconds,
     });
 
-    stopWatchers();
-    lastPointRef = null;
-    lastRawStepsRef = 0;
+    if (!timerRef) {
+      startTimer();
+    }
 
     const finalDistance =
       current.runSource === "treadmill"
@@ -736,6 +740,8 @@ export default function RunScreen() {
   }
 
   async function saveRun() {
+    if (savingRef.current) return;
+
     const current = getRunSession();
     const finalDistanceKm = Number(manualDistanceKm || displayDistanceKm);
 
@@ -757,92 +763,107 @@ export default function RunScreen() {
       return;
     }
 
-    const userId = await resolveCardioUserId();
+    savingRef.current = true;
+    setSaving(true);
 
-    if (!userId) {
+    try {
+      const userId = await resolveCardioUserId();
+
+      if (!userId) {
+        showAlert({
+          title: "Offline setup needed",
+          message:
+            "Open the app once while online before saving cardio sessions offline.",
+          danger: true,
+        });
+        return;
+      }
+
+      stopWatchers();
+
+      const payload = {
+        user_id: userId,
+        session_date: toLocalDateKey(),
+        cardio_type: "running" as const,
+        cardio_source: current.runSource,
+        distance_km: Number(finalDistanceKm.toFixed(3)),
+        duration_seconds: current.seconds,
+        steps: current.steps,
+        calories_burned: estimateCalories(finalDistanceKm),
+        avg_heart_rate: null,
+        notes: notes || null,
+        route: current.runSource === "outdoor" ? current.route : null,
+        is_mock: false,
+        created_at: new Date().toISOString(),
+      };
+
+      const online = await isOnline();
+
+      if (!online) {
+        await saveOfflineCardioSession({
+          temp_id: `offline_run_${Date.now()}`,
+          ...payload,
+        });
+
+        setFinishModalVisible(false);
+        setManualDistanceKm("");
+        setNotes("");
+        resetSession();
+
+        showAlert({
+          title: "Saved Offline",
+          message: "Your run will sync when internet is back.",
+          onConfirm: () => router.back(),
+        });
+
+        return;
+      }
+
+      const { error } = await supabase.from("cardio_sessions").insert(payload);
+
+      if (error) {
+        console.log("Save run error:", error);
+
+        await saveOfflineCardioSession({
+          temp_id: `offline_run_${Date.now()}`,
+          ...payload,
+        });
+
+        setFinishModalVisible(false);
+        setManualDistanceKm("");
+        setNotes("");
+        resetSession();
+
+        showAlert({
+          title: "Saved Offline",
+          message: "Could not upload now, so your run was saved offline.",
+          onConfirm: () => router.back(),
+        });
+
+        return;
+      }
+
+      setFinishModalVisible(false);
+      setManualDistanceKm("");
+      setNotes("");
+      resetSession();
+
       showAlert({
-        title: "Offline setup needed",
-        message:
-          "Open the app once while online before saving cardio sessions offline.",
+        title: "Saved",
+        message: "Run saved successfully.",
+        onConfirm: () => router.back(),
+      });
+    } catch (error) {
+      console.log("Save run error:", error);
+      showAlert({
+        title: "Error",
+        message: "Could not save your run. Please try again.",
         danger: true,
       });
-      return;
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
     }
-
-    stopWatchers();
-
-    const payload = {
-      user_id: userId,
-      session_date: new Date().toISOString().split("T")[0],
-      cardio_type: "running" as const,
-      cardio_source: current.runSource,
-      distance_km: Number(finalDistanceKm.toFixed(3)),
-      duration_seconds: current.seconds,
-      steps: current.steps,
-      calories_burned: estimateCalories(finalDistanceKm),
-      avg_heart_rate: null,
-      notes: notes || null,
-      route: current.runSource === "outdoor" ? current.route : null,
-      is_mock: false,
-      created_at: new Date().toISOString(),
-    };
-
-    const online = await isOnline();
-
-    if (!online) {
-      await saveOfflineCardioSession({
-        temp_id: `offline_run_${Date.now()}`,
-        ...payload,
-      });
-
-      setFinishModalVisible(false);
-      setManualDistanceKm("");
-      setNotes("");
-      resetSession();
-
-      showAlert({
-        title: "Saved Offline",
-        message: "Your run will sync when internet is back.",
-        onConfirm: () => router.back(),
-      });
-
-      return;
-    }
-
-    const { error } = await supabase.from("cardio_sessions").insert(payload);
-
-    if (error) {
-      console.log("Save run error:", error);
-
-      await saveOfflineCardioSession({
-        temp_id: `offline_run_${Date.now()}`,
-        ...payload,
-      });
-
-      setFinishModalVisible(false);
-      setManualDistanceKm("");
-      setNotes("");
-      resetSession();
-
-      showAlert({
-        title: "Saved Offline",
-        message: "Could not upload now, so your run was saved offline.",
-        onConfirm: () => router.back(),
-      });
-
-      return;
-    }
-
-    setFinishModalVisible(false);
-    setManualDistanceKm("");
-    setNotes("");
-    resetSession();
-
-    showAlert({
-      title: "Saved",
-      message: "Run saved successfully.",
-      onConfirm: () => router.back(),
-    });
   }
 
   const themedAlert = (
@@ -1141,12 +1162,16 @@ export default function RunScreen() {
           visible={finishModalVisible}
           animationType="slide"
           transparent
-          allowSwipeDismissal
-          onRequestClose={dismissFinishModal}
+          allowSwipeDismissal={!saving}
+          onRequestClose={() => {
+            if (!saving) dismissFinishModal();
+          }}
           onDismiss={dismissFinishModal}
         >
           <Pressable
-            onPress={dismissFinishModal}
+            onPress={() => {
+              if (!saving) dismissFinishModal();
+            }}
             style={{
               flex: 1,
               backgroundColor:
@@ -1178,6 +1203,7 @@ export default function RunScreen() {
                 <TextInput
                   value={manualDistanceKm}
                   onChangeText={setManualDistanceKm}
+                  editable={!saving}
                   placeholder="e.g. 3.20"
                   placeholderTextColor={theme.colors.textFaint}
                   keyboardType="numeric"
@@ -1228,6 +1254,7 @@ export default function RunScreen() {
                 <TextInput
                   value={notes}
                   onChangeText={setNotes}
+                  editable={!saving}
                   placeholder="Optional"
                   placeholderTextColor={theme.colors.textFaint}
                   multiline
@@ -1247,18 +1274,20 @@ export default function RunScreen() {
 
               <Pressable
                 onPress={saveRun}
+                disabled={saving}
                 style={{
                   marginTop: 18,
                   backgroundColor: theme.colors.text,
                   padding: 16,
                   borderRadius: 16,
                   alignItems: "center",
+                  opacity: saving ? 0.65 : 1,
                 }}
               >
                 <Text
                   style={{ color: theme.colors.surface, fontWeight: "900" }}
                 >
-                  Save Run
+                  {saving ? "Saving..." : "Save Run"}
                 </Text>
               </Pressable>
             </Pressable>

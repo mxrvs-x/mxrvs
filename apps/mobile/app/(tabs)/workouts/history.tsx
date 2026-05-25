@@ -14,6 +14,11 @@ import {
 import { supabase } from "@/lib/supabase";
 import { useTheme } from "@/lib/theme";
 import {
+  formatWorkoutType,
+  isWorkoutType,
+  type WorkoutType,
+} from "@/lib/workoutPlans";
+import {
   Stack,
   useFocusEffect,
   useLocalSearchParams,
@@ -30,8 +35,6 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-
-type WorkoutType = "push" | "pull" | "legs" | "upper" | "lower" | "rest";
 
 type Workout = {
   id: string;
@@ -50,17 +53,6 @@ type WorkoutSet = {
   reps: number;
   weight_kg: number;
 };
-
-function isWorkoutType(value?: string | string[]): value is WorkoutType {
-  return (
-    value === "push" ||
-    value === "pull" ||
-    value === "legs" ||
-    value === "upper" ||
-    value === "lower" ||
-    value === "rest"
-  );
-}
 
 export default function WorkoutHistoryScreen() {
   const router = useRouter();
@@ -210,19 +202,6 @@ export default function WorkoutHistoryScreen() {
     if (!selectedDate) return sessions;
     return sessions.filter((s) => s.workout_date === selectedDate);
   }, [sessions, selectedDate]);
-
-  function formatWorkoutType(type: WorkoutType) {
-    const labels: Record<WorkoutType, string> = {
-      push: "Push",
-      pull: "Pull",
-      legs: "Legs / Core",
-      upper: "Upper Body",
-      lower: "Lower / Arms / Core",
-      rest: "Rest",
-    };
-
-    return labels[type];
-  }
 
   function formatDate(date: string) {
     return new Date(date).toLocaleDateString("en-PH", {

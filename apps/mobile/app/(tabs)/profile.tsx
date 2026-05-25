@@ -17,7 +17,7 @@ import { AppTheme, useTheme } from "@/lib/theme";
 import { syncWeightReminderState } from "@/lib/weightNotifications";
 import { useFocusEffect, useRouter } from "expo-router";
 import { BarChart3, Ruler, Scale, UserRound } from "lucide-react-native";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   ActivityIndicator,
@@ -90,6 +90,8 @@ export default function ProfileScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [savingWeightLog, setSavingWeightLog] = useState(false);
   const [savingHeight, setSavingHeight] = useState(false);
+  const savingWeightLogRef = useRef(false);
+  const savingHeightRef = useRef(false);
   const [logWeightVisible, setLogWeightVisible] = useState(false);
   const [editHeightVisible, setEditHeightVisible] = useState(false);
   const [bodyStats, setBodyStats] = useState<BodyStats | null>(null);
@@ -221,9 +223,13 @@ export default function ProfileScreen() {
   }
 
   async function logBodyWeight(form: BodyWeightLogForm) {
+    if (savingWeightLogRef.current) return;
+
+    savingWeightLogRef.current = true;
     const userId = await resolveOfflineUserId();
 
     if (!userId) {
+      savingWeightLogRef.current = false;
       showAlert("Error", "No authenticated user found.", true);
       return;
     }
@@ -234,6 +240,7 @@ export default function ProfileScreen() {
       : null;
 
     if (!Number.isFinite(weightKg) || weightKg <= 0) {
+      savingWeightLogRef.current = false;
       showAlert("Required", "Please enter a valid body weight.");
       return;
     }
@@ -244,6 +251,7 @@ export default function ProfileScreen() {
         bodyFatPercent < 0 ||
         bodyFatPercent > 100)
     ) {
+      savingWeightLogRef.current = false;
       showAlert("Invalid Body Fat", "Body fat must be between 0 and 100.", true);
       return;
     }
@@ -296,16 +304,21 @@ export default function ProfileScreen() {
       console.log("Log body weight error:", error);
       showAlert("Error", "Something went wrong while logging weight.", true);
     } finally {
+      savingWeightLogRef.current = false;
       setSavingWeightLog(false);
     }
   }
 
   async function updateHeight(form: HeightForm) {
+    if (savingHeightRef.current) return;
+
+    savingHeightRef.current = true;
     const {
       data: { user },
     } = await supabase.auth.getUser();
 
     if (!user) {
+      savingHeightRef.current = false;
       showAlert("Error", "No authenticated user found.", true);
       return;
     }
@@ -313,6 +326,7 @@ export default function ProfileScreen() {
     const heightCm = Number(form.height_cm);
 
     if (!Number.isFinite(heightCm) || heightCm <= 0) {
+      savingHeightRef.current = false;
       showAlert("Required", "Please enter a valid height.");
       return;
     }
@@ -348,6 +362,7 @@ export default function ProfileScreen() {
       console.log("Update height error:", error);
       showAlert("Error", "Something went wrong while updating height.", true);
     } finally {
+      savingHeightRef.current = false;
       setSavingHeight(false);
     }
   }

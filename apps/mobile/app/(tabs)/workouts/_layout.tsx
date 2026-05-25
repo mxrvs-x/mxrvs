@@ -14,7 +14,7 @@ export default function WorkoutLayout() {
       <Stack.Screen
         name="setup"
         options={{
-          title: "PPL / UL Setup",
+          title: "Exercise Setup",
           headerShown: false,
         }}
       />

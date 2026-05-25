@@ -1,3 +1,4 @@
+import { toLocalDateKey } from "@/lib/dates";
 import { AppTheme, useTheme } from "@/lib/theme";
 import {
   cacheCardioSessions,
@@ -88,7 +89,7 @@ export default function CardioHome() {
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(today.getDate() - 7);
 
-    const sevenDaysAgoString = sevenDaysAgo.toISOString().split("T")[0];
+    const sevenDaysAgoString = toLocalDateKey(sevenDaysAgo);
 
     const { data: recentData, error: recentError } = await supabase
       .from("cardio_sessions")

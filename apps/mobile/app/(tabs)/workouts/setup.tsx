@@ -9,13 +9,22 @@ import {
 import { supabase } from "@/lib/supabase";
 import { useTheme } from "@/lib/theme";
 import {
+  dedupeExercisesByMuscleGroup,
+  formatMuscleGroup,
+  groupExercisesByMuscleGroup,
+  isWorkoutType,
+  sortExercisesByMuscleGroup,
+  type MuscleGroup,
+  type WorkoutType,
+} from "@/lib/workoutPlans";
+import {
   Stack,
   useFocusEffect,
   useLocalSearchParams,
   useRouter,
 } from "expo-router";
 import { Plus, SquarePen, Trash2, X } from "lucide-react-native";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -25,15 +34,14 @@ import {
   View,
 } from "react-native";
 
-type MovementType = "push" | "pull" | "legs" | "upper" | "lower";
-type SetupThemeType = MovementType | "rest";
+type SetupThemeType = WorkoutType;
 
 type Exercise = {
   id: string;
   user_id: string;
   name: string;
   muscle_group: string | null;
-  movement_type: MovementType | null;
+  movement_type: WorkoutType | null;
   is_compound: boolean;
   created_at: string;
 };
@@ -42,45 +50,29 @@ type ExerciseForm = {
   id?: string;
   name: string;
   muscle_group: string;
-  movement_type: MovementType;
+  movement_type: WorkoutType | null;
   is_compound: boolean;
 };
 
-const FILTERS: ("all" | MovementType)[] = [
+const FILTERS: ("all" | MuscleGroup)[] = [
   "all",
-  "push",
-  "pull",
+  "chest",
+  "back",
   "legs",
-  "upper",
-  "lower",
+  "shoulders",
+  "arms",
+  "core",
 ];
 
 const EMPTY_FORM: ExerciseForm = {
   name: "",
   muscle_group: "chest",
-  movement_type: "push",
+  movement_type: null,
   is_compound: false,
 };
 
 function isSetupThemeType(value: unknown): value is SetupThemeType {
-  return (
-    value === "push" ||
-    value === "pull" ||
-    value === "legs" ||
-    value === "upper" ||
-    value === "lower" ||
-    value === "rest"
-  );
-}
-
-function isMovementType(value: unknown): value is MovementType {
-  return (
-    value === "push" ||
-    value === "pull" ||
-    value === "legs" ||
-    value === "upper" ||
-    value === "lower"
-  );
+  return typeof value === "string" && isWorkoutType(value);
 }
 
 export default function WorkoutSetupScreen() {
@@ -90,10 +82,9 @@ export default function WorkoutSetupScreen() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
 
   const [exercises, setExercises] = useState<Exercise[]>([]);
-
-  const [search, setSearch] = useState("");
 
   const [modalVisible, setModalVisible] = useState(false);
   const [form, setForm] = useState<ExerciseForm>(EMPTY_FORM);
@@ -114,35 +105,25 @@ export default function WorkoutSetupScreen() {
     ? params.split
     : "push";
 
-  const initialFilter: MovementType = isMovementType(routeSplit)
-    ? routeSplit
-    : "push";
-
-  const [filter, setFilter] = useState<"all" | MovementType>(initialFilter);
+  const [filter, setFilter] = useState<"all" | MuscleGroup>("all");
 
   const filteredExercises = useMemo(() => {
     let nextExercises = exercises;
 
     if (filter !== "all") {
       nextExercises = nextExercises.filter(
-        (exercise) => exercise.movement_type === filter,
+        (exercise) => exercise.muscle_group === filter,
       );
     }
 
-    const query = search.trim().toLowerCase();
+    return filter === "all"
+      ? sortExercisesByMuscleGroup(nextExercises)
+      : nextExercises.sort((a, b) => a.name.localeCompare(b.name));
+  }, [exercises, filter]);
 
-    if (query.length > 0) {
-      nextExercises = nextExercises.filter((exercise) => {
-        return (
-          exercise.name.toLowerCase().includes(query) ||
-          (exercise.muscle_group || "").toLowerCase().includes(query) ||
-          (exercise.movement_type || "").toLowerCase().includes(query)
-        );
-      });
-    }
-
-    return nextExercises;
-  }, [exercises, filter, search]);
+  const exerciseSections = useMemo(() => {
+    return groupExercisesByMuscleGroup(filteredExercises);
+  }, [filteredExercises]);
 
   function showAlert({
     title,
@@ -189,7 +170,7 @@ export default function WorkoutSetupScreen() {
       .from("exercises")
       .select("*")
       .eq("user_id", userId)
-      .order("movement_type", { ascending: true })
+      .order("muscle_group", { ascending: true })
       .order("name", { ascending: true });
 
     if (error) {
@@ -201,7 +182,7 @@ export default function WorkoutSetupScreen() {
       });
     }
 
-    const nextExercises = (data || []) as Exercise[];
+    const nextExercises = dedupeExercisesByMuscleGroup((data || []) as Exercise[]);
     setExercises(nextExercises);
     await cacheWorkoutExercises(nextExercises);
     setLoading(false);
@@ -209,7 +190,7 @@ export default function WorkoutSetupScreen() {
   function openAddModal() {
     setForm({
       ...EMPTY_FORM,
-      movement_type: filter === "all" ? "push" : filter,
+      muscle_group: filter === "all" ? "chest" : filter,
     });
     setModalVisible(true);
   }
@@ -219,13 +200,15 @@ export default function WorkoutSetupScreen() {
       id: exercise.id,
       name: exercise.name,
       muscle_group: exercise.muscle_group || "chest",
-      movement_type: (exercise.movement_type || "push") as MovementType,
+      movement_type: null,
       is_compound: exercise.is_compound,
     });
     setModalVisible(true);
   }
 
   async function saveExercise(nextForm: ExerciseForm) {
+    if (savingRef.current) return;
+
     if (!nextForm.name.trim()) {
       showAlert({
         title: "Missing name",
@@ -234,14 +217,20 @@ export default function WorkoutSetupScreen() {
       return;
     }
 
+    savingRef.current = true;
     setSaving(true);
+
+    function finishSaving() {
+      savingRef.current = false;
+      setSaving(false);
+    }
 
     const {
       data: { user },
     } = await supabase.auth.getUser();
 
     if (!user) {
-      setSaving(false);
+      finishSaving();
       return;
     }
 
@@ -251,7 +240,7 @@ export default function WorkoutSetupScreen() {
         .update({
           name: nextForm.name.trim(),
           muscle_group: nextForm.muscle_group,
-          movement_type: nextForm.movement_type,
+          movement_type: null,
           is_compound: nextForm.is_compound,
         })
         .eq("id", nextForm.id)
@@ -264,7 +253,7 @@ export default function WorkoutSetupScreen() {
           message: "Could not update exercise.",
           danger: true,
         });
-        setSaving(false);
+        finishSaving();
         return;
       }
     } else {
@@ -272,7 +261,7 @@ export default function WorkoutSetupScreen() {
         user_id: user.id,
         name: nextForm.name.trim(),
         muscle_group: nextForm.muscle_group,
-        movement_type: nextForm.movement_type,
+        movement_type: null,
         is_compound: nextForm.is_compound,
       });
 
@@ -283,14 +272,14 @@ export default function WorkoutSetupScreen() {
           message: "Could not add exercise.",
           danger: true,
         });
-        setSaving(false);
+        finishSaving();
         return;
       }
     }
 
     setModalVisible(false);
     await loadExercises();
-    setSaving(false);
+    finishSaving();
   }
 
   async function confirmDeleteExercise(exercise: Exercise) {
@@ -419,7 +408,7 @@ export default function WorkoutSetupScreen() {
           }}
         >
           <Text style={{ color: theme.colors.textMuted }}>
-            Exercise Library
+            Exercise Library by Muscle Group
           </Text>
 
           <Text
@@ -465,10 +454,9 @@ export default function WorkoutSetupScreen() {
                       ? theme.colors.textInverse
                       : theme.colors.text,
                     fontWeight: "800",
-                    textTransform: "capitalize",
                   }}
                 >
-                  {item}
+                  {item === "all" ? "All" : formatMuscleGroup(item)}
                 </Text>
               </Pressable>
             );
@@ -507,94 +495,107 @@ export default function WorkoutSetupScreen() {
             </Text>
 
             <Text style={{ color: theme.colors.textMuted, marginTop: 6 }}>
-              Add exercises for this workout day.
+              Add exercises to your muscle-group library.
             </Text>
           </View>
         ) : (
-          filteredExercises.map((item) => (
-            <View
-              key={item.id}
-              style={{
-                backgroundColor: theme.colors.surface,
-                borderRadius: 16,
-                padding: 14,
-                borderWidth: 1,
-                borderColor:
-                  filter !== "all" && item.movement_type === filter
-                    ? theme.colors.primary
-                    : theme.colors.border,
-                marginBottom: 10,
-              }}
-            >
-              <View style={{ flexDirection: "row", gap: 12 }}>
-                <View style={{ flex: 1 }}>
-                  <Text
-                    style={{
-                      fontSize: 16,
-                      fontWeight: "800",
-                      color: theme.colors.text,
-                    }}
-                  >
-                    {item.name}
-                  </Text>
+          exerciseSections.map(([group, groupExercises]) => (
+            <View key={group} style={{ marginBottom: 12 }}>
+              <Text
+                style={{
+                  color: theme.colors.text,
+                  fontWeight: "900",
+                  marginBottom: 8,
+                }}
+              >
+                {formatMuscleGroup(group)} ({groupExercises.length})
+              </Text>
 
-                  <Text
-                    style={{
-                      color: theme.colors.textMuted,
-                      marginTop: 4,
-                      textTransform: "capitalize",
-                    }}
-                  >
-                    {item.movement_type} • {item.muscle_group}
-                  </Text>
+              {groupExercises.map((item) => (
+                <View
+                  key={item.id}
+                  style={{
+                    backgroundColor: theme.colors.surface,
+                    borderRadius: 16,
+                    padding: 14,
+                    borderWidth: 1,
+                    borderColor:
+                      filter !== "all" && item.muscle_group === filter
+                        ? theme.colors.primary
+                        : theme.colors.border,
+                    marginBottom: 10,
+                  }}
+                >
+                  <View style={{ flexDirection: "row", gap: 12 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text
+                        style={{
+                          fontSize: 16,
+                          fontWeight: "800",
+                          color: theme.colors.text,
+                        }}
+                      >
+                        {item.name}
+                      </Text>
 
-                  <Text
-                    style={{
-                      marginTop: 8,
-                      color: item.is_compound
-                        ? theme.colors.success
-                        : theme.colors.textMuted,
-                      fontWeight: "700",
-                    }}
-                  >
-                    {item.is_compound ? "Compound" : "Isolation"}
-                  </Text>
+                      <Text
+                        style={{
+                          color: theme.colors.textMuted,
+                          marginTop: 4,
+                        }}
+                      >
+                        {formatMuscleGroup(item.muscle_group)}
+                      </Text>
+
+                      <Text
+                        style={{
+                          marginTop: 8,
+                          color: item.is_compound
+                            ? theme.colors.success
+                            : theme.colors.textMuted,
+                          fontWeight: "700",
+                        }}
+                      >
+                        {item.is_compound ? "Compound" : "Isolation"}
+                      </Text>
+                    </View>
+
+                    <View style={{ gap: 8 }}>
+                      <Pressable
+                        onPress={() => openEditModal(item)}
+                        style={{
+                          width: 42,
+                          height: 42,
+                          borderRadius: 12,
+                          backgroundColor: theme.colors.info + "15",
+                          borderWidth: 1,
+                          borderColor: theme.colors.info + "30",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <SquarePen size={18} color={theme.colors.info} />
+                      </Pressable>
+
+                      <Pressable
+                        onPress={() => deleteExercise(item)}
+                        style={{
+                          width: 42,
+                          height: 42,
+                          borderRadius: 12,
+                          backgroundColor: theme.colors.danger + "15",
+                          borderWidth: 1,
+                          borderColor: theme.colors.danger + "30",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <Trash2 size={18} color={theme.colors.danger} />
+                      </Pressable>
+                    </View>
+                  </View>
                 </View>
-
-                <View style={{ gap: 8 }}>
-                  <Pressable
-                    onPress={() => openEditModal(item)}
-                    style={{
-                      width: 42,
-                      height: 42,
-                      borderRadius: 12,
-                      backgroundColor: theme.colors.info + "15",
-                      borderWidth: 1,
-                      borderColor: theme.colors.info + "30",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <SquarePen size={18} color={theme.colors.info} />
-                  </Pressable>
-
-                  <Pressable
-                    onPress={() => deleteExercise(item)}
-                    style={{
-                      width: 42,
-                      height: 42,
-                      borderRadius: 12,
-                      backgroundColor: theme.colors.danger + "15",
-                      borderWidth: 1,
-                      borderColor: theme.colors.danger + "30",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <Trash2 size={18} color={theme.colors.danger} />
-                  </Pressable>
-                </View>
-              </View>
+              ))}
             </View>
           ))
         )}
