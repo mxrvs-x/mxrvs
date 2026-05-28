@@ -1,3 +1,4 @@
+import ExportBackgroundPicker from "@/components/ExportBackgroundPicker";
 import ThemedAlert from "@/components/ThemedAlert";
 import { SafeRouteMap, type MapRegion } from "@/components/SafeRouteMap";
 import { AppTheme, useTheme } from "@/lib/theme";
@@ -9,11 +10,13 @@ import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  ImageBackground,
   Pressable,
   ScrollView,
   Text as RNText,
   View,
 } from "react-native";
+import Svg, { Circle, Path } from "react-native-svg";
 import { captureRef } from "react-native-view-shot";
 
 type RoutePoint = {
@@ -43,7 +46,7 @@ type CardioSession = {
 export default function CardioDetailsScreen() {
   const theme = useTheme();
   const router = useRouter();
-  const exportRef = useRef<View>(null);
+  const exportRef = useRef<any>(null);
 
   const Text = (props: any) => (
     <RNText {...props} style={[{ color: theme.colors.text }, props.style]} />
@@ -54,6 +57,12 @@ export default function CardioDetailsScreen() {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [session, setSession] = useState<CardioSession | null>(null);
+  const [exportBackgroundUri, setExportBackgroundUri] = useState<string | null>(
+    null,
+  );
+  const [exportAction, setExportAction] = useState<"save" | "share" | null>(
+    null,
+  );
   const [alertOpen, setAlertOpen] = useState(false);
   const [alertTitle, setAlertTitle] = useState("");
   const [alertMessage, setAlertMessage] = useState("");
@@ -178,6 +187,24 @@ export default function CardioDetailsScreen() {
     setAlertConfirmText(confirmText);
     setAlertDanger(danger);
     setAlertOpen(true);
+  }
+
+  function openExportCustomizer(type: "save" | "share") {
+    if (exporting) return;
+    setExportAction(type);
+  }
+
+  async function confirmExport() {
+    if (!exportAction) return;
+
+    const action = exportAction;
+    setExportAction(null);
+
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    });
+
+    await exportCardioImage(action);
   }
 
   async function exportCardioImage(type: "save" | "share") {
@@ -324,7 +351,7 @@ export default function CardioDetailsScreen() {
           headerRight: () => (
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
               <Pressable
-                onPress={() => exportCardioImage("share")}
+                onPress={() => openExportCustomizer("share")}
                 disabled={exporting}
                 style={{
                   width: 42,
@@ -340,7 +367,7 @@ export default function CardioDetailsScreen() {
               </Pressable>
 
               <Pressable
-                onPress={() => exportCardioImage("save")}
+                onPress={() => openExportCustomizer("save")}
                 disabled={exporting}
                 style={{
                   width: 42,
@@ -366,15 +393,177 @@ export default function CardioDetailsScreen() {
         }}
       >
         <View
-          ref={exportRef}
-          collapsable={false}
           style={{
             padding: 16,
             paddingBottom: 20,
             backgroundColor: theme.colors.background,
           }}
         >
-          <Text style={{ fontSize: 30, fontWeight: "900" }}>{titleText()}</Text>
+          <ImageBackground
+            ref={exportRef}
+            source={exportBackgroundUri ? { uri: exportBackgroundUri } : undefined}
+            resizeMode="cover"
+            style={{
+              minHeight: 560,
+              borderRadius: 24,
+              overflow: "hidden",
+              padding: 22,
+              justifyContent: "space-between",
+              backgroundColor: theme.mode === "dark" ? "#111827" : "#F8FAFC",
+            }}
+          >
+            <View
+              style={{
+                position: "absolute",
+                top: 0,
+                right: 0,
+                bottom: 0,
+                left: 0,
+                backgroundColor: exportBackgroundUri
+                  ? "rgba(0,0,0,0.45)"
+                  : theme.colors.background,
+              }}
+            />
+
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 12,
+              }}
+            >
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={{
+                    color: exportBackgroundUri ? "#FFFFFF" : theme.colors.text,
+                    fontSize: 34,
+                    fontWeight: "900",
+                  }}
+                >
+                  {titleText()}
+                </Text>
+                <Text
+                  style={{
+                    color: exportBackgroundUri
+                      ? "rgba(255,255,255,0.78)"
+                      : theme.colors.textMuted,
+                    marginTop: 4,
+                    fontWeight: "700",
+                  }}
+                >
+                  {formatDate(session.session_date)}
+                </Text>
+              </View>
+
+              <Text
+                style={{
+                  color: exportBackgroundUri ? "#FFFFFF" : theme.colors.primary,
+                  fontSize: 13,
+                  fontWeight: "900",
+                }}
+              >
+                mxrvs
+              </Text>
+            </View>
+
+            <View style={{ alignItems: "center", justifyContent: "center" }}>
+              {hasRoute ? (
+                <RouteTrace
+                  points={route}
+                  color={exportBackgroundUri ? "#FFFFFF" : theme.colors.primary}
+                />
+              ) : (
+                <View
+                  style={{
+                    width: 260,
+                    height: 260,
+                    borderRadius: 130,
+                    borderWidth: 2,
+                    borderColor: exportBackgroundUri
+                      ? "rgba(255,255,255,0.45)"
+                      : theme.colors.border,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: exportBackgroundUri
+                        ? "rgba(255,255,255,0.78)"
+                        : theme.colors.textMuted,
+                      fontWeight: "900",
+                    }}
+                  >
+                    No route saved
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            <View>
+              <Text
+                style={{
+                  color: exportBackgroundUri
+                    ? "rgba(255,255,255,0.78)"
+                    : theme.colors.textMuted,
+                  fontWeight: "900",
+                  textTransform: "uppercase",
+                }}
+              >
+                Distance
+              </Text>
+              <Text
+                style={{
+                  color: exportBackgroundUri ? "#FFFFFF" : theme.colors.text,
+                  fontSize: 48,
+                  fontWeight: "900",
+                  marginTop: 4,
+                }}
+              >
+                {Number(session.distance_km || 0).toFixed(2)} km
+              </Text>
+
+              <View
+                style={{
+                  flexDirection: "row",
+                  flexWrap: "wrap",
+                  gap: 10,
+                  marginTop: 18,
+                }}
+              >
+                <ExportMetric
+                  label="Steps"
+                  value={`${session.steps || 0}`}
+                  dark={Boolean(exportBackgroundUri)}
+                />
+                <ExportMetric
+                  label="Duration"
+                  value={formatTime(session.duration_seconds)}
+                  dark={Boolean(exportBackgroundUri)}
+                />
+                <ExportMetric
+                  label="Calories"
+                  value={`${session.calories_burned || 0}`}
+                  dark={Boolean(exportBackgroundUri)}
+                />
+              </View>
+            </View>
+          </ImageBackground>
+
+          <ExportBackgroundPicker
+            action={exportAction}
+            exporting={exporting}
+            selectedUri={exportBackgroundUri}
+            visible={Boolean(exportAction)}
+            onClose={() => setExportAction(null)}
+            onExport={confirmExport}
+            onSelect={setExportBackgroundUri}
+          />
+
+          <Text style={{ fontSize: 30, fontWeight: "900", marginTop: 24 }}>
+            {titleText()}
+          </Text>
 
           <Text style={{ color: theme.colors.textMuted, marginTop: 4 }}>
             {sourceText()} • {formatDate(session.session_date)}
@@ -631,6 +820,128 @@ function StatBox({
           fontSize: 17,
           fontWeight: "900",
           marginTop: 6,
+        }}
+      >
+        {value}
+      </RNText>
+    </View>
+  );
+}
+
+function RouteTrace({
+  points,
+  color,
+}: {
+  points: RoutePoint[];
+  color: string;
+}) {
+  const size = 280;
+  const padding = 22;
+
+  if (points.length < 2) {
+    return (
+      <View
+        style={{
+          width: size,
+          height: size,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      />
+    );
+  }
+
+  const latitudes = points.map((point) => point.latitude);
+  const longitudes = points.map((point) => point.longitude);
+  const minLat = Math.min(...latitudes);
+  const maxLat = Math.max(...latitudes);
+  const minLng = Math.min(...longitudes);
+  const maxLng = Math.max(...longitudes);
+  const latRange = Math.max(maxLat - minLat, 0.0001);
+  const lngRange = Math.max(maxLng - minLng, 0.0001);
+  const drawable = size - padding * 2;
+
+  const projected = points.map((point) => ({
+    x: padding + ((point.longitude - minLng) / lngRange) * drawable,
+    y: padding + ((maxLat - point.latitude) / latRange) * drawable,
+  }));
+
+  const path = projected
+    .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`)
+    .join(" ");
+
+  const start = projected[0];
+  const finish = projected[projected.length - 1];
+
+  return (
+    <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      <Path
+        d={path}
+        fill="none"
+        stroke="rgba(0,0,0,0.28)"
+        strokeWidth={13}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path
+        d={path}
+        fill="none"
+        stroke={color}
+        strokeWidth={8}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Circle cx={start.x} cy={start.y} r={7} fill={color} />
+      <Circle
+        cx={finish.x}
+        cy={finish.y}
+        r={7}
+        fill={color}
+        stroke="rgba(0,0,0,0.28)"
+        strokeWidth={3}
+      />
+    </Svg>
+  );
+}
+
+function ExportMetric({
+  label,
+  value,
+  dark,
+}: {
+  label: string;
+  value: string;
+  dark: boolean;
+}) {
+  return (
+    <View
+      style={{
+        flexGrow: 1,
+        minWidth: "30%",
+        borderRadius: 16,
+        padding: 12,
+        backgroundColor: dark ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.06)",
+        borderWidth: 1,
+        borderColor: dark ? "rgba(255,255,255,0.24)" : "rgba(0,0,0,0.08)",
+      }}
+    >
+      <RNText
+        style={{
+          color: dark ? "rgba(255,255,255,0.72)" : "#64748B",
+          fontSize: 11,
+          fontWeight: "800",
+          textTransform: "uppercase",
+        }}
+      >
+        {label}
+      </RNText>
+
+      <RNText
+        style={{
+          color: dark ? "#FFFFFF" : "#0F172A",
+          fontSize: 18,
+          fontWeight: "900",
+          marginTop: 5,
         }}
       >
         {value}

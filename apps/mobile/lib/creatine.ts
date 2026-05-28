@@ -6,6 +6,10 @@ const OFFLINE_CREATINE_KEY = "offline_creatine_logs";
 const CACHED_CREATINE_KEY = "cached_creatine_logs";
 const OFFLINE_CREATINE_USER_ID_KEY = "offline_creatine_user_id";
 
+type SyncResult = { synced: number; remaining: number };
+
+let syncPromise: Promise<SyncResult> | null = null;
+
 export type CreatineLog = {
   id: string;
   user_id: string;
@@ -91,7 +95,7 @@ export async function removeOfflineCreatineLog(tempId: string) {
   await setOfflineCreatineLogs(updated);
 }
 
-export async function syncOfflineCreatineLogs() {
+async function runOfflineCreatineSync(): Promise<SyncResult> {
   const online = await isCreatineOnline();
   if (!online) return { synced: 0, remaining: 0 };
 
@@ -133,6 +137,16 @@ export async function syncOfflineCreatineLogs() {
     synced,
     remaining: remaining.length,
   };
+}
+
+export async function syncOfflineCreatineLogs() {
+  if (syncPromise) return syncPromise;
+
+  syncPromise = runOfflineCreatineSync().finally(() => {
+    syncPromise = null;
+  });
+
+  return syncPromise;
 }
 
 export async function loadCreatineLogs() {

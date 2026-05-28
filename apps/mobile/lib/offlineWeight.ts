@@ -12,6 +12,10 @@ const CACHED_WEIGHT_LOGS_KEY = "cached_body_weight_logs";
 const CACHED_BODY_STATS_KEY = "cached_body_stats";
 const CACHED_WEIGHT_LOG_KEY = "cached_latest_body_weight_log";
 
+type SyncResult = { synced: number; remaining: number };
+
+let syncPromise: Promise<SyncResult> | null = null;
+
 export type BodyStatsCache = {
   id: string;
   user_id: string;
@@ -53,9 +57,25 @@ async function setOfflineBodyWeightLogs(logs: OfflineBodyWeightLog[]) {
   await AsyncStorage.setItem(OFFLINE_WEIGHT_KEY, JSON.stringify(logs));
 }
 
+function isSamePendingBodyWeightLog(
+  a: OfflineBodyWeightLog,
+  b: OfflineBodyWeightLog,
+) {
+  return (
+    a.temp_id === b.temp_id ||
+    (a.user_id === b.user_id &&
+      a.date === b.date &&
+      a.weight_kg === b.weight_kg &&
+      (a.body_fat_percent ?? null) === (b.body_fat_percent ?? null))
+  );
+}
+
 export async function saveOfflineBodyWeightLog(log: OfflineBodyWeightLog) {
   const existing = await getOfflineBodyWeightLogs();
-  await setOfflineBodyWeightLogs([log, ...existing]);
+  await setOfflineBodyWeightLogs([
+    log,
+    ...existing.filter((item) => !isSamePendingBodyWeightLog(item, log)),
+  ]);
 }
 
 export async function removeOfflineBodyWeightLog(tempId: string) {
@@ -183,7 +203,7 @@ export async function loadOfflineProfileFallback() {
   };
 }
 
-export async function syncOfflineBodyWeightLogs() {
+async function runOfflineBodyWeightSync(): Promise<SyncResult> {
   const online = await isOnline();
   if (!online) return { synced: 0, remaining: 0 };
 
@@ -229,6 +249,16 @@ export async function syncOfflineBodyWeightLogs() {
     synced,
     remaining: remaining.length,
   };
+}
+
+export async function syncOfflineBodyWeightLogs() {
+  if (syncPromise) return syncPromise;
+
+  syncPromise = runOfflineBodyWeightSync().finally(() => {
+    syncPromise = null;
+  });
+
+  return syncPromise;
 }
 
 export async function cacheCurrentSessionUser() {

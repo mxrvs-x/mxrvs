@@ -1,3 +1,4 @@
+import ExportBackgroundPicker from "@/components/ExportBackgroundPicker";
 import ThemedAlert from "@/components/ThemedAlert";
 import { supabase } from "@/lib/supabase";
 import { useTheme } from "@/lib/theme";
@@ -20,6 +21,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
+  ImageBackground,
   Pressable,
   Text,
   View,
@@ -62,7 +64,6 @@ type GroupedExercise = {
   muscle_group: string | null;
   sets: DisplaySet[];
   totalVolume: number;
-  totalReps: number;
 };
 
 function formatDate(date: string) {
@@ -89,7 +90,7 @@ function hasExportableSet(set: DisplaySet) {
 export default function WorkoutDetailsScreen() {
   const router = useRouter();
   const theme = useTheme();
-  const exportRef = useRef<View>(null);
+  const exportRef = useRef<any>(null);
 
   const params = useLocalSearchParams<{
     id: string;
@@ -106,6 +107,12 @@ export default function WorkoutDetailsScreen() {
   const [exporting, setExporting] = useState(false);
   const [workout, setWorkout] = useState<Workout | null>(null);
   const [sets, setSets] = useState<DisplaySet[]>([]);
+  const [exportBackgroundUri, setExportBackgroundUri] = useState<string | null>(
+    null,
+  );
+  const [exportAction, setExportAction] = useState<"save" | "share" | null>(
+    null,
+  );
 
   const [alertOpen, setAlertOpen] = useState(false);
   const [alertTitle, setAlertTitle] = useState("");
@@ -116,6 +123,7 @@ export default function WorkoutDetailsScreen() {
   const [alertOnConfirm, setAlertOnConfirm] = useState<
     (() => void) | undefined
   >();
+  const showExportDetails = false;
 
   const exportSets = useMemo(() => sets.filter(hasExportableSet), [sets]);
 
@@ -126,6 +134,10 @@ export default function WorkoutDetailsScreen() {
   const exportTotalReps = exportSets.reduce((sum, set) => {
     return sum + Number(set.reps || 0);
   }, 0);
+
+  const exportExerciseCount = useMemo(() => {
+    return new Set(exportSets.map((set) => set.exercise_id)).size;
+  }, [exportSets]);
 
   const groupedExercises = useMemo<GroupedExercise[]>(() => {
     const grouped = exportSets.reduce<Record<string, GroupedExercise>>(
@@ -139,13 +151,11 @@ export default function WorkoutDetailsScreen() {
             muscle_group: set.muscle_group,
             sets: [],
             totalVolume: 0,
-            totalReps: 0,
           };
         }
 
         acc[set.exercise_id].sets.push(set);
         acc[set.exercise_id].totalVolume += volume;
-        acc[set.exercise_id].totalReps += Number(set.reps || 0);
 
         return acc;
       },
@@ -184,6 +194,24 @@ export default function WorkoutDetailsScreen() {
 
   function handleClosePress() {
     router.back();
+  }
+
+  function openExportCustomizer(type: "save" | "share") {
+    if (exporting) return;
+    setExportAction(type);
+  }
+
+  async function confirmExport() {
+    if (!exportAction) return;
+
+    const action = exportAction;
+    setExportAction(null);
+
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    });
+
+    await exportWorkoutImage(action);
   }
 
   async function exportWorkoutImage(type: "save" | "share") {
@@ -492,7 +520,7 @@ export default function WorkoutDetailsScreen() {
               }}
             >
               <Pressable
-                onPress={() => exportWorkoutImage("share")}
+                onPress={() => openExportCustomizer("share")}
                 disabled={exporting}
                 style={{
                   width: 42,
@@ -508,7 +536,7 @@ export default function WorkoutDetailsScreen() {
               </Pressable>
 
               <Pressable
-                onPress={() => exportWorkoutImage("save")}
+                onPress={() => openExportCustomizer("save")}
                 disabled={exporting}
                 style={{
                   width: 42,
@@ -532,6 +560,7 @@ export default function WorkoutDetailsScreen() {
           style={{ flex: 1, backgroundColor: theme.colors.background }}
           data={sets}
           keyExtractor={(item) => item.id}
+          removeClippedSubviews={false}
           contentContainerStyle={{ padding: 16, paddingBottom: 20 }}
           ListHeaderComponent={
             <View>
@@ -539,33 +568,61 @@ export default function WorkoutDetailsScreen() {
                 ref={exportRef}
                 collapsable={false}
                 style={{
-                  backgroundColor: theme.colors.background,
-                  padding: 16,
+                  backgroundColor: theme.mode === "dark" ? "#111827" : "#F8FAFC",
                   borderRadius: 24,
+                  overflow: "hidden",
                 }}
               >
-                <View
+                <ImageBackground
+                  source={
+                    exportBackgroundUri ? { uri: exportBackgroundUri } : undefined
+                  }
+                  resizeMode="cover"
                   style={{
-                    marginTop: 8,
-                    flexDirection: "row",
+                    minHeight: 520,
+                    padding: 22,
                     justifyContent: "space-between",
-                    alignItems: "center",
-                    gap: 12,
                   }}
                 >
+                  <View
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      right: 0,
+                      bottom: 0,
+                      left: 0,
+                      backgroundColor: exportBackgroundUri
+                        ? "rgba(0,0,0,0.45)"
+                        : theme.colors.background,
+                    }}
+                  />
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 12,
+                    }}
+                  >
                   <View style={{ flex: 1 }}>
                     <Text
                       style={{
-                        fontSize: 28,
+                        fontSize: 34,
                         fontWeight: "900",
-                        color: theme.colors.text,
+                        color: exportBackgroundUri ? "#FFFFFF" : theme.colors.text,
                       }}
                     >
                       {formatWorkoutType(workout.workout_type)}
                     </Text>
 
                     <Text
-                      style={{ color: theme.colors.textMuted, marginTop: 4 }}
+                      style={{
+                        color: exportBackgroundUri
+                          ? "rgba(255,255,255,0.78)"
+                          : theme.colors.textMuted,
+                        marginTop: 4,
+                        fontWeight: "700",
+                      }}
                     >
                       {formatDate(workout.workout_date)}
                     </Text>
@@ -573,7 +630,7 @@ export default function WorkoutDetailsScreen() {
 
                   <Text
                     style={{
-                      color: theme.colors.primary,
+                      color: exportBackgroundUri ? "#FFFFFF" : theme.colors.primary,
                       fontSize: 13,
                       fontWeight: "900",
                     }}
@@ -591,7 +648,7 @@ export default function WorkoutDetailsScreen() {
                   }}
                 >
                   <Text style={{ color: theme.colors.textInverse }}>
-                    Session Summary
+                    Total Volume
                   </Text>
 
                   <Text
@@ -608,8 +665,7 @@ export default function WorkoutDetailsScreen() {
                   <Text
                     style={{ color: theme.colors.textInverse, marginTop: 8 }}
                   >
-                    {exportSets.length} sets • {exportTotalReps} reps •{" "}
-                    {workout.duration_minutes || 0} min
+                    {exportTotalReps} reps across {exportSets.length} sets
                   </Text>
                 </View>
 
@@ -623,38 +679,37 @@ export default function WorkoutDetailsScreen() {
                   <ExportStat label="Sets" value={`${exportSets.length}`} />
                   <ExportStat label="Reps" value={`${exportTotalReps}`} />
                   <ExportStat
-                    label="Volume"
-                    value={`${exportTotalVolume.toLocaleString()} kg`}
+                    label="Exercises"
+                    value={`${exportExerciseCount}`}
                   />
                 </View>
 
-                {workout.notes ? (
-                  <View
-                    style={{
-                      backgroundColor: theme.colors.surface,
-                      borderRadius: 16,
-                      padding: 16,
-                      marginTop: 14,
-                      borderWidth: 1,
-                      borderColor: theme.colors.border,
-                    }}
-                  >
-                    <Text
-                      style={{
-                        fontWeight: "900",
-                        color: theme.colors.text,
-                      }}
-                    >
-                      Notes
-                    </Text>
+                <Text
+                  style={{
+                    marginTop: 28,
+                    textAlign: "center",
+                    color: exportBackgroundUri
+                      ? "rgba(255,255,255,0.78)"
+                      : theme.colors.textMuted,
+                    fontWeight: "800",
+                  }}
+                >
+                  Logged with mxrvs
+                </Text>
+                </ImageBackground>
 
-                    <Text
-                      style={{ color: theme.colors.textMuted, marginTop: 6 }}
-                    >
-                      {workout.notes}
-                    </Text>
-                  </View>
-                ) : null}
+                <ExportBackgroundPicker
+                  action={exportAction}
+                  exporting={exporting}
+                  selectedUri={exportBackgroundUri}
+                  visible={Boolean(exportAction)}
+                  onClose={() => setExportAction(null)}
+                  onExport={confirmExport}
+                  onSelect={setExportBackgroundUri}
+                />
+
+                {showExportDetails && (
+                  <>
 
                 <Text
                   style={{
@@ -800,6 +855,8 @@ export default function WorkoutDetailsScreen() {
                 >
                   Logged with mxrvs
                 </Text>
+                  </>
+                )}
               </View>
 
               <Text

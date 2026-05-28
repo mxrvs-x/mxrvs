@@ -40,6 +40,10 @@ const CACHED_WORKOUTS_KEY = "cached_workouts";
 const CACHED_WORKOUT_SETS_KEY = "cached_workout_sets";
 const CACHED_EXERCISES_KEY = "cached_workout_exercises";
 
+type SyncResult = { synced: number; remaining: number };
+
+let syncPromise: Promise<SyncResult> | null = null;
+
 export async function getOfflineWorkouts() {
   const raw = await AsyncStorage.getItem(OFFLINE_WORKOUTS_KEY);
   return raw ? (JSON.parse(raw) as OfflineWorkout[]) : [];
@@ -67,9 +71,40 @@ async function setOfflineWorkouts(workouts: OfflineWorkout[]) {
   await AsyncStorage.setItem(OFFLINE_WORKOUTS_KEY, JSON.stringify(workouts));
 }
 
+function areSamePendingWorkoutSet(
+  a: OfflineWorkoutSet,
+  b: OfflineWorkoutSet,
+) {
+  return (
+    a.exercise_id === b.exercise_id &&
+    a.set_number === b.set_number &&
+    a.reps === b.reps &&
+    a.weight_kg === b.weight_kg &&
+    (a.rest_seconds ?? null) === (b.rest_seconds ?? null)
+  );
+}
+
+function isSamePendingWorkout(a: OfflineWorkout, b: OfflineWorkout) {
+  return (
+    a.temp_id === b.temp_id ||
+    (a.user_id === b.user_id &&
+      a.workout_date === b.workout_date &&
+      a.workout_type === b.workout_type &&
+      a.duration_minutes === b.duration_minutes &&
+      (a.notes ?? null) === (b.notes ?? null) &&
+      a.sets.length === b.sets.length &&
+      a.sets.every((set, index) =>
+        areSamePendingWorkoutSet(set, b.sets[index]),
+      ))
+  );
+}
+
 export async function saveOfflineWorkout(workout: OfflineWorkout) {
   const existing = await getOfflineWorkouts();
-  await setOfflineWorkouts([workout, ...existing]);
+  await setOfflineWorkouts([
+    workout,
+    ...existing.filter((item) => !isSamePendingWorkout(item, workout)),
+  ]);
 }
 
 export async function removeOfflineWorkout(tempId: string) {
@@ -121,7 +156,7 @@ export function mapCachedWorkout(workout: any, sets: any[] = []) {
   };
 }
 
-export async function syncOfflineWorkouts() {
+async function runOfflineWorkoutSync(): Promise<SyncResult> {
   const online = await isOnline();
   if (!online) return { synced: 0, remaining: 0 };
 
@@ -184,6 +219,16 @@ export async function syncOfflineWorkouts() {
     synced,
     remaining: remaining.length,
   };
+}
+
+export async function syncOfflineWorkouts() {
+  if (syncPromise) return syncPromise;
+
+  syncPromise = runOfflineWorkoutSync().finally(() => {
+    syncPromise = null;
+  });
+
+  return syncPromise;
 }
 
 export async function createOfflineWorkout({

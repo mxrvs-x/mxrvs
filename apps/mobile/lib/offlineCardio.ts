@@ -7,6 +7,10 @@ const CACHED_CARDIO_KEY = "cached_cardio_sessions";
 const OFFLINE_CARDIO_USER_ID_KEY = "offline_cardio_user_id";
 const OFFLINE_CARDIO_WEIGHT_KG_KEY = "offline_cardio_weight_kg";
 
+type SyncResult = { synced: number; remaining: number };
+
+let syncPromise: Promise<SyncResult> | null = null;
+
 export type OfflineCardioSession = {
   temp_id: string;
   user_id: string;
@@ -55,9 +59,30 @@ export function mapOfflineCardioSession(session: OfflineCardioSession) {
   };
 }
 
+function isSamePendingCardioSession(
+  a: OfflineCardioSession,
+  b: OfflineCardioSession,
+) {
+  return (
+    a.temp_id === b.temp_id ||
+    (a.user_id === b.user_id &&
+      a.session_date === b.session_date &&
+      a.cardio_type === b.cardio_type &&
+      a.cardio_source === b.cardio_source &&
+      a.distance_km === b.distance_km &&
+      a.duration_seconds === b.duration_seconds &&
+      a.steps === b.steps &&
+      a.calories_burned === b.calories_burned &&
+      (a.notes ?? null) === (b.notes ?? null))
+  );
+}
+
 export async function saveOfflineCardioSession(session: OfflineCardioSession) {
   const existing = await getOfflineCardioSessions();
-  const updated = [session, ...existing];
+  const updated = [
+    session,
+    ...existing.filter((item) => !isSamePendingCardioSession(item, session)),
+  ];
 
   await AsyncStorage.setItem(OFFLINE_CARDIO_KEY, JSON.stringify(updated));
 }
@@ -109,7 +134,7 @@ export async function removeOfflineCardioSession(tempId: string) {
   await AsyncStorage.setItem(OFFLINE_CARDIO_KEY, JSON.stringify(updated));
 }
 
-export async function syncOfflineCardioSessions() {
+async function runOfflineCardioSync(): Promise<SyncResult> {
   const online = await isOnline();
   if (!online) return { synced: 0, remaining: 0 };
 
@@ -149,4 +174,14 @@ export async function syncOfflineCardioSessions() {
     synced,
     remaining: remaining.length,
   };
+}
+
+export async function syncOfflineCardioSessions() {
+  if (syncPromise) return syncPromise;
+
+  syncPromise = runOfflineCardioSync().finally(() => {
+    syncPromise = null;
+  });
+
+  return syncPromise;
 }

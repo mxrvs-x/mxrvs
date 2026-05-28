@@ -11,7 +11,7 @@ import { useTheme } from "@/lib/theme";
 import NetInfo from "@react-native-community/netinfo";
 import { useFocusEffect } from "expo-router";
 import { CalendarCheck2, Check, Minus, X } from "lucide-react-native";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -38,6 +38,7 @@ export default function CreatineScreen() {
   const [calendarMonth, setCalendarMonth] = useState(now.getMonth());
   const [calendarYear, setCalendarYear] = useState(now.getFullYear());
   const [selectedDate, setSelectedDate] = useState(today);
+  const savingRef = useRef(false);
 
   const selectedLog = useMemo(
     () => logs.find((log) => log.date === selectedDate) ?? null,
@@ -71,6 +72,10 @@ export default function CreatineScreen() {
   }
 
   async function handleLogCreatine() {
+    if (savingRef.current) return;
+
+    savingRef.current = true;
+
     try {
       setSaving(true);
       await logCreatineForDate({ date: selectedDate, grams: 5 });
@@ -82,12 +87,15 @@ export default function CreatineScreen() {
         error instanceof Error ? error.message : "Please try again.",
       );
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   }
 
   async function handleDeleteLog() {
-    if (!selectedLog) return;
+    if (!selectedLog || savingRef.current) return;
+
+    savingRef.current = true;
 
     try {
       setSaving(true);
@@ -95,6 +103,7 @@ export default function CreatineScreen() {
       await loadLogs(false);
       await syncCreatineReminderState({ allowImmediate: false });
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   }

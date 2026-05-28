@@ -70,6 +70,13 @@
           "photosPermission": "Allow mxrvs to access workout and cardio images.",
           "savePhotosPermission": "Allow mxrvs to save workout and cardio images."
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow mxrvs to choose workout and cardio export backgrounds.",
+          "cameraPermission": "Allow mxrvs to take workout and cardio export backgrounds."
+        }
       ]
     ],
     "experiments": {
