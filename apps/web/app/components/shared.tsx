@@ -176,6 +176,17 @@ export function formatWorkoutType(type: WorkoutType) {
   return WORKOUT_PLANS.find((plan) => plan.type === type)?.label || "Workout";
 }
 
+export function isWorkoutType(value: unknown): value is WorkoutType {
+  return (
+    value === "push" ||
+    value === "pull" ||
+    value === "legs" ||
+    value === "upper" ||
+    value === "lower" ||
+    value === "rest"
+  );
+}
+
 export function formatMuscleGroup(group: string) {
   return group
     .split(/[\s_-]+/)

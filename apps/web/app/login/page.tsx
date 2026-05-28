@@ -5,19 +5,31 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 import { getWebUser, signInWeb } from "@/lib/webData";
 import { supabaseConfigError } from "@/lib/supabase";
+import { appAlert, appToast } from "@/lib/sweetAlert";
 
 export default function LoginPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(supabaseConfigError);
   const [loading, setLoading] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
+
+  useEffect(() => {
+    if (!supabaseConfigError) return;
+    void appAlert("Supabase Configuration Missing", supabaseConfigError, "error");
+  }, []);
 
   useEffect(() => {
     let active = true;
 
     getWebUser().then((user) => {
+      if (!active) return;
+
       if (active && user) {
         router.replace("/pages/workouts");
+        return;
       }
+
+      setCheckingSession(false);
     });
 
     return () => {
@@ -39,10 +51,30 @@ export default function LoginPage() {
 
     if (result.error) {
       setError(result.error);
+      await appAlert("Sign In Failed", result.error, "error");
       return;
     }
 
+    await appToast("Signed in");
     router.replace("/pages/workouts");
+  }
+
+  if (checkingSession) {
+    return (
+      <main className="auth-shell">
+        <section className="card auth-card">
+          <div className="brand-mark">
+            <Image src="/mxrvs.png" alt="" width={44} height={44} priority />
+            <div>
+              <strong>mxrvs</strong>
+              <span>Checking session</span>
+            </div>
+          </div>
+
+          <p className="muted">Loading your Supabase session...</p>
+        </section>
+      </main>
+    );
   }
 
   return (

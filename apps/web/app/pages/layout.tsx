@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { getWebUser } from "@/lib/webData";
+import { hasActiveStoredWorkoutSession } from "@/lib/workoutSessionStore";
 
 type ThemeMode = "light" | "dark";
 
@@ -30,7 +31,7 @@ export default function PagesLayout({
 }) {
   const pathname = usePathname() || "";
   const router = useRouter();
-  const [themeMode, setThemeMode] = useState<ThemeMode>("light");
+  const [themeMode, setThemeMode] = useState<ThemeMode>("dark");
   const [authReady, setAuthReady] = useState(false);
 
   useEffect(() => {
@@ -57,9 +58,7 @@ export default function PagesLayout({
     const initial =
       stored === "light" || stored === "dark"
         ? stored
-        : window.matchMedia("(prefers-color-scheme: dark)").matches
-          ? "dark"
-          : "light";
+        : "dark";
 
     setThemeMode(initial);
   }, []);
@@ -68,6 +67,21 @@ export default function PagesLayout({
     document.documentElement.dataset.theme = themeMode;
     window.localStorage.setItem("mxrvs-web-theme", themeMode);
   }, [themeMode]);
+
+  useEffect(() => {
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!hasActiveStoredWorkoutSession()) return;
+
+      event.preventDefault();
+      event.returnValue = "Session is active, are you sure to close the tab?";
+    };
+
+    window.addEventListener("beforeunload", warnBeforeUnload);
+
+    return () => {
+      window.removeEventListener("beforeunload", warnBeforeUnload);
+    };
+  }, []);
 
   const currentLabel = useMemo(() => {
     return (

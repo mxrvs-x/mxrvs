@@ -10,8 +10,9 @@ import {
   MiniStat,
   paceText,
   useLocalState,
-} from "../_components/shared";
+} from "@/app/components/shared";
 import { loadWebCardio, type SyncState } from "@/lib/webData";
+import { appAlert } from "@/lib/sweetAlert";
 
 function formatTime(seconds: number) {
   const h = Math.floor(seconds / 3600);
@@ -37,7 +38,15 @@ export default function CardioPage() {
     let active = true;
 
     loadWebCardio().then((data) => {
-      if (!active || !data) return;
+      if (!active) return;
+      if (!data) {
+        void appAlert(
+          "Cardio Load Failed",
+          "Could not load cardio history from Supabase.",
+          "error",
+        );
+        return;
+      }
       setSessions(data);
       setSyncState("supabase");
     });
@@ -112,35 +121,37 @@ export default function CardioPage() {
           </div>
         </div>
 
-        <div className="stack">
+        <div className="stack log-panel">
           <div className="row between">
             <h2>{selectedDate ? "Selected Date" : "Activities"}</h2>
             <strong className="muted">{visibleSessions.length}</strong>
           </div>
 
-          {visibleSessions.length === 0 ? (
-            <div className="card">
-              <p className="muted">No cardio records for this filter.</p>
-            </div>
-          ) : null}
+          <div className="stack log-scroll">
+            {visibleSessions.length === 0 ? (
+              <div className="card">
+                <p className="muted">No cardio records for this filter.</p>
+              </div>
+            ) : null}
 
-          {visibleSessions.map((session) => (
-            <article className="list-item stack" key={session.id}>
-              <div className="row between">
-                <div>
-                  <h3>{session.cardio_type === "running" ? "Run" : "Walk"}</h3>
-                  <p className="muted">{sourceText(session.cardio_source)}</p>
+            {visibleSessions.map((session) => (
+              <article className="list-item stack" key={session.id}>
+                <div className="row between">
+                  <div>
+                    <h3>{session.cardio_type === "running" ? "Run" : "Walk"}</h3>
+                    <p className="muted">{sourceText(session.cardio_source)}</p>
+                  </div>
+                  <span className="faint">{formatDate(session.session_date)}</span>
                 </div>
-                <span className="faint">{formatDate(session.session_date)}</span>
-              </div>
-              <div className="row wrap">
-                <MiniStat label="Distance" value={`${session.distance_km.toFixed(2)} km`} />
-                <MiniStat label="Time" value={formatTime(session.duration_seconds)} />
-                <MiniStat label="Pace" value={paceText(session.distance_km, session.duration_seconds)} />
-                <MiniStat label="Calories" value={`${session.calories_burned} kcal`} />
-              </div>
-            </article>
-          ))}
+                <div className="row wrap">
+                  <MiniStat label="Distance" value={`${session.distance_km.toFixed(2)} km`} />
+                  <MiniStat label="Time" value={formatTime(session.duration_seconds)} />
+                  <MiniStat label="Pace" value={paceText(session.distance_km, session.duration_seconds)} />
+                  <MiniStat label="Calories" value={`${session.calories_burned} kcal`} />
+                </div>
+              </article>
+            ))}
+          </div>
         </div>
       </section>
     </div>

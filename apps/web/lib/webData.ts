@@ -11,9 +11,18 @@ import type {
   Workout,
   WorkoutSet,
   WorkoutType,
-} from "@/app/pages/_components/shared";
+} from "@/app/components/shared";
 
 export type SyncState = "supabase" | "local";
+
+const MUSCLE_GROUP_ORDER: MuscleGroup[] = [
+  "chest",
+  "back",
+  "legs",
+  "shoulders",
+  "arms",
+  "core",
+];
 
 type DbWorkoutSet = WorkoutSet & {
   workout_id: string;
@@ -23,6 +32,40 @@ type BodyStats = {
   id: string;
   height_cm: number | null;
 };
+
+function muscleGroupRank(group: MuscleGroup) {
+  const index = MUSCLE_GROUP_ORDER.indexOf(group);
+  return index >= 0 ? index : MUSCLE_GROUP_ORDER.length;
+}
+
+export function dedupeWebExercises(exercises: Exercise[]) {
+  const byNameAndGroup = new Map<string, Exercise>();
+
+  exercises.forEach((exercise) => {
+    if (!exercise.muscle_group) return;
+
+    const normalizedName = exercise.name.trim().toLowerCase();
+    const key = `${normalizedName}|${exercise.muscle_group}`;
+
+    if (!byNameAndGroup.has(key)) {
+      byNameAndGroup.set(key, {
+        ...exercise,
+        name: exercise.name.trim(),
+        muscle_group: exercise.muscle_group as MuscleGroup,
+      });
+    }
+  });
+
+  return Array.from(byNameAndGroup.values()).sort((a, b) => {
+    const groupCompare = muscleGroupRank(a.muscle_group) - muscleGroupRank(b.muscle_group);
+    if (groupCompare !== 0) return groupCompare;
+
+    const compoundCompare = Number(b.is_compound) - Number(a.is_compound);
+    if (compoundCompare !== 0) return compoundCompare;
+
+    return a.name.localeCompare(b.name);
+  });
+}
 
 export async function getWebUser() {
   if (supabaseConfigError) return null;
@@ -75,9 +118,7 @@ export async function loadWebWorkouts() {
 
   const workoutRows = (workouts || []) as Array<Omit<Workout, "sets">>;
   const workoutIds = workoutRows.map((workout) => workout.id);
-  const exerciseRows = ((exercises || []) as Exercise[]).filter(
-    (exercise) => exercise.muscle_group,
-  );
+  const exerciseRows = dedupeWebExercises((exercises || []) as Exercise[]);
   const exerciseMap = new Map(exerciseRows.map((exercise) => [exercise.id, exercise]));
 
   let setRows: DbWorkoutSet[] = [];
@@ -110,10 +151,7 @@ export async function loadWebWorkouts() {
   }));
 
   return {
-    exercises: exerciseRows.map((exercise) => ({
-      ...exercise,
-      muscle_group: exercise.muscle_group as MuscleGroup,
-    })),
+    exercises: exerciseRows,
     workouts: mappedWorkouts,
   };
 }

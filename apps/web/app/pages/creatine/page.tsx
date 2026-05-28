@@ -8,16 +8,16 @@ import {
   CreatineLog,
   emptyCreatine,
   formatDate,
-  id,
   toDateKey,
   useLocalState,
-} from "../_components/shared";
+} from "@/app/components/shared";
 import {
   deleteWebCreatine,
   loadWebCreatine,
   logWebCreatine,
   type SyncState,
 } from "@/lib/webData";
+import { appAlert, appConfirm, appToast } from "@/lib/sweetAlert";
 
 export default function CreatinePage() {
   const today = useMemo(() => toDateKey(), []);
@@ -31,7 +31,15 @@ export default function CreatinePage() {
     let active = true;
 
     loadWebCreatine().then((data) => {
-      if (!active || !data) return;
+      if (!active) return;
+      if (!data) {
+        void appAlert(
+          "Creatine Load Failed",
+          "Could not load creatine history from Supabase.",
+          "error",
+        );
+        return;
+      }
       setLogs(data);
       setSyncState("supabase");
     });
@@ -56,16 +64,44 @@ export default function CreatinePage() {
 
   async function toggleLog() {
     if (selectedLog) {
-      await deleteWebCreatine(selectedDate);
+      const confirmed = await appConfirm({
+        title: "Remove Creatine Log?",
+        text: `This will remove the 5g log for ${formatDate(selectedDate)}.`,
+        confirmButtonText: "Remove",
+      });
+
+      if (!confirmed) return;
+
+      const deleted = await deleteWebCreatine(selectedDate);
+      if (!deleted) {
+        await appAlert(
+          "Remove Failed",
+          "Could not remove this creatine log. Please try again.",
+          "error",
+        );
+        return;
+      }
+
       setLogs((current) => current.filter((log) => log.date !== selectedDate));
+      await appToast("Creatine log removed");
       return;
     }
 
     const savedLog = await logWebCreatine(selectedDate);
+    if (!savedLog) {
+      await appAlert(
+        "Log Failed",
+        "Could not save this creatine log. Please try again.",
+        "error",
+      );
+      return;
+    }
+
     setLogs((current) => [
-      savedLog || { id: id("creatine"), date: selectedDate, grams: 5, created_at: new Date().toISOString() },
+      savedLog,
       ...current,
     ].sort((a, b) => b.date.localeCompare(a.date)));
+    await appToast("Creatine logged");
   }
 
   return (
@@ -118,25 +154,27 @@ export default function CreatinePage() {
           </div>
         </div>
 
-        <div className="stack">
+        <div className="stack log-panel">
           <div className="row between">
             <h2>History</h2>
             <strong className="muted">{logs.length}</strong>
           </div>
-          {logs.length === 0 ? (
-            <div className="card">
-              <p className="muted">No creatine logs yet.</p>
-            </div>
-          ) : null}
-          {logs.map((log) => (
-            <article className="list-item row between" key={log.id}>
-              <div>
-                <h3>{formatDate(log.date)}</h3>
-                <p className="muted">{log.grams}g creatine</p>
+          <div className="stack log-scroll">
+            {logs.length === 0 ? (
+              <div className="card">
+                <p className="muted">No creatine logs yet.</p>
               </div>
-              <span className="check-dot active"><Check size={17} /></span>
-            </article>
-          ))}
+            ) : null}
+            {logs.map((log) => (
+              <article className="list-item row between" key={log.id}>
+                <div>
+                  <h3>{formatDate(log.date)}</h3>
+                  <p className="muted">{log.grams}g creatine</p>
+                </div>
+                <span className="check-dot active"><Check size={17} /></span>
+              </article>
+            ))}
+          </div>
         </div>
       </section>
     </div>
