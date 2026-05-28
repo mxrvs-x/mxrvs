@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import ThemeBoot from "@/app/components/ThemeBoot";
 import "sweetalert2/dist/sweetalert2.min.css";
 import "./globals.css";
 
@@ -14,7 +15,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body>{children}</body>
+      <body>
+        <ThemeBoot />
+        {children}
+      </body>
     </html>
   );
 }

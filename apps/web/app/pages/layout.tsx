@@ -12,10 +12,13 @@ import {
   UserRound,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import {
+  getStoredTheme,
+  setStoredTheme,
+  type ThemeMode,
+} from "@/app/components/ThemeBoot";
 import { getWebUser } from "@/lib/webData";
 import { hasActiveStoredWorkoutSession } from "@/lib/workoutSessionStore";
-
-type ThemeMode = "light" | "dark";
 
 const links = [
   { href: "/pages/workouts", label: "Workouts", icon: Dumbbell },
@@ -54,18 +57,11 @@ export default function PagesLayout({
   }, [router]);
 
   useEffect(() => {
-    const stored = window.localStorage.getItem("mxrvs-web-theme");
-    const initial =
-      stored === "light" || stored === "dark"
-        ? stored
-        : "dark";
-
-    setThemeMode(initial);
+    setThemeMode(getStoredTheme());
   }, []);
 
   useEffect(() => {
-    document.documentElement.dataset.theme = themeMode;
-    window.localStorage.setItem("mxrvs-web-theme", themeMode);
+    setStoredTheme(themeMode);
   }, [themeMode]);
 
   useEffect(() => {
