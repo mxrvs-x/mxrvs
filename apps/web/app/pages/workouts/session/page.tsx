@@ -12,7 +12,7 @@ import {
   Square,
   Trash2,
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   emptyExercises,
   emptyWorkouts,
@@ -40,6 +40,7 @@ import {
 import { appAlert, appConfirm, appToast } from "@/lib/sweetAlert";
 
 const REST_OPTIONS = [30, 60, 90, 120, 180, 240, 300];
+const REST_COMPLETE_SOUND = "/sounds/timer-complete.mp3";
 
 const splitGroups: Record<Exclude<WorkoutType, "rest">, MuscleGroup[]> = {
   push: ["chest", "shoulders", "arms"],
@@ -56,6 +57,23 @@ function getInitialSplit(value: string | null): WorkoutType {
 function getExerciseGroups(type: WorkoutType) {
   if (type === "rest") return [];
   return splitGroups[type];
+}
+
+function playRestCompleteSound() {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.navigator.vibrate?.([0, 500, 250, 500, 250, 700]);
+
+    const audio = new Audio(REST_COMPLETE_SOUND);
+    audio.volume = 1;
+
+    void audio.play().catch(() => {
+      window.navigator.vibrate?.([0, 500, 250, 500]);
+    });
+  } catch {
+    window.navigator.vibrate?.([0, 500, 250, 500]);
+  }
 }
 
 export default function WorkoutSessionPage() {
@@ -81,6 +99,7 @@ export default function WorkoutSessionPage() {
   const [activeExercise, setActiveExercise] = useState<Exercise | null>(null);
   const [saving, setSaving] = useState(false);
   const [restoredSession, setRestoredSession] = useState(false);
+  const previousRestRemainingRef = useRef(0);
 
   useEffect(() => {
     document.documentElement.dataset.workoutTheme = selectedType;
@@ -141,6 +160,17 @@ export default function WorkoutSessionPage() {
 
     return () => window.clearInterval(timer);
   }, [paused, started]);
+
+  useEffect(() => {
+    const previousRestRemaining = previousRestRemainingRef.current;
+
+    if (started && !paused && previousRestRemaining > 0 && restRemaining === 0) {
+      setRestExerciseId(null);
+      playRestCompleteSound();
+    }
+
+    previousRestRemainingRef.current = restRemaining;
+  }, [paused, restRemaining, started]);
 
   useEffect(() => {
     if (!restoredSession) return;
