@@ -16,7 +16,7 @@ import {
   useRouter,
 } from "expo-router";
 import * as Sharing from "expo-sharing";
-import { Download, Share2, X } from "lucide-react-native";
+import { Copy, Download, Share2, X } from "lucide-react-native";
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -199,6 +199,76 @@ export default function WorkoutDetailsScreen() {
   function openExportCustomizer(type: "save" | "share") {
     if (exporting) return;
     setExportAction(type);
+  }
+
+  function buildWorkoutClipboardText() {
+    if (!workout) return "";
+
+    const lines = [
+      `${formatWorkoutType(workout.workout_type)} Workout`,
+      formatDate(workout.workout_date),
+      "",
+      `Total Volume: ${(exportTotalVolume || 0).toLocaleString()} kg`,
+      `Total Reps: ${exportTotalReps}`,
+      `Sets: ${exportSets.length}`,
+      `Exercises: ${exportExerciseCount}`,
+    ];
+
+    if (workout.duration_minutes) {
+      lines.push(`Duration: ${workout.duration_minutes} min`);
+    }
+
+    if (workout.notes) {
+      lines.push("", "Notes:", workout.notes);
+    }
+
+    lines.push("", "Exercises:");
+
+    if (groupedExercises.length === 0) {
+      lines.push("No exercises found.");
+    } else {
+      groupedExercises.forEach((exercise) => {
+        lines.push(
+          "",
+          `${exercise.exercise_name} (${formatMuscleGroup(
+            exercise.muscle_group,
+          )})`,
+        );
+
+        exercise.sets.forEach((set) => {
+          const setVolume = Number(set.reps || 0) * Number(set.weight_kg || 0);
+
+          lines.push(
+            `- Set ${set.set_number}: ${set.reps} reps x ${
+              set.weight_kg
+            } kg (${setVolume.toLocaleString()} kg volume)`,
+          );
+        });
+      });
+    }
+
+    return lines.join("\n");
+  }
+
+  async function copyWorkoutDetails() {
+    try {
+      const Clipboard = await import("expo-clipboard");
+
+      await Clipboard.setStringAsync(buildWorkoutClipboardText());
+
+      showAlert({
+        title: "Copied",
+        message: "Workout exercises copied to clipboard.",
+      });
+    } catch (error) {
+      console.log("Copy workout details error:", error);
+
+      showAlert({
+        title: "Copy Failed",
+        message: "Something went wrong while copying workout details.",
+        danger: true,
+      });
+    }
   }
 
   async function confirmExport() {
@@ -519,6 +589,22 @@ export default function WorkoutDetailsScreen() {
                 gap: 8,
               }}
             >
+              <Pressable
+                onPress={copyWorkoutDetails}
+                disabled={exporting}
+                style={{
+                  width: 42,
+                  height: 42,
+                  borderRadius: 21,
+                  backgroundColor: theme.colors.background,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  opacity: exporting ? 0.5 : 1,
+                }}
+              >
+                <Copy size={20} color={theme.colors.text} />
+              </Pressable>
+
               <Pressable
                 onPress={() => openExportCustomizer("share")}
                 disabled={exporting}

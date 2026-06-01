@@ -5,7 +5,7 @@ import { AppTheme, useTheme } from "@/lib/theme";
 import { supabase } from "@/lib/supabase";
 import * as MediaLibrary from "expo-media-library";
 import * as Sharing from "expo-sharing";
-import { Download, Share2, X } from "lucide-react-native";
+import { Copy, Download, Share2, X } from "lucide-react-native";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -194,6 +194,40 @@ export default function CardioDetailsScreen() {
     setExportAction(type);
   }
 
+  function buildCardioClipboardText() {
+    if (!session) return "";
+
+    return [
+      `${titleText()} Cardio`,
+      formatDate(session.session_date),
+      `Distance: ${Number(session.distance_km || 0).toFixed(2)} km`,
+      `Steps: ${session.steps || 0}`,
+      `Calories: ${session.calories_burned || 0} kcal`,
+      `Duration: ${formatTime(session.duration_seconds)}`,
+    ].join("\n");
+  }
+
+  async function copyCardioDetails() {
+    try {
+      const Clipboard = await import("expo-clipboard");
+
+      await Clipboard.setStringAsync(buildCardioClipboardText());
+
+      showAlert({
+        title: "Copied",
+        message: "Cardio details copied to clipboard.",
+      });
+    } catch (error) {
+      console.log("Copy cardio details error:", error);
+
+      showAlert({
+        title: "Copy Failed",
+        message: "Something went wrong while copying cardio details.",
+        danger: true,
+      });
+    }
+  }
+
   async function confirmExport() {
     if (!exportAction) return;
 
@@ -350,6 +384,22 @@ export default function CardioDetailsScreen() {
           ),
           headerRight: () => (
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <Pressable
+                onPress={copyCardioDetails}
+                disabled={exporting}
+                style={{
+                  width: 42,
+                  height: 42,
+                  borderRadius: 21,
+                  backgroundColor: theme.colors.background,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  opacity: exporting ? 0.5 : 1,
+                }}
+              >
+                <Copy size={20} color={theme.colors.text} />
+              </Pressable>
+
               <Pressable
                 onPress={() => openExportCustomizer("share")}
                 disabled={exporting}
