@@ -209,6 +209,20 @@ export default function CardioDetailsScreen() {
 
   async function copyCardioDetails() {
     try {
+      const { requireOptionalNativeModule } = await import("expo-modules-core");
+      const nativeClipboard = requireOptionalNativeModule("ExpoClipboard");
+
+      if (!nativeClipboard) {
+        showAlert({
+          title: "Update Required",
+          message:
+            "Install the latest preview build to copy cardio details. EAS Update cannot add this native clipboard module to an older app build.",
+          danger: true,
+        });
+
+        return;
+      }
+
       const Clipboard = await import("expo-clipboard");
 
       await Clipboard.setStringAsync(buildCardioClipboardText());
