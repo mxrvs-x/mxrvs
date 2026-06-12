@@ -72,6 +72,7 @@ export type CardioSession = {
   duration_seconds: number;
   calories_burned: number;
   steps: number;
+  notes: string;
 };
 
 export type CreatineLog = {
@@ -192,6 +193,73 @@ export function formatMuscleGroup(group: string) {
     .split(/[\s_-]+/)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+const SPLIT_MUSCLE_GROUPS: Record<Exclude<WorkoutType, "rest">, MuscleGroup[]> = {
+  push: ["chest", "shoulders", "arms"],
+  pull: ["back", "arms"],
+  legs: ["legs", "core"],
+  upper: ["chest", "back", "shoulders", "arms"],
+  lower: ["legs", "shoulders", "arms", "core"],
+};
+
+function isRearDeltExercise(exercise: Pick<Exercise, "name" | "muscle_group">) {
+  const name = exercise.name.trim().toLowerCase();
+
+  return (
+    exercise.muscle_group === "shoulders" &&
+    (name.includes("rear delt") ||
+      name.includes("rear delts") ||
+      name.includes("rear deltoid") ||
+      name.includes("face pull") ||
+      name.includes("reverse fly") ||
+      name.includes("reverse pec deck"))
+  );
+}
+
+export function isExerciseRecommendedForWorkout(
+  exercise: Exercise,
+  type: WorkoutType,
+) {
+  if (type === "rest") return false;
+
+  return (
+    SPLIT_MUSCLE_GROUPS[type].includes(exercise.muscle_group) ||
+    (type === "pull" && isRearDeltExercise(exercise))
+  );
+}
+
+export function noteLines(notes: string) {
+  return notes
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+export function FormattedNotes({
+  notes,
+  fallback,
+}: {
+  notes: string;
+  fallback?: string;
+}) {
+  const lines = noteLines(notes);
+
+  if (lines.length === 0) {
+    return fallback ? <p className="muted">{fallback}</p> : null;
+  }
+
+  if (lines.length === 1) {
+    return <p className="muted">{lines[0]}</p>;
+  }
+
+  return (
+    <ul className="notes-list">
+      {lines.map((line, index) => (
+        <li key={`${line}-${index}`}>{line}</li>
+      ))}
+    </ul>
+  );
 }
 
 export function totalVolume(workout: Workout) {

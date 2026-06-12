@@ -20,12 +20,12 @@ import {
   formatMuscleGroup,
   formatWorkoutType,
   id,
+  isExerciseRecommendedForWorkout,
   isWorkoutType,
   MiniStat,
   Modal,
   toDateKey,
   type Exercise,
-  type MuscleGroup,
   type Workout,
   type WorkoutSet,
   type WorkoutType,
@@ -42,21 +42,8 @@ import { appAlert, appConfirm, appToast } from "@/lib/sweetAlert";
 const REST_OPTIONS = [30, 60, 90, 120, 180, 240, 300];
 const REST_COMPLETE_SOUND = "/sounds/timer-complete.mp3";
 
-const splitGroups: Record<Exclude<WorkoutType, "rest">, MuscleGroup[]> = {
-  push: ["chest", "shoulders", "arms"],
-  pull: ["back", "arms"],
-  legs: ["legs", "core"],
-  upper: ["chest", "back", "shoulders", "arms"],
-  lower: ["legs", "arms", "core"],
-};
-
 function getInitialSplit(value: string | null): WorkoutType {
   return isWorkoutType(value) ? value : "push";
-}
-
-function getExerciseGroups(type: WorkoutType) {
-  if (type === "rest") return [];
-  return splitGroups[type];
 }
 
 function playRestCompleteSound() {
@@ -231,17 +218,18 @@ export default function WorkoutSessionPage() {
   const todayWorkout = workouts.find(
     (workout) => workout.workout_date === toDateKey(),
   );
-  const recommendedGroups = getExerciseGroups(selectedType);
   const visibleExercises = useMemo(() => {
     return exercises
-      .filter((exercise) => recommendedGroups.includes(exercise.muscle_group))
+      .filter((exercise) =>
+        isExerciseRecommendedForWorkout(exercise, selectedType),
+      )
       .sort(
         (a, b) =>
           Number(b.is_compound) - Number(a.is_compound) ||
           a.muscle_group.localeCompare(b.muscle_group) ||
           a.name.localeCompare(b.name),
       );
-  }, [exercises, recommendedGroups]);
+  }, [exercises, selectedType]);
   const selectedExercises = visibleExercises.filter((exercise) =>
     selectedExerciseIds.has(exercise.id),
   );
@@ -501,9 +489,9 @@ export default function WorkoutSessionPage() {
             <p className="muted">
               {started
                 ? `${selectedExercises.length} exercises in session`
-                : `${selectedExerciseIds.size} selected from ${recommendedGroups
-                    .map(formatMuscleGroup)
-                    .join(", ")}`}
+                : `${selectedExerciseIds.size} selected from ${formatWorkoutType(
+                    selectedType,
+                  )}`}
             </p>
 
             {activeExercises.length === 0 ? (

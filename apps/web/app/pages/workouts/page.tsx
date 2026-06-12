@@ -5,6 +5,7 @@ import { CSSProperties, useEffect, useMemo, useState } from "react";
 import { History, Play, Settings } from "lucide-react";
 import {
   emptyWorkouts,
+  FormattedNotes,
   formatDate,
   formatWorkoutType,
   getTodayWorkoutPlan,
@@ -169,16 +170,20 @@ export default function WorkoutsPage() {
         ) : null}
 
         {recentWorkouts.map((workout) => (
-          <article className="list-item stack" key={workout.id}>
+          <Link
+            className="list-item stack"
+            href={`/pages/workouts/${workout.id}`}
+            key={workout.id}
+          >
             <div className="row between">
               <div>
                 <h3>{formatWorkoutType(workout.workout_type)}</h3>
                 <p className="muted">
-                  {workout.notes || "Workout session"} -{" "}
                   {formatDate(workout.workout_date)}
                 </p>
               </div>
             </div>
+            <FormattedNotes notes={workout.notes} fallback="Workout session" />
             <div className="row wrap">
               <MiniStat label="Duration" value={`${workout.duration_minutes} min`} />
               <MiniStat label="Sets" value={`${workout.sets.length}`} />
@@ -187,7 +192,7 @@ export default function WorkoutsPage() {
                 value={`${totalVolume(workout).toLocaleString()} kg`}
               />
             </div>
-          </article>
+          </Link>
         ))}
       </section>
     </div>

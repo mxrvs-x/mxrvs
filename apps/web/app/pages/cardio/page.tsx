@@ -1,11 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityCalendar,
   CardioReportChart,
   CardioSession,
   emptyCardio,
+  FormattedNotes,
   formatDate,
   MiniStat,
   paceText,
@@ -135,7 +137,11 @@ export default function CardioPage() {
             ) : null}
 
             {visibleSessions.map((session) => (
-              <article className="list-item stack" key={session.id}>
+              <Link
+                className="list-item stack"
+                href={`/pages/cardio/${session.id}`}
+                key={session.id}
+              >
                 <div className="row between">
                   <div>
                     <h3>{session.cardio_type === "running" ? "Run" : "Walk"}</h3>
@@ -149,7 +155,8 @@ export default function CardioPage() {
                   <MiniStat label="Pace" value={paceText(session.distance_km, session.duration_seconds)} />
                   <MiniStat label="Calories" value={`${session.calories_burned} kcal`} />
                 </div>
-              </article>
+                {session.notes ? <FormattedNotes notes={session.notes} /> : null}
+              </Link>
             ))}
           </div>
         </div>

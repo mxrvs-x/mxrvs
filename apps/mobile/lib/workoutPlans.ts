@@ -94,6 +94,40 @@ export function formatMuscleGroup(group: string | null) {
     .join(" ");
 }
 
+const SPLIT_MUSCLE_GROUPS: Record<Exclude<WorkoutType, "rest">, MuscleGroup[]> = {
+  push: ["chest", "shoulders", "arms"],
+  pull: ["back", "arms"],
+  legs: ["legs", "core"],
+  upper: ["chest", "back", "shoulders", "arms"],
+  lower: ["legs", "shoulders", "arms", "core"],
+};
+
+function isRearDeltExercise(exercise: WorkoutExerciseMeta) {
+  const name = exercise.name.trim().toLowerCase();
+
+  return (
+    exercise.muscle_group === "shoulders" &&
+    (name.includes("rear delt") ||
+      name.includes("rear delts") ||
+      name.includes("rear deltoid") ||
+      name.includes("face pull") ||
+      name.includes("reverse fly") ||
+      name.includes("reverse pec deck"))
+  );
+}
+
+export function isExerciseRecommendedForWorkout(
+  exercise: WorkoutExerciseMeta,
+  type: WorkoutType,
+) {
+  if (type === "rest") return false;
+
+  return (
+    SPLIT_MUSCLE_GROUPS[type].includes(exercise.muscle_group as MuscleGroup) ||
+    (type === "pull" && isRearDeltExercise(exercise))
+  );
+}
+
 function getExercisePriority(exercise: WorkoutExerciseMeta) {
   if (!exercise.movement_type || exercise.movement_type === "rest") return 0;
   return 1;

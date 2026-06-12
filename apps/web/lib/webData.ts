@@ -257,7 +257,7 @@ export async function loadWebCardio() {
 
   const { data, error } = await supabase
     .from("cardio_sessions")
-    .select("id, cardio_type, cardio_source, session_date, distance_km, duration_seconds, calories_burned, steps")
+    .select("id, cardio_type, cardio_source, session_date, distance_km, duration_seconds, calories_burned, steps, notes")
     .eq("user_id", user.id)
     .order("session_date", { ascending: false })
     .order("created_at", { ascending: false });
@@ -267,6 +267,7 @@ export async function loadWebCardio() {
     ...(session as CardioSession),
     calories_burned: Number(session.calories_burned) || 0,
     steps: Number(session.steps) || 0,
+    notes: session.notes || "",
   }));
 }
 

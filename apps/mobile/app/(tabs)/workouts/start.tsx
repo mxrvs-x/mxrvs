@@ -20,6 +20,7 @@ import {
   formatWorkoutType,
   getTodayWorkoutPlan,
   groupExercisesByMuscleGroup,
+  isExerciseRecommendedForWorkout,
   type WorkoutType,
   type WorkoutPlan,
 } from "@/lib/workoutPlans";
@@ -263,13 +264,19 @@ export default function StartWorkoutScreen() {
   const [activeExercise, setActiveExercise] = useState<Exercise | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
 
+  const recommendedExercises = useMemo(() => {
+    return exercises.filter((exercise) =>
+      isExerciseRecommendedForWorkout(exercise, selectedPlan.type),
+    );
+  }, [exercises, selectedPlan.type]);
+
   const selectedExercises = useMemo(() => {
     return exercises.filter((exercise) => selectedExerciseIds.has(exercise.id));
   }, [exercises, selectedExerciseIds]);
 
   const visibleExercises = session.sessionStarted
     ? selectedExercises
-    : exercises;
+    : recommendedExercises;
 
   const exerciseSections = useMemo(() => {
     return groupExercisesByMuscleGroup(visibleExercises);
@@ -837,7 +844,12 @@ export default function StartWorkoutScreen() {
   }, []);
 
   useEffect(() => {
-    const availableIds = new Set(exercises.map((exercise) => exercise.id));
+    const availableExercises = session.sessionStarted
+      ? exercises
+      : recommendedExercises;
+    const availableIds = new Set(
+      availableExercises.map((exercise) => exercise.id),
+    );
 
     setSelectedExerciseIds((current) => {
       const next = new Set(
@@ -846,7 +858,7 @@ export default function StartWorkoutScreen() {
 
       return next.size === current.size ? current : next;
     });
-  }, [exercises]);
+  }, [exercises, recommendedExercises, session.sessionStarted]);
 
   useEffect(() => {
     if (session.sessionStarted && !workoutTimerRef) {
@@ -1192,7 +1204,7 @@ export default function StartWorkoutScreen() {
             color={theme.colors.primary}
             style={{ marginTop: 20 }}
           />
-        ) : exercises.length === 0 ? (
+        ) : recommendedExercises.length === 0 ? (
           <View
             style={{
               backgroundColor: theme.colors.surface,
@@ -1207,7 +1219,7 @@ export default function StartWorkoutScreen() {
               No exercises found
             </Text>
             <Text style={{ color: theme.colors.textMuted, marginTop: 6 }}>
-              Go to setup and add exercises to your muscle-group library.
+              Go to setup and add exercises for {selectedPlan.label}.
             </Text>
           </View>
         ) : (
