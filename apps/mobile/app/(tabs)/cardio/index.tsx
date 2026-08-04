@@ -1,4 +1,10 @@
 import { toLocalDateKey } from "@/lib/dates";
+import {
+  getDailyActivitySnapshot,
+  refreshDailyActivity,
+  requestDailyActivityPermission,
+  subscribeDailyActivity,
+} from "@/lib/dailyActivity";
 import { AppTheme, useTheme } from "@/lib/theme";
 import {
   cacheCardioSessions,
@@ -10,7 +16,12 @@ import {
 import { supabase } from "@/lib/supabase";
 import NetInfo from "@react-native-community/netinfo";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import {
+  useCallback,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -40,6 +51,11 @@ export default function CardioHome() {
   );
 
   const router = useRouter();
+  const dailyActivity = useSyncExternalStore(
+    subscribeDailyActivity,
+    getDailyActivitySnapshot,
+    getDailyActivitySnapshot,
+  );
 
   const [sessions, setSessions] = useState<CardioSession[]>([]);
   const [weeklySessions, setWeeklySessions] = useState<CardioSession[]>([]);
@@ -48,6 +64,8 @@ export default function CardioHome() {
 
   async function loadSessions(showLoader = false) {
     if (showLoader) setLoading(true);
+
+    await refreshDailyActivity();
 
     const net = await NetInfo.fetch();
     const isOnline = Boolean(
@@ -244,6 +262,100 @@ export default function CardioHome() {
           emoji="🚶"
           onPress={() => router.push("/cardio/walk" as any)}
         />
+      </View>
+
+      <View
+        style={{
+          marginTop: 20,
+          backgroundColor: theme.colors.surface,
+          borderRadius: 20,
+          padding: 16,
+        }}
+      >
+        <Text style={{ fontSize: 18, fontWeight: "900" }}>
+          Today&apos;s Activity
+        </Text>
+
+        {!dailyActivity.available ? (
+          <Text style={{ color: theme.colors.textMuted, marginTop: 10 }}>
+            A native step-counter sensor is not available on this device.
+          </Text>
+        ) : !dailyActivity.permissionGranted ? (
+          <>
+            <Text style={{ color: theme.colors.textMuted, marginTop: 10 }}>
+              Enable Physical Activity access to show daily steps.
+            </Text>
+            <Pressable
+              onPress={() => void requestDailyActivityPermission()}
+              style={{
+                marginTop: 12,
+                borderRadius: 12,
+                padding: 12,
+                alignItems: "center",
+                backgroundColor: theme.colors.text,
+              }}
+            >
+              <Text
+                style={{ color: theme.colors.surface, fontWeight: "900" }}
+              >
+                Enable Daily Steps
+              </Text>
+            </Pressable>
+          </>
+        ) : (
+          <>
+            <View style={{ flexDirection: "row", marginTop: 12, gap: 10 }}>
+              <Stat
+                theme={theme}
+                label="Steps"
+                value={dailyActivity.steps.toLocaleString()}
+              />
+              <Stat
+                theme={theme}
+                label="Moving Time"
+                value={formatTime(dailyActivity.movingSeconds)}
+              />
+              <Stat
+                theme={theme}
+                label="Est. Calories"
+                value={
+                  dailyActivity.weightKg
+                    ? `${dailyActivity.caloriesBurned} kcal`
+                    : "Log weight"
+                }
+              />
+            </View>
+
+            <Text
+              style={{
+                color: theme.colors.textFaint,
+                marginTop: 12,
+                lineHeight: 18,
+                fontSize: 12,
+              }}
+            >
+              Steps come only from the phone&apos;s native pedometer. Moving
+              time is estimated from step cadence
+              {dailyActivity.weightKg
+                ? `; calories use your latest ${dailyActivity.weightKg.toFixed(1)} kg log.`
+                : "; log today’s weight for a calorie estimate."}
+            </Text>
+
+            {dailyActivity.trackingScope === "while-app-running" ? (
+              <Text
+                style={{
+                  color: theme.colors.textFaint,
+                  marginTop: 6,
+                  lineHeight: 18,
+                  fontSize: 12,
+                }}
+              >
+                On Android, this build records daily steps while mxrvs is
+                running. Full closed-app history requires Health Connect.
+              </Text>
+            ) : null}
+          </>
+        )}
       </View>
 
       <View

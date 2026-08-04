@@ -14,7 +14,7 @@ import {
   type Workout,
   type WorkoutSet,
 } from "@/app/components/shared";
-import { loadWebWorkouts, type SyncState } from "@/lib/webData";
+import { loadWebWorkoutDetails, type SyncState } from "@/lib/webData";
 import { appAlert, appToast } from "@/lib/sweetAlert";
 
 function routeParam(value: string | string[] | undefined) {
@@ -89,7 +89,9 @@ export default function WorkoutDetailsPage() {
   useEffect(() => {
     let active = true;
 
-    loadWebWorkouts().then((data) => {
+    if (!workoutId) return;
+
+    loadWebWorkoutDetails(workoutId).then((data) => {
       if (!active) return;
       if (!data) {
         void appAlert(
@@ -100,14 +102,14 @@ export default function WorkoutDetailsPage() {
         return;
       }
 
-      setWorkouts(data.workouts);
+      setWorkouts([data]);
       setSyncState("supabase");
     });
 
     return () => {
       active = false;
     };
-  }, []);
+  }, [workoutId]);
 
   const workout = workouts.find((item) => item.id === workoutId) || null;
   const groupedSets = useMemo(

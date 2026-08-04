@@ -44,6 +44,7 @@
     "expo-updates": "~29.0.17",
     "expo-web-browser": "~15.0.10",
     "lucide-react-native": "^1.14.0",
+    "mxrvs-step-tracker": "file:./modules/mxrvs-step-tracker",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-native": "0.81.5",

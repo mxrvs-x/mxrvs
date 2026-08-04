@@ -22,7 +22,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.anonymous.mxrvs",
       "infoPlist": {
-        "NSMotionUsageDescription": "Allow mxrvs to count your steps during your runs.",
+        "NSMotionUsageDescription": "Allow mxrvs to count daily steps and steps during cardio sessions.",
         "NSLocationWhenInUseUsageDescription": "Allow mxrvs to track your running routes."
       }
     },
@@ -61,7 +61,7 @@
       [
         "expo-sensors",
         {
-          "motionPermission": "Allow mxrvs to count steps."
+          "motionPermission": "Allow mxrvs to count daily steps and steps during cardio sessions."
         }
       ],
       [

@@ -156,6 +156,75 @@ export async function loadWebWorkouts() {
   };
 }
 
+export async function loadWebWorkoutDetails(workoutId: string) {
+  const user = await getWebUser();
+  if (!user) return null;
+
+  const [{ data: workout, error: workoutError }, { data: sets, error: setsError }] =
+    await Promise.all([
+      supabase
+        .from("workouts")
+        .select("id, workout_date, workout_type, notes, duration_minutes, created_at")
+        .eq("id", workoutId)
+        .eq("user_id", user.id)
+        .maybeSingle(),
+      supabase
+        .from("workout_sets")
+        .select("id, workout_id, exercise_id, set_number, reps, weight_kg, rest_seconds")
+        .eq("workout_id", workoutId)
+        .eq("user_id", user.id)
+        .order("exercise_id", { ascending: true })
+        .order("set_number", { ascending: true }),
+    ]);
+
+  if (workoutError || setsError || !workout) {
+    console.error("Load web workout details error:", {
+      workoutError,
+      setsError,
+      workoutId,
+    });
+    return null;
+  }
+
+  const setRows = (sets || []) as DbWorkoutSet[];
+  const exerciseIds = Array.from(
+    new Set(setRows.map((set) => set.exercise_id)),
+  );
+  const exerciseMap = new Map<string, string>();
+
+  if (exerciseIds.length > 0) {
+    const { data: exercises, error: exercisesError } = await supabase
+      .from("exercises")
+      .select("id, name")
+      .eq("user_id", user.id)
+      .in("id", exerciseIds);
+
+    if (exercisesError) {
+      console.error("Load web workout exercise names error:", exercisesError);
+    }
+
+    (exercises || []).forEach((exercise) => {
+      exerciseMap.set(exercise.id, exercise.name);
+    });
+  }
+
+  return {
+    ...(workout as Omit<Workout, "sets">),
+    workout_type: workout.workout_type as WorkoutType,
+    notes: workout.notes || "",
+    duration_minutes: Number(workout.duration_minutes) || 0,
+    sets: setRows.map((set) => ({
+      id: set.id,
+      exercise_id: set.exercise_id,
+      exercise_name: exerciseMap.get(set.exercise_id) || "Unknown Exercise",
+      set_number: Number(set.set_number) || 0,
+      reps: Number(set.reps) || 0,
+      weight_kg: Number(set.weight_kg) || 0,
+      rest_seconds: Number(set.rest_seconds) || 0,
+    })),
+  } satisfies Workout;
+}
+
 export async function saveWebExercise(form: {
   id?: string;
   name: string;

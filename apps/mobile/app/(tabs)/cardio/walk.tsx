@@ -81,7 +81,7 @@ let watchRef: Location.LocationSubscription | null = null;
 let pedometerRef: Pedometer.Subscription | null = null;
 
 let lastPointRef: RoutePoint | null = null;
-let lastRawStepsRef = 0;
+let lastRawStepsRef: number | null = null;
 
 function getWalkSession() {
   return walkSession;
@@ -335,7 +335,7 @@ function resetSession() {
     walkSource: currentSource,
   });
 
-  lastRawStepsRef = 0;
+  lastRawStepsRef = null;
   lastPointRef = null;
 }
 
@@ -627,6 +627,12 @@ export default function WalkScreen() {
       if (pedometerAvailable) {
         pedometerRef = Pedometer.watchStepCount((result) => {
           const rawSteps = result.steps;
+
+          if (lastRawStepsRef === null) {
+            lastRawStepsRef = rawSteps;
+            return;
+          }
+
           const previousRawSteps = lastRawStepsRef;
           const delta = Math.max(0, rawSteps - previousRawSteps);
 
