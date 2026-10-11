@@ -97,6 +97,14 @@ export async function getCachedBodyStats() {
 
 export async function cacheLatestBodyWeightLog(log: BodyWeightLogRecord | null) {
   if (!log) return;
+  await cacheBodyWeightForWidget(log);
+}
+
+/**
+ * Keep exactly one weight record for native/widget calorie estimates. A newly
+ * logged weight replaces the previous record; it is not expired by local date.
+ */
+export async function cacheBodyWeightForWidget(log: { weight_kg: number }) {
   await AsyncStorage.setItem(CACHED_WEIGHT_LOG_KEY, JSON.stringify(log));
   await cacheOfflineBodyWeightKg(Number(log.weight_kg));
 }
@@ -104,6 +112,41 @@ export async function cacheLatestBodyWeightLog(log: BodyWeightLogRecord | null) 
 export async function getCachedLatestBodyWeightLog() {
   const raw = await AsyncStorage.getItem(CACHED_WEIGHT_LOG_KEY);
   return raw ? (JSON.parse(raw) as BodyWeightLogRecord) : null;
+}
+
+/**
+ * Refresh the latest weight from Supabase when possible, while retaining the
+ * cached value for offline launches and widget updates before auth is ready.
+ */
+export async function loadLatestBodyWeightLog() {
+  const cached = await getCachedLatestBodyWeightLog();
+  const online = await isOnline();
+  if (!online) return cached;
+
+  const userId = await resolveOfflineUserId();
+  if (!userId) return cached;
+
+  const { data, error } = await supabase
+    .from("body_weight_logs")
+    .select(
+      "id, user_id, date, logged_at, weight_kg, body_fat_percent, created_at",
+    )
+    .eq("user_id", userId)
+    .order("logged_at", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.log("Load latest body weight error:", error);
+    return cached;
+  }
+
+  if (!data) return cached;
+
+  const latest = data as BodyWeightLogRecord;
+  await cacheLatestBodyWeightLog(latest);
+  return latest;
 }
 
 export async function logBodyWeightOffline({

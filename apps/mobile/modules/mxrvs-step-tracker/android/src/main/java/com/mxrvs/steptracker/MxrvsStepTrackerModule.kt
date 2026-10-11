@@ -35,5 +35,18 @@ class MxrvsStepTrackerModule : Module() {
       ActivityWidgetProvider.updateAll(context)
       StepTrackerStore.snapshot(context)
     }
+
+    AsyncFunction("archiveCurrentActivityAsync") {
+      StepTrackerStore.archiveCurrentActivity(context)
+      StepTrackerStore.getArchivedActivities(context)
+    }
+
+    AsyncFunction("getArchivedActivitiesAsync") {
+      StepTrackerStore.getArchivedActivities(context)
+    }
+
+    AsyncFunction("removeArchivedActivityAsync") { activityDate: String, syncedSteps: Int ->
+      StepTrackerStore.removeArchivedActivity(context, activityDate, syncedSteps)
+    }
   }
 }

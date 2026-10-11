@@ -5,6 +5,7 @@ import {
   syncOfflineBodyWeightLogs,
 } from "@/lib/offlineWeight";
 import { syncOfflineWorkouts } from "@/lib/offlineWorkouts";
+import { syncArchivedOverallActivities } from "@/lib/overallActivity";
 import NetInfo from "@react-native-community/netinfo";
 import { useEffect } from "react";
 
@@ -15,6 +16,7 @@ async function syncOfflineQueues() {
     syncOfflineCreatineLogs(),
     syncOfflineBodyWeightLogs(),
     syncOfflineWorkouts(),
+    syncArchivedOverallActivities(),
   ]);
 }
 

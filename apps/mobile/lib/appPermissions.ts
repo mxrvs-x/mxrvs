@@ -1,3 +1,4 @@
+import { startDailyActivityTracking } from "@/lib/dailyActivity";
 import * as Location from "expo-location";
 import { Pedometer } from "expo-sensors";
 import { Alert, Linking, Platform } from "react-native";
@@ -25,6 +26,12 @@ export async function requestFitnessPermissions() {
       // On some Android versions, this returns immediately; on iOS, it shows a popup
       const activityPermission = await Pedometer.requestPermissionsAsync();
       results.activityGranted = activityPermission.granted || activityPermission.status === "granted";
+
+      if (results.activityGranted) {
+        await startDailyActivityTracking().catch((error) => {
+          console.log("Start daily activity tracking error:", error);
+        });
+      }
     } else {
       // If pedometer isn't available (like on a simulator), 
       // decide if you want to block the run or just mark it false.

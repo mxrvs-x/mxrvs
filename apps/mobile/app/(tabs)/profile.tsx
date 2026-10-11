@@ -3,10 +3,12 @@ import LogBodyWeightModal, {
   BodyWeightLogForm,
 } from "@/components/LogBodyWeightModal";
 import ThemedAlert from "@/components/ThemedAlert";
+import { refreshDailyActivity } from "@/lib/dailyActivity";
 import { cacheOfflineBodyWeightKg, isOnline } from "@/lib/offlineCardio";
 import { resolveOfflineUserId } from "@/lib/offlineUser";
 import {
   cacheBodyStats,
+  cacheBodyWeightForWidget,
   loadBodyWeightLogs,
   loadOfflineProfileFallback,
   logBodyWeightOffline,
@@ -183,7 +185,8 @@ export default function ProfileScreen() {
     await cacheBodyStats(stats);
 
     if (weightLog?.weight_kg) {
-      await cacheOfflineBodyWeightKg(Number(weightLog.weight_kg));
+      await cacheBodyWeightForWidget(weightLog);
+      await refreshDailyActivity();
     }
 
     setLoading(false);
@@ -272,6 +275,7 @@ export default function ProfileScreen() {
         const nextLog = await logBodyWeightOffline(payload);
         setBodyWeightLog(nextLog as BodyWeightLog);
         await cacheOfflineBodyWeightKg(Number(nextLog.weight_kg));
+        await refreshDailyActivity();
         await syncWeightReminderState({ allowImmediate: false });
         setLogWeightVisible(false);
         showAlert("Saved Offline", "Your weight will sync when you are online.");
@@ -289,6 +293,7 @@ export default function ProfileScreen() {
         const nextLog = await logBodyWeightOffline(payload);
         setBodyWeightLog(nextLog as BodyWeightLog);
         await cacheOfflineBodyWeightKg(Number(nextLog.weight_kg));
+        await refreshDailyActivity();
         setLogWeightVisible(false);
         showAlert("Saved Offline", "Your weight will sync when you are online.");
         return;
@@ -296,7 +301,8 @@ export default function ProfileScreen() {
 
       const nextLog = data as BodyWeightLog;
       setBodyWeightLog(nextLog);
-      await cacheOfflineBodyWeightKg(Number(nextLog.weight_kg));
+      await cacheBodyWeightForWidget(nextLog);
+      await refreshDailyActivity();
       await syncWeightReminderState({ allowImmediate: false });
       setLogWeightVisible(false);
       showAlert("Logged", "Your weight is saved for cardio estimates.");

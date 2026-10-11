@@ -10,6 +10,15 @@ export type NativeStepSnapshot = {
   weightKg: number | null;
   heightCm: number | null;
   trackingEnabled: boolean;
+  inVehicle: boolean;
+  vehicleActivityUpdatedAt: number;
+};
+
+export type NativeArchivedActivity = {
+  activityDate: string;
+  steps: number;
+  durationSeconds: number;
+  caloriesBurned: number;
 };
 
 type MxrvsStepTrackerModule = {
@@ -21,6 +30,12 @@ type MxrvsStepTrackerModule = {
     weightKg: number | null,
     heightCm: number | null,
   ): Promise<NativeStepSnapshot>;
+  archiveCurrentActivityAsync(): Promise<NativeArchivedActivity[]>;
+  getArchivedActivitiesAsync(): Promise<NativeArchivedActivity[]>;
+  removeArchivedActivityAsync(
+    activityDate: string,
+    syncedSteps: number,
+  ): Promise<void>;
 };
 
 const nativeModule =
@@ -53,4 +68,19 @@ export async function setNativeAndroidBodyMetrics(
   heightCm: number | null,
 ) {
   return nativeModule?.setBodyMetricsAsync(weightKg, heightCm) ?? null;
+}
+
+export async function archiveCurrentNativeAndroidActivity() {
+  return nativeModule?.archiveCurrentActivityAsync() ?? [];
+}
+
+export async function getNativeAndroidArchivedActivities() {
+  return nativeModule?.getArchivedActivitiesAsync() ?? [];
+}
+
+export async function removeNativeAndroidArchivedActivity(
+  activityDate: string,
+  syncedSteps: number,
+) {
+  return nativeModule?.removeArchivedActivityAsync(activityDate, syncedSteps);
 }

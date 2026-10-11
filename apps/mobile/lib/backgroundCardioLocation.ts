@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { refreshVehicleActivity } from "@/lib/vehicleActivity";
 import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
 
@@ -42,6 +43,8 @@ if (!TaskManager.isTaskDefined(BACKGROUND_CARDIO_LOCATION_TASK)) {
       console.log("Background cardio location error:", error);
       return;
     }
+
+    if (await refreshVehicleActivity()) return;
 
     const points =
       data.locations?.map((location) => ({

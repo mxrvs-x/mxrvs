@@ -14,8 +14,8 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Build
 import android.os.IBinder
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
-import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 
 class StepCounterService : Service(), SensorEventListener {
@@ -37,10 +37,12 @@ class StepCounterService : Service(), SensorEventListener {
 
     StepTrackerStore.setEnabled(this, true)
     startInForeground()
+    VehicleActivityTracker.register(this)
     sensorManager.registerListener(
       this,
       stepCounter,
-      SensorManager.SENSOR_DELAY_NORMAL
+      SensorManager.SENSOR_DELAY_NORMAL,
+      SENSOR_BATCH_LATENCY_US
     )
     ActivityWidgetProvider.updateAll(this)
     return START_STICKY
@@ -49,14 +51,22 @@ class StepCounterService : Service(), SensorEventListener {
   override fun onSensorChanged(event: SensorEvent) {
     if (event.sensor.type != Sensor.TYPE_STEP_COUNTER) return
 
-    val delta = StepTrackerStore.recordSensorTotal(this, event.values[0].toInt())
+    val elapsedSinceEventMs =
+      ((SystemClock.elapsedRealtimeNanos() - event.timestamp) / 1_000_000L)
+        .coerceAtLeast(0L)
+    val eventWallTimeMs = System.currentTimeMillis() - elapsedSinceEventMs
+    val delta = StepTrackerStore.recordSensorTotal(
+      this,
+      event.values[0].toInt(),
+      eventWallTimeMs,
+      countSteps = !StepTrackerStore.isInVehicle(this)
+    )
     if (delta <= 0) return
 
     val steps = StepTrackerStore.getSteps(this)
     val now = System.currentTimeMillis()
     if (StepTrackerStore.shouldRefreshWidget(this, steps, now)) {
       ActivityWidgetProvider.updateAll(this)
-      updateNotification(steps)
     }
   }
 
@@ -70,10 +80,9 @@ class StepCounterService : Service(), SensorEventListener {
   override fun onBind(intent: Intent?): IBinder? = null
 
   private fun startInForeground() {
-    val notification = buildNotification(StepTrackerStore.getSteps(this))
+    val notification = buildNotification()
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-      ServiceCompat.startForeground(
-        this,
+      startForeground(
         NOTIFICATION_ID,
         notification,
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -87,12 +96,7 @@ class StepCounterService : Service(), SensorEventListener {
     }
   }
 
-  private fun updateNotification(steps: Int) {
-    val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-    manager.notify(NOTIFICATION_ID, buildNotification(steps))
-  }
-
-  private fun buildNotification(steps: Int): android.app.Notification {
+  private fun buildNotification(): android.app.Notification {
     val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
     val pendingIntent =
       launchIntent?.let {
@@ -107,11 +111,12 @@ class StepCounterService : Service(), SensorEventListener {
     return NotificationCompat.Builder(this, CHANNEL_ID)
       .setSmallIcon(android.R.drawable.ic_menu_directions)
       .setContentTitle("mxrvs daily activity")
-      .setContentText("%,d steps today".format(steps))
+      .setContentText("Daily activity tracking is active")
       .setContentIntent(pendingIntent)
       .setOnlyAlertOnce(true)
       .setOngoing(true)
-      .setSilent(true)
+      .setSound(null)
+      .setPriority(NotificationCompat.PRIORITY_MIN)
       .setCategory(NotificationCompat.CATEGORY_SERVICE)
       .build()
   }
@@ -122,19 +127,23 @@ class StepCounterService : Service(), SensorEventListener {
     val channel = NotificationChannel(
       CHANNEL_ID,
       "Daily step tracking",
-      NotificationManager.IMPORTANCE_LOW
+      NotificationManager.IMPORTANCE_MIN
     ).apply {
       description = "Keeps the low-power device pedometer active."
       setSound(null, null)
       enableVibration(false)
+      setShowBadge(false)
     }
     val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     manager.createNotificationChannel(channel)
   }
 
   companion object {
-    private const val CHANNEL_ID = "mxrvs_daily_steps"
+    // A new channel is required because Android does not let apps lower an
+    // existing channel's importance after the user has installed it.
+    private const val CHANNEL_ID = "mxrvs_daily_steps_v2"
     private const val NOTIFICATION_ID = 7312
+    private const val SENSOR_BATCH_LATENCY_US = 30_000_000
 
     fun hasActivityPermission(context: Context): Boolean =
       Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
@@ -151,20 +160,26 @@ class StepCounterService : Service(), SensorEventListener {
     fun start(context: Context) {
       if (!hasActivityPermission(context) || !isSensorAvailable(context)) return
       StepTrackerStore.setEnabled(context, true)
-      ContextCompat.startForegroundService(
-        context,
-        Intent(context, StepCounterService::class.java)
-      )
+      try {
+        ContextCompat.startForegroundService(
+          context,
+          Intent(context, StepCounterService::class.java)
+        )
+      } catch (error: RuntimeException) {
+        StepTrackerStore.setEnabled(context, false)
+        throw error
+      }
     }
 
     fun startIfPermitted(context: Context) {
-      if (StepTrackerStore.isEnabled(context) || hasActivityPermission(context)) {
+      if (StepTrackerStore.isEnabled(context) && hasActivityPermission(context)) {
         start(context)
       }
     }
 
     fun stop(context: Context) {
       StepTrackerStore.setEnabled(context, false)
+      VehicleActivityTracker.unregister(context)
       context.stopService(Intent(context, StepCounterService::class.java))
       ActivityWidgetProvider.updateAll(context)
     }

@@ -1,6 +1,7 @@
 import {
   getCachedBodyStats,
   getCachedLatestBodyWeightLog,
+  loadLatestBodyWeightLog,
 } from "@/lib/offlineWeight";
 import {
   getNativeAndroidStepSnapshot,
@@ -44,6 +45,9 @@ let lastRawSteps: number | null = null;
 let snapshot: DailyActivity = emptySnapshot();
 let stepUpdatePromise = Promise.resolve();
 let nativeAndroidTrackerAvailable = false;
+let nativeAndroidTrackerRunning = false;
+let nativeAndroidTrackerFailed = false;
+let trackingGeneration = 0;
 
 function dateKey(date = new Date()) {
   const year = date.getFullYear();
@@ -69,7 +73,7 @@ function emptySnapshot(): DailyActivity {
     available: false,
     permissionGranted: false,
     trackingScope:
-      Platform.OS === "ios" || nativeAndroidTrackerAvailable
+      Platform.OS === "ios" || nativeAndroidTrackerRunning
         ? "all-day"
         : "while-app-running",
     updatedAt: new Date().toISOString(),
@@ -135,7 +139,7 @@ async function buildSnapshot({
     available,
     permissionGranted,
     trackingScope:
-      Platform.OS === "ios" || nativeAndroidTrackerAvailable
+      Platform.OS === "ios" || nativeAndroidTrackerRunning
         ? "all-day"
         : "while-app-running",
     updatedAt: new Date().toISOString(),
@@ -157,14 +161,33 @@ export function subscribeDailyActivity(listener: () => void) {
 export async function refreshDailyActivity() {
   nativeAndroidTrackerAvailable =
     Platform.OS === "android" &&
+    !nativeAndroidTrackerFailed &&
     hasNativeAndroidStepTracker() &&
     (await isNativeAndroidStepTrackerAvailable());
+  nativeAndroidTrackerRunning = false;
   const available = nativeAndroidTrackerAvailable
     ? true
     : await Pedometer.isAvailableAsync().catch(() => false);
   const permission = await Pedometer.getPermissionsAsync().catch(() => null);
   const permissionGranted = Boolean(permission?.granted);
   const stored = await loadStoredSteps();
+
+  // The Android widget cannot query Supabase itself. Refresh the latest
+  // body_weight_logs row while JS is active, then copy it into native storage
+  // so calorie calculations continue after the app goes into the background.
+  const [weightLog, bodyStats] = await Promise.all([
+    loadLatestBodyWeightLog(),
+    getCachedBodyStats(),
+  ]);
+  const weight = Number(weightLog?.weight_kg);
+  const height = Number(bodyStats?.height_cm);
+
+  if (nativeAndroidTrackerAvailable) {
+    await setNativeAndroidBodyMetrics(
+      Number.isFinite(weight) && weight > 0 ? weight : null,
+      Number.isFinite(height) && height > 0 ? height : null,
+    ).catch(() => null);
+  }
 
   if (!available || !permissionGranted) {
     return buildSnapshot({
@@ -177,21 +200,13 @@ export async function refreshDailyActivity() {
   let steps = stored?.steps ?? 0;
 
   if (nativeAndroidTrackerAvailable) {
-    const [weightLog, bodyStats] = await Promise.all([
-      getCachedLatestBodyWeightLog(),
-      getCachedBodyStats(),
-    ]);
-    const weight = Number(weightLog?.weight_kg);
-    const height = Number(bodyStats?.height_cm);
-
-    await setNativeAndroidBodyMetrics(
-      Number.isFinite(weight) && weight > 0 ? weight : null,
-      Number.isFinite(height) && height > 0 ? height : null,
+    const nativeSnapshot = await getNativeAndroidStepSnapshot().catch(
+      () => null,
     );
-    const nativeSnapshot = await getNativeAndroidStepSnapshot();
 
     if (nativeSnapshot) {
       steps = nativeSnapshot.steps;
+      nativeAndroidTrackerRunning = nativeSnapshot.trackingEnabled;
       await saveStoredSteps(steps);
     }
   } else if (Platform.OS === "ios") {
@@ -225,14 +240,27 @@ export async function requestDailyActivityPermission() {
 }
 
 export async function startDailyActivityTracking() {
-  await stopDailyActivityTracking();
+  const generation = ++trackingGeneration;
+  removePedometerSubscription();
 
   const current = await refreshDailyActivity();
+  if (generation !== trackingGeneration) return current;
   if (!current.available || !current.permissionGranted) return current;
 
   if (nativeAndroidTrackerAvailable) {
-    await startNativeAndroidStepTracker();
-    return refreshDailyActivity();
+    const nativeSnapshot = await startNativeAndroidStepTracker().catch(
+      () => null,
+    );
+    if (generation !== trackingGeneration) return current;
+
+    nativeAndroidTrackerRunning = Boolean(nativeSnapshot?.trackingEnabled);
+    if (nativeAndroidTrackerRunning) return refreshDailyActivity();
+
+    // Keep the current session useful if the custom service cannot start.
+    // Expo's listener is foreground-only on Android, which is reflected in
+    // trackingScope below.
+    nativeAndroidTrackerFailed = true;
+    nativeAndroidTrackerAvailable = false;
   }
 
   lastRawSteps = null;
@@ -278,6 +306,11 @@ export async function startDailyActivityTracking() {
 }
 
 export async function stopDailyActivityTracking() {
+  trackingGeneration += 1;
+  removePedometerSubscription();
+}
+
+function removePedometerSubscription() {
   pedometerSubscription?.remove();
   pedometerSubscription = null;
   lastRawSteps = null;

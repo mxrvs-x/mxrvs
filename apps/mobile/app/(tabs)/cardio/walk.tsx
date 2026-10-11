@@ -17,6 +17,10 @@ import {
 } from "@/lib/offlineCardio";
 import { supabase } from "@/lib/supabase";
 import { AppTheme, useTheme } from "@/lib/theme";
+import {
+  getVehicleActivitySnapshot,
+  subscribeVehicleActivity,
+} from "@/lib/vehicleActivity";
 import * as Location from "expo-location";
 import { Pedometer } from "expo-sensors";
 import { Stack, useRouter } from "expo-router";
@@ -45,6 +49,7 @@ type WalkSession = {
   walkSource: WalkSource;
   tracking: boolean;
   isPaused: boolean;
+  inVehicle: boolean;
   startedAtMs: number | null;
   activeMs: number;
   seconds: number;
@@ -62,6 +67,7 @@ const initialWalkSession: WalkSession = {
   walkSource: "outdoor",
   tracking: false,
   isPaused: false,
+  inVehicle: false,
   startedAtMs: null,
   activeMs: 0,
   seconds: 0,
@@ -79,9 +85,11 @@ const walkSubscribers = new Set<() => void>();
 let timerRef: ReturnType<typeof setInterval> | null = null;
 let watchRef: Location.LocationSubscription | null = null;
 let pedometerRef: Pedometer.Subscription | null = null;
+let stopVehicleActivityRef: (() => void) | null = null;
 
 let lastPointRef: RoutePoint | null = null;
 let lastRawStepsRef: number | null = null;
+let inVehicleRef = false;
 
 function getWalkSession() {
   return walkSession;
@@ -177,7 +185,7 @@ function handleLocationUpdate(location: Location.LocationObject) {
     longitudeDelta: 0.005,
   };
 
-  if (current.isPaused) {
+  if (current.isPaused || inVehicleRef) {
     lastPointRef = point;
 
     setWalkSession({
@@ -318,6 +326,10 @@ function stopWatchers() {
 
   pedometerRef?.remove();
   pedometerRef = null;
+
+  stopVehicleActivityRef?.();
+  stopVehicleActivityRef = null;
+  inVehicleRef = false;
 
   void stopBackgroundCardioLocation();
 
@@ -555,6 +567,10 @@ export default function WalkScreen() {
       return "Paused. Duration, distance, pace, steps, and route are currently frozen.";
     }
 
+    if (session.inVehicle) {
+      return "Vehicle detected. Steps, GPS distance, and route points are temporarily ignored.";
+    }
+
     if (session.walkSource === "treadmill") {
       if (!heightCm) {
         return "Add a saved height to estimate treadmill/home distance from sensor steps.";
@@ -619,6 +635,13 @@ export default function WalkScreen() {
 
     startTimer();
 
+    inVehicleRef = getVehicleActivitySnapshot();
+    stopVehicleActivityRef = subscribeVehicleActivity((nextInVehicle) => {
+      inVehicleRef = nextInVehicle;
+      lastPointRef = null;
+      setWalkSession({ inVehicle: nextInVehicle });
+    });
+
     try {
       const pedometerAvailable = await Pedometer.isAvailableAsync().catch(
         () => false,
@@ -638,7 +661,7 @@ export default function WalkScreen() {
 
           lastRawStepsRef = rawSteps;
 
-          if (getWalkSession().isPaused) return;
+          if (getWalkSession().isPaused || inVehicleRef) return;
 
           setWalkSession((prev) => ({
             ...prev,

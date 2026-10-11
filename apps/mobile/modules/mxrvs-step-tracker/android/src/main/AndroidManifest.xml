@@ -1,5 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
   <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+  <uses-permission android:name="com.google.android.gms.permission.ACTIVITY_RECOGNITION" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" />
   <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
@@ -7,12 +8,14 @@
   <application>
     <service
       android:name=".StepCounterService"
+      android:directBootAware="true"
       android:exported="false"
       android:foregroundServiceType="health"
       android:stopWithTask="false" />
 
     <receiver
       android:name=".StepTrackerBootReceiver"
+      android:directBootAware="true"
       android:enabled="true"
       android:exported="true">
       <intent-filter>
@@ -21,6 +24,11 @@
         <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
       </intent-filter>
     </receiver>
+
+    <receiver
+      android:name=".VehicleActivityReceiver"
+      android:directBootAware="true"
+      android:exported="false" />
 
     <receiver
       android:name=".ActivityWidgetProvider"
