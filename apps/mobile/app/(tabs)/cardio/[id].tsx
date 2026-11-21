@@ -7,7 +7,7 @@ import * as MediaLibrary from "expo-media-library";
 import * as Sharing from "expo-sharing";
 import { Copy, Download, Share2, X } from "lucide-react-native";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   ImageBackground,
@@ -69,11 +69,7 @@ export default function CardioDetailsScreen() {
   const [alertConfirmText, setAlertConfirmText] = useState("OK");
   const [alertDanger, setAlertDanger] = useState(false);
 
-  useEffect(() => {
-    loadSession();
-  }, [id]);
-
-  async function loadSession() {
+  const loadSession = useCallback(async () => {
     if (!id) return;
 
     setLoading(true);
@@ -93,7 +89,11 @@ export default function CardioDetailsScreen() {
 
     setSession(data);
     setLoading(false);
-  }
+  }, [id]);
+
+  useEffect(() => {
+    void loadSession();
+  }, [loadSession]);
 
   function formatTime(totalSeconds?: number | null) {
     if (!totalSeconds) return "0:00";

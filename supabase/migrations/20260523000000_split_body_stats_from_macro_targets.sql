@@ -214,6 +214,6 @@ alter table public.body_stats
   drop column if exists body_fat_percent,
   drop column if exists date;
 
-alter table public.macro_targets
+alter table if exists public.macro_targets
   drop column if exists weight_kg,
   drop column if exists height_cm;

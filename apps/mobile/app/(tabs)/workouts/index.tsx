@@ -64,6 +64,7 @@ function formatDate(date: string) {
 export default function WorkoutIndexScreen() {
   const router = useRouter();
   const theme = useTheme();
+  const { setSessionTheme } = theme;
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -73,7 +74,7 @@ export default function WorkoutIndexScreen() {
 
   const suggestedPlan = useMemo(() => getTodayWorkoutPlan(), []);
 
-  async function loadWorkoutData(showLoader = true) {
+  const loadWorkoutData = useCallback(async (showLoader = true) => {
     if (showLoader) setLoading(true);
 
     const online = await isOnline();
@@ -192,23 +193,23 @@ export default function WorkoutIndexScreen() {
 
     setLoading(false);
     setRefreshing(false);
-  }
+  }, []);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    loadWorkoutData(false);
-  }, []);
+    void loadWorkoutData(false);
+  }, [loadWorkoutData]);
 
   useFocusEffect(
     useCallback(() => {
-      theme.setSessionTheme(suggestedPlan.type);
-    }, [suggestedPlan.type]),
+      setSessionTheme(suggestedPlan.type);
+    }, [setSessionTheme, suggestedPlan.type]),
   );
 
   useFocusEffect(
     useCallback(() => {
-      loadWorkoutData();
-    }, []),
+      void loadWorkoutData();
+    }, [loadWorkoutData]),
   );
 
   return (

@@ -78,6 +78,7 @@ function isSetupThemeType(value: unknown): value is SetupThemeType {
 export default function WorkoutSetupScreen() {
   const router = useRouter();
   const theme = useTheme();
+  const { setSessionTheme } = theme;
   const { width: screenWidth } = useWindowDimensions();
 
   const [loading, setLoading] = useState(true);
@@ -125,7 +126,7 @@ export default function WorkoutSetupScreen() {
     return groupExercisesByMuscleGroup(filteredExercises);
   }, [filteredExercises]);
 
-  function showAlert({
+  const showAlert = useCallback(({
     title,
     message,
     confirmText = "OK",
@@ -139,7 +140,7 @@ export default function WorkoutSetupScreen() {
     cancelText?: string;
     danger?: boolean;
     onConfirm?: () => void;
-  }) {
+  }) => {
     setAlertTitle(title);
     setAlertMessage(message);
     setAlertConfirmText(confirmText);
@@ -147,9 +148,9 @@ export default function WorkoutSetupScreen() {
     setAlertDanger(danger);
     setAlertOnConfirm(() => onConfirm);
     setAlertOpen(true);
-  }
+  }, []);
 
-  async function loadExercises() {
+  const loadExercises = useCallback(async () => {
     setLoading(true);
 
     const online = await isOnline();
@@ -186,7 +187,7 @@ export default function WorkoutSetupScreen() {
     setExercises(nextExercises);
     await cacheWorkoutExercises(nextExercises);
     setLoading(false);
-  }
+  }, [showAlert]);
   function openAddModal() {
     setForm({
       ...EMPTY_FORM,
@@ -322,17 +323,17 @@ export default function WorkoutSetupScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      theme.setSessionTheme(routeSplit);
+      setSessionTheme(routeSplit);
 
       return () => {
-        theme.setSessionTheme("default");
+        setSessionTheme("default");
       };
-    }, [routeSplit, theme.setSessionTheme]),
+    }, [routeSplit, setSessionTheme]),
   );
 
   useEffect(() => {
-    loadExercises();
-  }, []);
+    void loadExercises();
+  }, [loadExercises]);
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.background }}>

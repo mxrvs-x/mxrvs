@@ -234,6 +234,7 @@ function formatRest(seconds: number) {
 export default function StartWorkoutScreen() {
   const router = useRouter();
   const theme = useTheme();
+  const { setSessionTheme } = theme;
   const defaultPlan = useMemo(() => {
     const todayPlan = getTodayWorkoutPlan();
     return todayPlan.type === "rest" ? WORKOUT_PLANS[0] : todayPlan;
@@ -288,7 +289,7 @@ export default function StartWorkoutScreen() {
     return sum + reps * weight;
   }, 0);
 
-  function showAlert({
+  const showAlert = useCallback(({
     title,
     message,
     confirmText = "OK",
@@ -302,7 +303,7 @@ export default function StartWorkoutScreen() {
     cancelText?: string;
     danger?: boolean;
     onConfirm?: () => void;
-  }) {
+  }) => {
     setAlertTitle(title);
     setAlertMessage(message);
     setAlertConfirmText(confirmText);
@@ -310,7 +311,7 @@ export default function StartWorkoutScreen() {
     setAlertDanger(danger);
     setAlertOnConfirm(() => onConfirm);
     setAlertOpen(true);
-  }
+  }, []);
 
   async function playRestCompleteAlert() {
     try {
@@ -339,7 +340,7 @@ export default function StartWorkoutScreen() {
     }
   }
 
-  async function loadInitialData() {
+  const loadInitialData = useCallback(async () => {
     setLoading(true);
 
     const online = await isOnline();
@@ -435,7 +436,7 @@ export default function StartWorkoutScreen() {
     );
 
     setLoading(false);
-  }
+  }, [showAlert]);
 
   function actuallyStartSession() {
     if (selectedExercises.length === 0) {
@@ -831,17 +832,17 @@ export default function StartWorkoutScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      theme.setSessionTheme(selectedPlan.type);
+      setSessionTheme(selectedPlan.type);
 
       return () => {
-        theme.setSessionTheme("default");
+        setSessionTheme("default");
       };
-    }, [selectedPlan.type]),
+    }, [selectedPlan.type, setSessionTheme]),
   );
 
   useEffect(() => {
-    loadInitialData();
-  }, []);
+    void loadInitialData();
+  }, [loadInitialData]);
 
   useEffect(() => {
     const availableExercises = session.sessionStarted

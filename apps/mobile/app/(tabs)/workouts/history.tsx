@@ -57,6 +57,7 @@ type WorkoutSet = {
 export default function WorkoutHistoryScreen() {
   const router = useRouter();
   const theme = useTheme();
+  const { setSessionTheme } = theme;
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ split?: WorkoutType }>();
 
@@ -74,7 +75,7 @@ export default function WorkoutHistoryScreen() {
     router.back();
   }
 
-  async function loadSessions(showLoader = false) {
+  const loadSessions = useCallback(async (showLoader = false) => {
     if (showLoader) setLoading(true);
 
     const online = await isOnline();
@@ -170,17 +171,17 @@ export default function WorkoutHistoryScreen() {
     );
     setLoading(false);
     setRefreshing(false);
-  }
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
-      theme.setSessionTheme(currentSplit);
-      loadSessions(true);
+      setSessionTheme(currentSplit);
+      void loadSessions(true);
 
       return () => {
-        theme.setSessionTheme("default");
+        setSessionTheme("default");
       };
-    }, [currentSplit]),
+    }, [currentSplit, loadSessions, setSessionTheme]),
   );
 
   async function onRefresh() {

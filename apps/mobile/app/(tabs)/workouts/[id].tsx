@@ -90,6 +90,7 @@ function hasExportableSet(set: DisplaySet) {
 export default function WorkoutDetailsScreen() {
   const router = useRouter();
   const theme = useTheme();
+  const { setSessionTheme } = theme;
   const exportRef = useRef<any>(null);
 
   const params = useLocalSearchParams<{
@@ -368,7 +369,7 @@ export default function WorkoutDetailsScreen() {
     }
   }
 
-  async function loadWorkoutDetails() {
+  const loadWorkoutDetails = useCallback(async () => {
     if (!id) return;
 
     setLoading(true);
@@ -394,7 +395,7 @@ export default function WorkoutDetailsScreen() {
     }
 
     const currentWorkout = workoutData as Workout;
-    theme.setSessionTheme(currentWorkout.workout_type);
+    setSessionTheme(currentWorkout.workout_type);
 
     const workoutSets = (setData || []) as WorkoutSet[];
 
@@ -426,20 +427,20 @@ export default function WorkoutDetailsScreen() {
     setWorkout(currentWorkout);
     setSets(mappedSets);
     setLoading(false);
-  }
+  }, [id, setSessionTheme]);
 
   useFocusEffect(
     useCallback(() => {
       if (currentSplit) {
-        theme.setSessionTheme(currentSplit);
+        setSessionTheme(currentSplit);
       }
 
-      loadWorkoutDetails();
+      void loadWorkoutDetails();
 
       return () => {
-        theme.setSessionTheme("default");
+        setSessionTheme("default");
       };
-    }, [id, currentSplit]),
+    }, [currentSplit, loadWorkoutDetails, setSessionTheme]),
   );
 
   const themedAlert = (
