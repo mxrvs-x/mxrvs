@@ -158,7 +158,9 @@ export function mapCachedWorkout(workout: any, sets: any[] = []) {
 
 async function runOfflineWorkoutSync(): Promise<SyncResult> {
   const online = await isOnline();
-  if (!online) return { synced: 0, remaining: 0 };
+  if (!online) {
+    return { synced: 0, remaining: (await getOfflineWorkouts()).length };
+  }
 
   const workouts = await getOfflineWorkouts();
   if (workouts.length === 0) return { synced: 0, remaining: 0 };
