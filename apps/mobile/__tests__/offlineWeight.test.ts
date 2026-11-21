@@ -30,15 +30,20 @@ import {
   cacheOfflineBodyWeightKg,
   isOnline,
 } from "../lib/offlineCardio";
-import { resolveOfflineUserId } from "../lib/offlineUser";
+import {
+  getOfflineUserEmail,
+  resolveOfflineUserId,
+} from "../lib/offlineUser";
 import { supabase } from "../lib/supabase";
 import {
   cacheBodyWeightLogs,
+  cacheBodyStats,
   cacheLatestBodyWeightLog,
   getCachedLatestBodyWeightLog,
   getOfflineBodyWeightLogs,
   loadBodyWeightLogs,
   loadLatestBodyWeightLog,
+  loadOfflineProfileFallback,
   logBodyWeightOffline,
   saveOfflineBodyWeightLog,
   syncOfflineBodyWeightLogs,
@@ -92,6 +97,8 @@ const mockCacheOfflineBodyWeightKg =
   >;
 const mockResolveOfflineUserId =
   resolveOfflineUserId as jest.MockedFunction<typeof resolveOfflineUserId>;
+const mockGetOfflineUserEmail =
+  getOfflineUserEmail as jest.MockedFunction<typeof getOfflineUserEmail>;
 const mockFrom = supabase.from as jest.Mock;
 const mockLookupEq = jest.fn();
 const mockLookupLimit = jest.fn();
@@ -149,6 +156,7 @@ describe("offline body-weight synchronization", () => {
 
     mockIsOnline.mockResolvedValue(true);
     mockResolveOfflineUserId.mockResolvedValue("user-1");
+    mockGetOfflineUserEmail.mockResolvedValue("athlete@example.com");
     mockLookupLimit.mockResolvedValue({ data: [], error: null });
     mockInsertSingle.mockResolvedValue({
       data: storedWeight({ id: "remote-weight-1" }),
@@ -339,6 +347,37 @@ describe("offline body-weight synchronization", () => {
     mockIsOnline.mockResolvedValue(false);
 
     await expect(loadLatestBodyWeightLog()).resolves.toEqual(cached);
+    expect(mockFrom).not.toHaveBeenCalled();
+  });
+
+  it("recovers the complete profile from cached data", async () => {
+    const stats = {
+      id: "body-stats-1",
+      user_id: "user-1",
+      height_cm: 175,
+      created_at: "2026-11-21T09:00:00.000Z",
+      updated_at: "2026-11-21T09:00:00.000Z",
+    };
+    const latestWeightLog = storedWeight();
+    await cacheBodyStats(stats);
+    await cacheLatestBodyWeightLog(latestWeightLog);
+
+    await expect(loadOfflineProfileFallback()).resolves.toEqual({
+      email: "athlete@example.com",
+      stats,
+      latestWeightLog,
+    });
+    expect(mockFrom).not.toHaveBeenCalled();
+  });
+
+  it("returns an empty profile fallback when nothing is cached", async () => {
+    mockGetOfflineUserEmail.mockResolvedValue(null);
+
+    await expect(loadOfflineProfileFallback()).resolves.toEqual({
+      email: null,
+      stats: null,
+      latestWeightLog: null,
+    });
     expect(mockFrom).not.toHaveBeenCalled();
   });
 });
