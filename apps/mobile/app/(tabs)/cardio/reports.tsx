@@ -1,8 +1,11 @@
+import PaginationControls from "@/components/PaginationControls";
+import { getCardioPersonalRecords } from "@/lib/personalRecords";
 import {
   cacheCardioSessions,
   getCachedCardioSessions,
   getOfflineCardioSessions,
   mapOfflineCardioSession,
+  mergeCardioSessions,
   syncOfflineCardioSessions,
 } from "@/lib/offlineCardio";
 import { supabase } from "@/lib/supabase";
@@ -22,6 +25,8 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Line, Rect, Text as SvgText } from "react-native-svg";
+
+const PAGE_SIZE = 8;
 
 type CardioType = "walking" | "running";
 
@@ -96,6 +101,7 @@ export default function CardioReportsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [sessions, setSessions] = useState<CardioSession[]>([]);
   const [selectedType, setSelectedType] = useState<CardioType>("running");
+  const [page, setPage] = useState(1);
 
   const filteredSessions = useMemo(() => {
     return sessions
@@ -107,11 +113,25 @@ export default function CardioReportsScreen() {
       });
   }, [selectedType, sessions]);
 
-  const prDistance = useMemo(() => {
-    return Math.max(...filteredSessions.map((session) => n(session.distance_km)), 0);
-  }, [filteredSessions]);
+  const personalRecords = useMemo(
+    () => getCardioPersonalRecords(filteredSessions),
+    [filteredSessions],
+  );
 
   const latestSession = filteredSessions[filteredSessions.length - 1] || null;
+  const descendingSessions = useMemo(
+    () => [...filteredSessions].reverse(),
+    [filteredSessions],
+  );
+  const totalPages = Math.max(
+    1,
+    Math.ceil(descendingSessions.length / PAGE_SIZE),
+  );
+  const safePage = Math.min(page, totalPages);
+  const paginatedSessions = descendingSessions.slice(
+    (safePage - 1) * PAGE_SIZE,
+    safePage * PAGE_SIZE,
+  );
   const totalDistance = filteredSessions.reduce(
     (sum, session) => sum + n(session.distance_km),
     0,
@@ -128,15 +148,6 @@ export default function CardioReportsScreen() {
     (sum, session) => sum + n(session.steps),
     0,
   );
-  const bestPaceSession = [...filteredSessions]
-    .filter((session) => n(session.distance_km) > 0 && n(session.duration_seconds) > 0)
-    .sort((a, b) => {
-      return (
-        n(a.duration_seconds) / n(a.distance_km) -
-        n(b.duration_seconds) / n(b.distance_km)
-      );
-    })[0];
-
   async function loadReports(showLoader = false) {
     if (showLoader) setLoading(true);
 
@@ -159,14 +170,8 @@ export default function CardioReportsScreen() {
     } = await supabase.auth.getUser();
 
     if (!user || !isOnline) {
-      const cachedDates = new Set(cachedSessions.map((session) => session.session_date));
       setSessions(
-        [
-          ...mappedOffline.filter(
-            (session) => !cachedDates.has(session.session_date),
-          ),
-          ...cachedSessions,
-        ] as CardioSession[],
+        mergeCardioSessions(mappedOffline, cachedSessions) as CardioSession[],
       );
       setLoading(false);
       setRefreshing(false);
@@ -184,14 +189,21 @@ export default function CardioReportsScreen() {
 
     if (error) {
       console.log("Load cardio reports error:", error);
-      setSessions([...mappedOffline, ...cachedSessions] as CardioSession[]);
+      setSessions(
+        mergeCardioSessions(mappedOffline, cachedSessions) as CardioSession[],
+      );
       setLoading(false);
       setRefreshing(false);
       return;
     }
 
     await cacheCardioSessions(data as any);
-    setSessions([...mappedOffline, ...((data || []) as CardioSession[])]);
+    setSessions(
+      mergeCardioSessions(
+        mappedOffline,
+        (data || []) as CardioSession[],
+      ) as CardioSession[],
+    );
     setLoading(false);
     setRefreshing(false);
   }
@@ -263,13 +275,19 @@ export default function CardioReportsScreen() {
             type="running"
             label="Run"
             active={selectedType === "running"}
-            onPress={() => setSelectedType("running")}
+            onPress={() => {
+              setSelectedType("running");
+              setPage(1);
+            }}
           />
           <TypeButton
             type="walking"
             label="Walk"
             active={selectedType === "walking"}
-            onPress={() => setSelectedType("walking")}
+            onPress={() => {
+              setSelectedType("walking");
+              setPage(1);
+            }}
           />
         </View>
 
@@ -313,19 +331,30 @@ export default function CardioReportsScreen() {
               </Text>
 
               <View style={{ flexDirection: "row", gap: 8, marginTop: 14 }}>
-                <ReportStat label="Distance PR" value={`${prDistance.toFixed(2)} km`} />
                 <ReportStat
-                  label="Latest"
-                  value={`${n(latestSession?.distance_km).toFixed(2)} km`}
+                  label="Distance PR"
+                  value={
+                    personalRecords.distance
+                      ? `${n(personalRecords.distance.distance_km).toFixed(2)} km`
+                      : "-"
+                  }
                 />
                 <ReportStat
                   label="Best Pace"
                   value={
-                    bestPaceSession
+                    personalRecords.pace
                       ? paceText(
-                          n(bestPaceSession.distance_km),
-                          n(bestPaceSession.duration_seconds),
+                          n(personalRecords.pace.distance_km),
+                          n(personalRecords.pace.duration_seconds),
                         )
+                      : "-"
+                  }
+                />
+                <ReportStat
+                  label="Step PR"
+                  value={
+                    personalRecords.steps
+                      ? n(personalRecords.steps.steps).toLocaleString()
                       : "-"
                   }
                 />
@@ -349,8 +378,12 @@ export default function CardioReportsScreen() {
                   value={totalSteps.toLocaleString()}
                 />
                 <ReportStat
-                  label="Last Source"
-                  value={latestSession ? sourceText(latestSession.cardio_source) : "-"}
+                  label="Longest Time"
+                  value={
+                    personalRecords.duration
+                      ? formatTime(n(personalRecords.duration.duration_seconds))
+                      : "-"
+                  }
                 />
                 <ReportStat
                   label="Last Date"
@@ -361,7 +394,7 @@ export default function CardioReportsScreen() {
 
             <CardioChart
               sessions={filteredSessions}
-              prDistance={prDistance}
+              prSessionId={personalRecords.distance?.id || null}
               theme={theme}
             />
 
@@ -377,8 +410,8 @@ export default function CardioReportsScreen() {
               Progress Log
             </Text>
 
-            {[...filteredSessions].reverse().map((session) => {
-              const isPr = n(session.distance_km) === prDistance;
+            {paginatedSessions.map((session) => {
+              const isPr = session.id === personalRecords.distance?.id;
 
               return (
                 <View
@@ -458,6 +491,11 @@ export default function CardioReportsScreen() {
                 </View>
               );
             })}
+            <PaginationControls
+              page={safePage}
+              totalPages={totalPages}
+              onPageChange={setPage}
+            />
           </>
         )}
       </ScrollView>
@@ -467,11 +505,11 @@ export default function CardioReportsScreen() {
 
 function CardioChart({
   sessions,
-  prDistance,
+  prSessionId,
   theme,
 }: {
   sessions: CardioSession[];
-  prDistance: number;
+  prSessionId: string | null;
   theme: AppTheme;
 }) {
   const { width } = useWindowDimensions();
@@ -566,7 +604,7 @@ function CardioChart({
                 rx={4}
                 fill={theme.colors.info}
               />
-              {distance === prDistance ? (
+              {session.id === prSessionId ? (
                 <SvgText
                   x={groupX + barWidth / 2}
                   y={Math.max(10, top + plotHeight - distanceHeight - 6)}

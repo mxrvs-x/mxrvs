@@ -4,6 +4,11 @@ import { toLocalDateKey } from "@/lib/dates";
 import { isOnline } from "@/lib/offlineCardio";
 import { resolveOfflineUserId } from "@/lib/offlineUser";
 import {
+  createRecoveryCheckIn,
+  RECOVERY_METRICS,
+  type RecoveryCheckIn,
+} from "@/lib/recoveryCheckIn";
+import {
   cacheWorkoutExercises,
   getCachedWorkouts,
   createOfflineWorkout,
@@ -18,7 +23,6 @@ import {
   dedupeExercisesByMuscleGroup,
   formatMuscleGroup,
   formatWorkoutType,
-  getTodayWorkoutPlan,
   groupExercisesByMuscleGroup,
   isExerciseRecommendedForWorkout,
   type WorkoutType,
@@ -26,7 +30,7 @@ import {
 } from "@/lib/workoutPlans";
 import { Audio } from "expo-av";
 import { Stack, useFocusEffect, useRouter } from "expo-router";
-import { Check, X } from "lucide-react-native";
+import { Check, Plus, Trash2, X } from "lucide-react-native";
 import {
   useCallback,
   useEffect,
@@ -38,6 +42,7 @@ import {
 import {
   ActivityIndicator,
   AppState,
+  Modal,
   Pressable,
   ScrollView,
   Text,
@@ -75,6 +80,7 @@ type LocalSet = {
 
 type WorkoutSession = {
   sessionStarted: boolean;
+  workoutType: WorkoutType | null;
   isPaused: boolean;
   startedAtMs: number | null;
   activeMs: number;
@@ -89,6 +95,7 @@ type WorkoutSession = {
 
 const initialWorkoutSession: WorkoutSession = {
   sessionStarted: false,
+  workoutType: null,
   isPaused: false,
   startedAtMs: null,
   activeMs: 0,
@@ -234,12 +241,10 @@ function formatRest(seconds: number) {
 export default function StartWorkoutScreen() {
   const router = useRouter();
   const theme = useTheme();
-  const defaultPlan = useMemo(() => {
-    const todayPlan = getTodayWorkoutPlan();
-    return todayPlan.type === "rest" ? WORKOUT_PLANS[0] : todayPlan;
-  }, []);
+  const { setSessionTheme } = theme;
   const session = useWorkoutSession();
-  const [selectedPlan, setSelectedPlan] = useState<WorkoutPlan>(defaultPlan);
+  const [selectedPlan, setSelectedPlan] = useState<WorkoutPlan>(WORKOUT_PLANS[0]);
+  const [splitChosen, setSplitChosen] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -263,12 +268,20 @@ export default function StartWorkoutScreen() {
   );
   const [activeExercise, setActiveExercise] = useState<Exercise | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
+  const [addExerciseVisible, setAddExerciseVisible] = useState(false);
+  const [exerciseSearch, setExerciseSearch] = useState("");
+  const [recoveryVisible, setRecoveryVisible] = useState(false);
+  const [recovery, setRecovery] = useState<RecoveryCheckIn>(() =>
+    createRecoveryCheckIn(3),
+  );
 
   const recommendedExercises = useMemo(() => {
+    if (!splitChosen) return [];
+
     return exercises.filter((exercise) =>
       isExerciseRecommendedForWorkout(exercise, selectedPlan.type),
     );
-  }, [exercises, selectedPlan.type]);
+  }, [exercises, selectedPlan.type, splitChosen]);
 
   const selectedExercises = useMemo(() => {
     return exercises.filter((exercise) => selectedExerciseIds.has(exercise.id));
@@ -282,13 +295,34 @@ export default function StartWorkoutScreen() {
     return groupExercisesByMuscleGroup(visibleExercises);
   }, [visibleExercises]);
 
+  const availableExercises = useMemo(() => {
+    const query = exerciseSearch.trim().toLowerCase();
+
+    return exercises.filter((exercise) => {
+      if (selectedExerciseIds.has(exercise.id)) return false;
+      if (!query) return true;
+
+      return (
+        exercise.name.toLowerCase().includes(query) ||
+        formatMuscleGroup(exercise.muscle_group).toLowerCase().includes(query)
+      );
+    });
+  }, [exerciseSearch, exercises, selectedExerciseIds]);
+
+  const availableExerciseSections = useMemo(() => {
+    return groupExercisesByMuscleGroup(availableExercises);
+  }, [availableExercises]);
+  const unselectedExerciseCount = exercises.filter(
+    (exercise) => !selectedExerciseIds.has(exercise.id),
+  ).length;
+
   const totalVolume = session.sets.reduce((sum, set) => {
     const reps = Number(set.reps) || 0;
     const weight = Number(set.weight_kg) || 0;
     return sum + reps * weight;
   }, 0);
 
-  function showAlert({
+  const showAlert = useCallback(({
     title,
     message,
     confirmText = "OK",
@@ -302,7 +336,7 @@ export default function StartWorkoutScreen() {
     cancelText?: string;
     danger?: boolean;
     onConfirm?: () => void;
-  }) {
+  }) => {
     setAlertTitle(title);
     setAlertMessage(message);
     setAlertConfirmText(confirmText);
@@ -310,7 +344,7 @@ export default function StartWorkoutScreen() {
     setAlertDanger(danger);
     setAlertOnConfirm(() => onConfirm);
     setAlertOpen(true);
-  }
+  }, []);
 
   async function playRestCompleteAlert() {
     try {
@@ -339,7 +373,7 @@ export default function StartWorkoutScreen() {
     }
   }
 
-  async function loadInitialData() {
+  const loadInitialData = useCallback(async () => {
     setLoading(true);
 
     const online = await isOnline();
@@ -435,9 +469,17 @@ export default function StartWorkoutScreen() {
     );
 
     setLoading(false);
-  }
+  }, [showAlert]);
 
   function actuallyStartSession() {
+    if (!splitChosen) {
+      showAlert({
+        title: "Choose workout split",
+        message: "Select a workout split before starting your session.",
+      });
+      return;
+    }
+
     if (selectedExercises.length === 0) {
       showAlert({
         title: "No exercises",
@@ -450,6 +492,7 @@ export default function StartWorkoutScreen() {
 
     setWorkoutSession({
       sessionStarted: true,
+      workoutType: selectedPlan.type,
       isPaused: false,
       startedAtMs: Date.now(),
       activeMs: 0,
@@ -602,19 +645,95 @@ export default function StartWorkoutScreen() {
   }
 
   function toggleExerciseSelection(exerciseId: string) {
-    if (session.sessionStarted) return;
-
     setSelectedExerciseIds((current) => {
       const next = new Set(current);
 
-      if (next.has(exerciseId)) {
+      if (next.has(exerciseId) && !session.sessionStarted) {
         next.delete(exerciseId);
-      } else {
+      } else if (!next.has(exerciseId)) {
         next.add(exerciseId);
       }
 
       return next;
     });
+  }
+
+  function handleExercisePress(exercise: Exercise) {
+    if (!session.sessionStarted) {
+      toggleExerciseSelection(exercise.id);
+      return;
+    }
+
+    if (!selectedExerciseIds.has(exercise.id)) {
+      toggleExerciseSelection(exercise.id);
+      return;
+    }
+
+    openExercise(exercise);
+  }
+
+  function addExerciseToSession(exercise: Exercise) {
+    if (!session.sessionStarted || selectedExerciseIds.has(exercise.id)) return;
+
+    toggleExerciseSelection(exercise.id);
+    closeAddExercisePicker();
+  }
+
+  function closeAddExercisePicker() {
+    setExerciseSearch("");
+    setAddExerciseVisible(false);
+  }
+
+  function requestRemoveExercise(exercise: Exercise) {
+    if (!session.sessionStarted || !selectedExerciseIds.has(exercise.id)) return;
+
+    const exerciseSetCount = getWorkoutSession().sets.filter(
+      (set) => set.exercise_id === exercise.id,
+    ).length;
+
+    showAlert({
+      title: "Remove Exercise?",
+      message:
+        exerciseSetCount > 0
+          ? `This removes ${exercise.name} and its ${exerciseSetCount} logged set${exerciseSetCount === 1 ? "" : "s"} from this session.`
+          : `This removes ${exercise.name} from this session.`,
+      cancelText: "Cancel",
+      confirmText: "Remove Exercise",
+      danger: true,
+      onConfirm: () => {
+        setSelectedExerciseIds((current) => {
+          const next = new Set(current);
+          next.delete(exercise.id);
+          return next;
+        });
+        setWorkoutSession((current) => {
+          const removingRestExercise = current.restExerciseId === exercise.id;
+
+          return {
+            ...current,
+            sets: current.sets.filter(
+              (set) => set.exercise_id !== exercise.id,
+            ),
+            isResting: removingRestExercise ? false : current.isResting,
+            restRemaining: removingRestExercise ? 0 : current.restRemaining,
+            restExerciseId: removingRestExercise
+              ? null
+              : current.restExerciseId,
+            restEndsAtMs: removingRestExercise ? null : current.restEndsAtMs,
+          };
+        });
+
+        if (activeExercise?.id === exercise.id) {
+          setModalVisible(false);
+          setActiveExercise(null);
+        }
+      },
+    });
+  }
+
+  function openRecoveryCheckIn() {
+    setRecovery(createRecoveryCheckIn(3));
+    setRecoveryVisible(true);
   }
 
   function removeSet(localId: string) {
@@ -679,7 +798,7 @@ export default function StartWorkoutScreen() {
         cancelText: "Cancel",
         confirmText: "End Session",
         danger: true,
-        onConfirm: saveWorkout,
+        onConfirm: openRecoveryCheckIn,
       });
 
       return;
@@ -690,12 +809,14 @@ export default function StartWorkoutScreen() {
       message: "This will stop the timer and save your workout.",
       cancelText: "Cancel",
       confirmText: "End & Save",
-      onConfirm: saveWorkout,
+      onConfirm: openRecoveryCheckIn,
     });
   }
 
-  async function saveWorkout() {
+  async function saveWorkout(recoveryCheckIn: RecoveryCheckIn) {
     if (savingRef.current) return;
+
+    setRecoveryVisible(false);
 
     const current = getWorkoutSession();
     const finalElapsedSeconds = getElapsedSeconds(current);
@@ -742,9 +863,10 @@ export default function StartWorkoutScreen() {
     async function saveOfflineCopy() {
       await createOfflineWorkout({
         workout_date: getTodayDateString(),
-        workout_type: selectedPlan.type,
+        workout_type: current.workoutType || selectedPlan.type,
         duration_minutes: durationMinutes,
         notes: current.notes.trim() || null,
+        recovery: recoveryCheckIn,
         sets: offlineSets,
       });
 
@@ -768,9 +890,10 @@ export default function StartWorkoutScreen() {
       .insert({
         user_id: userId,
         workout_date: getTodayDateString(),
-        workout_type: selectedPlan.type,
+        workout_type: current.workoutType || selectedPlan.type,
         duration_minutes: durationMinutes,
         notes: current.notes.trim() || null,
+        ...recoveryCheckIn,
       })
       .select("id")
       .single();
@@ -831,17 +954,29 @@ export default function StartWorkoutScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      theme.setSessionTheme(selectedPlan.type);
+      setSessionTheme(splitChosen ? selectedPlan.type : "default");
 
       return () => {
-        theme.setSessionTheme("default");
+        setSessionTheme("default");
       };
-    }, [selectedPlan.type]),
+    }, [selectedPlan.type, setSessionTheme, splitChosen]),
   );
 
   useEffect(() => {
-    loadInitialData();
-  }, []);
+    if (!session.sessionStarted || !session.workoutType) return;
+
+    const activePlan = WORKOUT_PLANS.find(
+      (plan) => plan.type === session.workoutType,
+    );
+    if (!activePlan) return;
+
+    setSelectedPlan(activePlan);
+    setSplitChosen(true);
+  }, [session.sessionStarted, session.workoutType]);
+
+  useEffect(() => {
+    void loadInitialData();
+  }, [loadInitialData]);
 
   useEffect(() => {
     const availableExercises = session.sessionStarted
@@ -984,13 +1119,17 @@ export default function StartWorkoutScreen() {
           contentContainerStyle={{ gap: 10, paddingRight: 2 }}
         >
           {WORKOUT_PLANS.map((plan) => {
-            const active = selectedPlan.type === plan.type;
+            const active = splitChosen && selectedPlan.type === plan.type;
 
             return (
               <Pressable
                 key={plan.type}
                 disabled={session.sessionStarted}
-                onPress={() => setSelectedPlan(plan)}
+                onPress={() => {
+                  setSelectedPlan(plan);
+                  setSplitChosen(true);
+                  setSelectedExerciseIds(new Set());
+                }}
                 style={{
                   minWidth: 132,
                   backgroundColor: active
@@ -1058,7 +1197,8 @@ export default function StartWorkoutScreen() {
           </Text>
 
           <Text style={{ color: theme.colors.textInverse, marginTop: 8 }}>
-            {selectedPlan.label} • {session.sets.length} sets •{" "}
+            {splitChosen ? selectedPlan.label : "Choose a workout split"} •{" "}
+            {session.sets.length} sets •{" "}
             {totalVolume.toLocaleString()} kg volume
           </Text>
 
@@ -1196,15 +1336,50 @@ export default function StartWorkoutScreen() {
             color: theme.colors.text,
           }}
         >
-          {session.sessionStarted ? selectedPlan.label : "Select Exercises"}
+          {session.sessionStarted ? "Session Exercises" : "Select Exercises"}
         </Text>
+
+        {session.sessionStarted ? (
+          <>
+            <Text style={{ color: theme.colors.textMuted, marginTop: 6 }}>
+              {selectedExercises.length} exercises in this session.
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Add exercise to session"
+              disabled={unselectedExerciseCount === 0}
+              onPress={() => setAddExerciseVisible(true)}
+              style={{
+                minHeight: 50,
+                borderRadius: 16,
+                borderWidth: 1,
+                borderColor: theme.colors.primary,
+                alignItems: "center",
+                justifyContent: "center",
+                flexDirection: "row",
+                gap: 8,
+                marginTop: 12,
+                opacity: unselectedExerciseCount === 0 ? 0.5 : 1,
+              }}
+            >
+              <Plus size={20} color={theme.colors.primary} />
+              <Text
+                style={{ color: theme.colors.primary, fontWeight: "900" }}
+              >
+                {unselectedExerciseCount === 0
+                  ? "All Exercises Added"
+                  : "Add Exercise"}
+              </Text>
+            </Pressable>
+          </>
+        ) : null}
 
         {loading ? (
           <ActivityIndicator
             color={theme.colors.primary}
             style={{ marginTop: 20 }}
           />
-        ) : recommendedExercises.length === 0 ? (
+        ) : visibleExercises.length === 0 ? (
           <View
             style={{
               backgroundColor: theme.colors.surface,
@@ -1216,10 +1391,12 @@ export default function StartWorkoutScreen() {
             }}
           >
             <Text style={{ fontWeight: "800", color: theme.colors.text }}>
-              No exercises found
+              {splitChosen ? "No exercises found" : "Choose a workout split"}
             </Text>
             <Text style={{ color: theme.colors.textMuted, marginTop: 6 }}>
-              Go to setup and add exercises for {selectedPlan.label}.
+              {splitChosen
+                ? "Go to setup and add exercises for these muscle groups."
+                : "Select Push, Pull, Legs, Upper Body, Lower, or Arms above."}
             </Text>
           </View>
         ) : (
@@ -1257,16 +1434,13 @@ export default function StartWorkoutScreen() {
                   const isSelected = selectedExerciseIds.has(item.id);
                   const isDisabledByRest =
                     session.isResting && session.restExerciseId !== item.id;
-                  const isDisabled = isDisabledByRest || session.isPaused;
+                  const isDisabled =
+                    isSelected && (isDisabledByRest || session.isPaused);
 
                   return (
                     <Pressable
                       key={item.id}
-                      onPress={() =>
-                        session.sessionStarted
-                          ? openExercise(item)
-                          : toggleExerciseSelection(item.id)
-                      }
+                      onPress={() => handleExercisePress(item)}
                       style={{
                         backgroundColor: theme.colors.surface,
                         borderRadius: 16,
@@ -1312,15 +1486,49 @@ export default function StartWorkoutScreen() {
                         ) : null}
 
                         <View style={{ flex: 1 }}>
-                          <Text
+                          <View
                             style={{
-                              fontSize: 16,
-                              fontWeight: "800",
-                              color: theme.colors.text,
+                              flexDirection: "row",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              gap: 10,
                             }}
                           >
-                            {item.name}
-                          </Text>
+                            <Text
+                              style={{
+                                flex: 1,
+                                fontSize: 16,
+                                fontWeight: "800",
+                                color: theme.colors.text,
+                              }}
+                            >
+                              {item.name}
+                            </Text>
+                            {session.sessionStarted ? (
+                              <Pressable
+                                accessibilityRole="button"
+                                accessibilityLabel={`Remove ${item.name} from session`}
+                                hitSlop={10}
+                                onPress={(event) => {
+                                  event.stopPropagation();
+                                  requestRemoveExercise(item);
+                                }}
+                                style={{
+                                  width: 36,
+                                  height: 36,
+                                  borderRadius: 18,
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  backgroundColor: theme.colors.surfaceAlt,
+                                }}
+                              >
+                                <Trash2
+                                  size={18}
+                                  color={theme.colors.danger ?? "#ef4444"}
+                                />
+                              </Pressable>
+                            ) : null}
+                          </View>
 
                           <Text
                             style={{
@@ -1343,20 +1551,26 @@ export default function StartWorkoutScreen() {
                               <Text
                                 style={{
                                   fontWeight: "700",
-                                  color: theme.colors.text,
+                                  color: isSelected
+                                    ? theme.colors.text
+                                    : theme.colors.primary,
                                 }}
                               >
-                                {exerciseSets.length} sets
+                                {isSelected
+                                  ? `${exerciseSets.length} sets`
+                                  : "+ Add to session"}
                               </Text>
 
-                              <Text
-                                style={{
-                                  color: theme.colors.textMuted,
-                                  fontSize: 12,
-                                }}
-                              >
-                                {volume.toLocaleString()} kg
-                              </Text>
+                              {isSelected ? (
+                                <Text
+                                  style={{
+                                    color: theme.colors.textMuted,
+                                    fontSize: 12,
+                                  }}
+                                >
+                                  {volume.toLocaleString()} kg
+                                </Text>
+                              ) : null}
                             </View>
                           ) : null}
                         </View>
@@ -1486,6 +1700,315 @@ export default function StartWorkoutScreen() {
           }}
         />
       </ScrollView>
+
+      <Modal
+        visible={addExerciseVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={closeAddExercisePicker}
+      >
+        <View
+          style={{
+            flex: 1,
+            justifyContent: "flex-end",
+            backgroundColor: "rgba(0,0,0,0.5)",
+          }}
+        >
+          <Pressable
+            accessibilityLabel="Close exercise picker"
+            onPress={closeAddExercisePicker}
+            style={{ flex: 1 }}
+          />
+          <View
+            style={{
+              maxHeight: "78%",
+              backgroundColor: theme.colors.surface,
+              borderTopLeftRadius: 28,
+              borderTopRightRadius: 28,
+              padding: 18,
+            }}
+          >
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+              }}
+            >
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={{
+                    color: theme.colors.text,
+                    fontSize: 22,
+                    fontWeight: "900",
+                  }}
+                >
+                  Add Exercise
+                </Text>
+                <Text style={{ color: theme.colors.textMuted, marginTop: 4 }}>
+                  Choose one exercise to add to this session.
+                </Text>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Close exercise picker"
+                onPress={closeAddExercisePicker}
+                style={{
+                  width: 42,
+                  height: 42,
+                  borderRadius: 21,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  backgroundColor: theme.colors.surfaceAlt,
+                }}
+              >
+                <X size={22} color={theme.colors.text} />
+              </Pressable>
+            </View>
+
+            <TextInput
+              accessibilityLabel="Search exercises"
+              autoCapitalize="none"
+              onChangeText={setExerciseSearch}
+              placeholder="Search exercises..."
+              placeholderTextColor={theme.colors.textFaint}
+              value={exerciseSearch}
+              style={{
+                minHeight: 48,
+                marginTop: 16,
+                paddingHorizontal: 14,
+                borderRadius: 14,
+                borderWidth: 1,
+                borderColor: theme.colors.border,
+                backgroundColor: theme.colors.surfaceAlt,
+                color: theme.colors.text,
+              }}
+            />
+
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              style={{ marginTop: 14 }}
+            >
+              {availableExercises.length === 0 ? (
+                <View
+                  style={{
+                    padding: 18,
+                    borderRadius: 16,
+                    backgroundColor: theme.colors.surfaceAlt,
+                  }}
+                >
+                  <Text
+                    style={{ color: theme.colors.textMuted, textAlign: "center" }}
+                  >
+                    {unselectedExerciseCount === 0
+                      ? "All exercises are already in this session."
+                      : "No exercises match your search."}
+                  </Text>
+                </View>
+              ) : (
+                availableExerciseSections.map(([group, groupExercises]) => (
+                  <View key={group} style={{ marginBottom: 16 }}>
+                    <Text
+                      style={{
+                        color: theme.colors.textMuted,
+                        fontSize: 12,
+                        fontWeight: "900",
+                        textTransform: "uppercase",
+                        marginBottom: 7,
+                      }}
+                    >
+                      {formatMuscleGroup(group)}
+                    </Text>
+                    {groupExercises.map((exercise) => (
+                      <Pressable
+                        accessibilityRole="button"
+                        key={exercise.id}
+                        onPress={() => addExerciseToSession(exercise)}
+                        style={{
+                          minHeight: 54,
+                          borderRadius: 14,
+                          borderWidth: 1,
+                          borderColor: theme.colors.border,
+                          paddingHorizontal: 14,
+                          paddingVertical: 10,
+                          marginBottom: 8,
+                          flexDirection: "row",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 12,
+                        }}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <Text
+                            style={{
+                              color: theme.colors.text,
+                              fontWeight: "800",
+                            }}
+                          >
+                            {exercise.name}
+                          </Text>
+                          <Text
+                            style={{
+                              color: theme.colors.textMuted,
+                              fontSize: 12,
+                              marginTop: 3,
+                            }}
+                          >
+                            {exercise.is_compound ? "Compound" : "Isolation"}
+                          </Text>
+                        </View>
+                        <Plus size={20} color={theme.colors.primary} />
+                      </Pressable>
+                    ))}
+                  </View>
+                ))
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={recoveryVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setRecoveryVisible(false)}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(0,0,0,0.55)",
+            justifyContent: "center",
+            padding: 20,
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: theme.colors.surface,
+              borderRadius: 20,
+              padding: 18,
+              maxHeight: "90%",
+            }}
+          >
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text
+                style={{
+                  color: theme.colors.text,
+                  fontSize: 22,
+                  fontWeight: "900",
+                }}
+              >
+                Recovery Check-in
+              </Text>
+              <Text style={{ color: theme.colors.textMuted, marginTop: 6 }}>
+                Rate how you feel before saving this workout.
+              </Text>
+
+              {RECOVERY_METRICS.map((metric) => (
+                <View key={metric.key} style={{ marginTop: 18 }}>
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      justifyContent: "space-between",
+                      gap: 10,
+                    }}
+                  >
+                    <Text
+                      style={{ color: theme.colors.text, fontWeight: "800" }}
+                    >
+                      {metric.label}
+                    </Text>
+                    <Text style={{ color: theme.colors.textMuted }}>
+                      {metric.hint}
+                    </Text>
+                  </View>
+                  <View style={{ flexDirection: "row", gap: 8, marginTop: 9 }}>
+                    {[1, 2, 3, 4, 5].map((score) => {
+                      const active = recovery[metric.key] === score;
+                      return (
+                        <Pressable
+                          key={score}
+                          onPress={() =>
+                            setRecovery((current) => ({
+                              ...current,
+                              [metric.key]: score,
+                            }))
+                          }
+                          style={{
+                            flex: 1,
+                            alignItems: "center",
+                            paddingVertical: 11,
+                            borderRadius: 12,
+                            borderWidth: 1,
+                            borderColor: active
+                              ? theme.colors.primary
+                              : theme.colors.border,
+                            backgroundColor: active
+                              ? theme.colors.primary
+                              : theme.colors.surfaceAlt,
+                          }}
+                        >
+                          <Text
+                            style={{
+                              color: active
+                                ? theme.colors.textInverse
+                                : theme.colors.text,
+                              fontWeight: "900",
+                            }}
+                          >
+                            {score}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+              ))}
+
+              <View style={{ flexDirection: "row", gap: 10, marginTop: 24 }}>
+                <Pressable
+                  disabled={saving}
+                  onPress={() => void saveWorkout(createRecoveryCheckIn())}
+                  style={{
+                    flex: 1,
+                    alignItems: "center",
+                    padding: 14,
+                    borderRadius: 14,
+                    borderWidth: 1,
+                    borderColor: theme.colors.border,
+                  }}
+                >
+                  <Text style={{ color: theme.colors.text, fontWeight: "800" }}>
+                    Skip
+                  </Text>
+                </Pressable>
+                <Pressable
+                  disabled={saving}
+                  onPress={() => void saveWorkout(recovery)}
+                  style={{
+                    flex: 1,
+                    alignItems: "center",
+                    padding: 14,
+                    borderRadius: 14,
+                    backgroundColor: theme.colors.primary,
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: theme.colors.textInverse,
+                      fontWeight: "900",
+                    }}
+                  >
+                    Save Workout
+                  </Text>
+                </Pressable>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       <ExerciseSessionModal
         visible={modalVisible}

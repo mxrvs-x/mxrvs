@@ -1,3 +1,7 @@
+import {
+  getCachedBodyWeightLogs,
+  getOfflineBodyWeightLogs,
+} from "@/lib/offlineWeight";
 import { supabase } from "@/lib/supabase";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import NetInfo from "@react-native-community/netinfo";
@@ -114,6 +118,17 @@ async function scheduleNextReminder(hasLoggedToday: boolean) {
 }
 
 async function hasLoggedWeightToday(userId: string) {
+  const today = toDateKey(new Date());
+  const offlineLogs = await getOfflineBodyWeightLogs();
+  if (offlineLogs.some((log) => log.date === today)) {
+    return true;
+  }
+
+  const cachedLogs = await getCachedBodyWeightLogs();
+  if (cachedLogs.some((log) => log.date === today)) {
+    return true;
+  }
+
   const state = await NetInfo.fetch();
   const online = Boolean(state.isConnected && state.isInternetReachable !== false);
 
@@ -123,7 +138,7 @@ async function hasLoggedWeightToday(userId: string) {
     .from("body_weight_logs")
     .select("id")
     .eq("user_id", userId)
-    .eq("date", toDateKey(new Date()))
+    .eq("date", today)
     .limit(1)
     .maybeSingle();
 

@@ -2,6 +2,7 @@ import { cacheOfflineBodyWeightKg, isOnline } from "@/lib/offlineCardio";
 import {
   cacheOfflineUser,
   getOfflineUserEmail,
+  getOfflineUserId,
   resolveOfflineUserId,
 } from "@/lib/offlineUser";
 import { supabase } from "@/lib/supabase";
@@ -39,9 +40,17 @@ export type BodyWeightLogRecord = OfflineBodyWeightLog & {
   offline?: boolean;
 };
 
-export async function getOfflineBodyWeightLogs() {
+async function getAllOfflineBodyWeightLogs() {
   const raw = await AsyncStorage.getItem(OFFLINE_WEIGHT_KEY);
   return raw ? (JSON.parse(raw) as OfflineBodyWeightLog[]) : [];
+}
+
+export async function getOfflineBodyWeightLogs() {
+  const userId = await getOfflineUserId();
+  if (!userId) return [];
+  return (await getAllOfflineBodyWeightLogs()).filter(
+    (log) => log.user_id === userId,
+  );
 }
 
 export async function getCachedBodyWeightLogs() {
@@ -65,13 +74,14 @@ function isSamePendingBodyWeightLog(
     a.temp_id === b.temp_id ||
     (a.user_id === b.user_id &&
       a.date === b.date &&
+      a.logged_at === b.logged_at &&
       a.weight_kg === b.weight_kg &&
       (a.body_fat_percent ?? null) === (b.body_fat_percent ?? null))
   );
 }
 
 export async function saveOfflineBodyWeightLog(log: OfflineBodyWeightLog) {
-  const existing = await getOfflineBodyWeightLogs();
+  const existing = await getAllOfflineBodyWeightLogs();
   await setOfflineBodyWeightLogs([
     log,
     ...existing.filter((item) => !isSamePendingBodyWeightLog(item, log)),
@@ -79,7 +89,7 @@ export async function saveOfflineBodyWeightLog(log: OfflineBodyWeightLog) {
 }
 
 export async function removeOfflineBodyWeightLog(tempId: string) {
-  const existing = await getOfflineBodyWeightLogs();
+  const existing = await getAllOfflineBodyWeightLogs();
   await setOfflineBodyWeightLogs(
     existing.filter((log) => log.temp_id !== tempId),
   );
@@ -184,6 +194,18 @@ export async function logBodyWeightOffline({
   return mapped;
 }
 
+function mergeBodyWeightLogs(
+  offlineLogs: BodyWeightLogRecord[],
+  storedLogs: BodyWeightLogRecord[],
+) {
+  const offlineTimestamps = new Set(offlineLogs.map((log) => log.logged_at));
+
+  return [
+    ...offlineLogs,
+    ...storedLogs.filter((log) => !offlineTimestamps.has(log.logged_at)),
+  ].sort((a, b) => b.logged_at.localeCompare(a.logged_at));
+}
+
 export async function loadBodyWeightLogs() {
   const online = await isOnline();
 
@@ -200,11 +222,7 @@ export async function loadBodyWeightLogs() {
 
   const userId = await resolveOfflineUserId();
   if (!userId || !online) {
-    const cachedDates = new Set(cachedLogs.map((log) => log.date));
-    return [
-      ...offlineLogs.filter((log) => !cachedDates.has(log.date)),
-      ...cachedLogs,
-    ].sort((a, b) => b.logged_at.localeCompare(a.logged_at));
+    return mergeBodyWeightLogs(offlineLogs, cachedLogs);
   }
 
   const { data, error } = await supabase
@@ -216,14 +234,12 @@ export async function loadBodyWeightLogs() {
 
   if (error) {
     console.log("Load body weight logs error:", error);
-    return offlineLogs.sort((a, b) => b.logged_at.localeCompare(a.logged_at));
+    return mergeBodyWeightLogs(offlineLogs, cachedLogs);
   }
 
   const onlineLogs = (data || []) as BodyWeightLogRecord[];
   await cacheBodyWeightLogs(onlineLogs);
-  const merged = [...offlineLogs, ...onlineLogs].sort((a, b) =>
-    b.logged_at.localeCompare(a.logged_at),
-  );
+  const merged = mergeBodyWeightLogs(offlineLogs, onlineLogs);
 
   if (merged[0]) {
     await cacheLatestBodyWeightLog(merged[0]);
@@ -248,7 +264,9 @@ export async function loadOfflineProfileFallback() {
 
 async function runOfflineBodyWeightSync(): Promise<SyncResult> {
   const online = await isOnline();
-  if (!online) return { synced: 0, remaining: 0 };
+  if (!online) {
+    return { synced: 0, remaining: (await getOfflineBodyWeightLogs()).length };
+  }
 
   const logs = await getOfflineBodyWeightLogs();
   if (logs.length === 0) return { synced: 0, remaining: 0 };
@@ -262,7 +280,7 @@ async function runOfflineBodyWeightSync(): Promise<SyncResult> {
       .from("body_weight_logs")
       .select("id")
       .eq("user_id", log.user_id)
-      .eq("date", log.date)
+      .eq("logged_at", log.logged_at)
       .limit(1);
 
     if (!existingError && existing && existing.length > 0) {

@@ -16,11 +16,10 @@ import { supabase } from "@/lib/supabase";
 import { useTheme } from "@/lib/theme";
 import {
   formatWorkoutType,
-  getTodayWorkoutPlan,
   type WorkoutType,
 } from "@/lib/workoutPlans";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -64,6 +63,7 @@ function formatDate(date: string) {
 export default function WorkoutIndexScreen() {
   const router = useRouter();
   const theme = useTheme();
+  const { setSessionTheme } = theme;
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -71,9 +71,7 @@ export default function WorkoutIndexScreen() {
   const [todayWorkout, setTodayWorkout] = useState<Workout | null>(null);
   const [exerciseCount, setExerciseCount] = useState(0);
 
-  const suggestedPlan = useMemo(() => getTodayWorkoutPlan(), []);
-
-  async function loadWorkoutData(showLoader = true) {
+  const loadWorkoutData = useCallback(async (showLoader = true) => {
     if (showLoader) setLoading(true);
 
     const online = await isOnline();
@@ -192,23 +190,23 @@ export default function WorkoutIndexScreen() {
 
     setLoading(false);
     setRefreshing(false);
-  }
+  }, []);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    loadWorkoutData(false);
-  }, []);
+    void loadWorkoutData(false);
+  }, [loadWorkoutData]);
 
   useFocusEffect(
     useCallback(() => {
-      theme.setSessionTheme(suggestedPlan.type);
-    }, [suggestedPlan.type]),
+      setSessionTheme("default");
+    }, [setSessionTheme]),
   );
 
   useFocusEffect(
     useCallback(() => {
-      loadWorkoutData();
-    }, []),
+      void loadWorkoutData();
+    }, [loadWorkoutData]),
   );
 
   return (
@@ -239,7 +237,7 @@ export default function WorkoutIndexScreen() {
         }}
       >
         <Text style={{ color: theme.colors.textInverse, fontSize: 13 }}>
-          {"Suggested Focus"}
+          Start Training
         </Text>
 
         <Text
@@ -250,13 +248,11 @@ export default function WorkoutIndexScreen() {
             marginTop: 6,
           }}
         >
-          {suggestedPlan.emoji} {suggestedPlan.label}
+          Choose today&apos;s workout split
         </Text>
 
         <Text style={{ color: theme.colors.textInverse, marginTop: 8 }}>
-          {suggestedPlan.type === "rest"
-            ? "Recovery day. Keep it light, walk, stretch, or rest fully."
-            : "You can switch focus when you start a workout."}
+          Select Push, Pull, Legs, Upper Body, Lower, or Arms before starting.
         </Text>
       </View>
 
@@ -297,14 +293,7 @@ export default function WorkoutIndexScreen() {
 
       <View style={{ flexDirection: "row", gap: 12, marginTop: 14 }}>
         <Pressable
-          onPress={() =>
-            router.push({
-              pathname: "/workouts/setup",
-              params: {
-                split: suggestedPlan.type,
-              },
-            } as any)
-          }
+          onPress={() => router.push("/workouts/setup")}
           style={{
             flex: 1,
             backgroundColor: theme.colors.surface,
@@ -344,9 +333,7 @@ export default function WorkoutIndexScreen() {
             borderColor: todayWorkout ? theme.colors.border : "transparent",
           }}
         >
-          <Text style={{ fontSize: 22 }}>
-            {suggestedPlan.type === "rest" ? "😴" : "🏋️"}
-          </Text>
+          <Text style={{ fontSize: 22 }}>🏋️</Text>
 
           <Text
             style={{
@@ -393,14 +380,7 @@ export default function WorkoutIndexScreen() {
         </Text>
 
         <Pressable
-          onPress={() =>
-            router.push({
-              pathname: "/workouts/history",
-              params: {
-                split: suggestedPlan.type,
-              },
-            } as any)
-          }
+          onPress={() => router.push("/workouts/history")}
         >
           <Text style={{ color: theme.colors.primary, fontWeight: "900" }}>
             View All

@@ -1,5 +1,7 @@
+import PaginationControls from "@/components/PaginationControls";
 import { isOnline } from "@/lib/offlineCardio";
 import { resolveOfflineUserId } from "@/lib/offlineUser";
+import { getStrengthPersonalRecords } from "@/lib/personalRecords";
 import {
   cacheWorkoutSets,
   cacheWorkouts,
@@ -36,6 +38,8 @@ import Svg, {
   Text as SvgText,
 } from "react-native-svg";
 
+const PAGE_SIZE = 8;
+
 type Workout = {
   id: string;
   workout_date: string;
@@ -64,6 +68,7 @@ type ExercisePoint = {
   setCount: number;
   totalReps: number;
   topWeight: number;
+  topWeightReps: number;
   totalVolume: number;
 };
 
@@ -73,6 +78,7 @@ type ExerciseReport = {
   muscle_group: string | null;
   points: ExercisePoint[];
   bestWeight: number;
+  bestWeightReps: number;
   latestWeight: number;
   latestSets: number;
   totalSets: number;
@@ -114,6 +120,7 @@ export default function WorkoutReportsScreen() {
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(
     null,
   );
+  const [page, setPage] = useState(1);
 
   const selectedReport = useMemo(() => {
     if (reports.length === 0) return null;
@@ -123,6 +130,19 @@ export default function WorkoutReportsScreen() {
       reports[0]
     );
   }, [reports, selectedExerciseId]);
+  const descendingPoints = useMemo(
+    () => (selectedReport ? [...selectedReport.points].reverse() : []),
+    [selectedReport],
+  );
+  const totalPages = Math.max(
+    1,
+    Math.ceil(descendingPoints.length / PAGE_SIZE),
+  );
+  const safePage = Math.min(page, totalPages);
+  const paginatedPoints = descendingPoints.slice(
+    (safePage - 1) * PAGE_SIZE,
+    safePage * PAGE_SIZE,
+  );
 
   async function loadReports(showLoader = false) {
     if (showLoader) setLoading(true);
@@ -215,29 +235,48 @@ export default function WorkoutReportsScreen() {
       ...((workoutData || []) as Workout[]),
     ] as Workout[];
     await cacheWorkouts((workoutData || []) as Workout[]);
-    const workoutIds = workouts.map((workout) => workout.id);
-
-    if (workoutIds.length === 0) {
+    if ((workoutData || []).length === 0) {
       buildReports(workouts, offlineSets as WorkoutSet[], cachedExercises);
       return;
     }
 
-    const { data: setData, error: setError } = await supabase
-      .from("workout_sets")
-      .select("workout_id, exercise_id, set_number, reps, weight_kg")
-      .in("workout_id", workoutIds);
+    const databaseSets: WorkoutSet[] = [];
+    let setError: { message?: string } | null = null;
+    const setPageSize = 500;
+
+    for (let from = 0; ; from += setPageSize) {
+      const response = await supabase
+        .from("workout_sets")
+        .select("workout_id, exercise_id, set_number, reps, weight_kg")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: true })
+        .range(from, from + setPageSize - 1);
+
+      if (response.error) {
+        setError = response.error;
+        break;
+      }
+
+      const pageRows = (response.data || []) as WorkoutSet[];
+      databaseSets.push(...pageRows);
+      if (pageRows.length < setPageSize) break;
+    }
 
     if (setError) {
       console.log("Load workout report sets error:", setError);
-      buildReports(workouts, offlineSets as WorkoutSet[], cachedExercises);
+      buildReports(
+        workouts,
+        [...(offlineSets as WorkoutSet[]), ...cachedSetRows],
+        cachedExercises,
+      );
       return;
     }
 
     const sets = [
       ...offlineSets,
-      ...((setData || []) as WorkoutSet[]),
+      ...databaseSets,
     ].filter(hasReportableSet);
-    await cacheWorkoutSets((setData || []) as WorkoutSet[]);
+    await cacheWorkoutSets(databaseSets);
     const exerciseIds = Array.from(new Set(sets.map((set) => set.exercise_id)));
 
     let exercises: Exercise[] = [];
@@ -294,7 +333,13 @@ export default function WorkoutReportsScreen() {
       if (existing) {
         existing.setCount += 1;
         existing.totalReps += reps;
-        existing.topWeight = Math.max(existing.topWeight, weight);
+        if (
+          weight > existing.topWeight ||
+          (weight === existing.topWeight && reps > existing.topWeightReps)
+        ) {
+          existing.topWeight = weight;
+          existing.topWeightReps = reps;
+        }
         existing.totalVolume += volume;
         return;
       }
@@ -306,6 +351,7 @@ export default function WorkoutReportsScreen() {
         setCount: 1,
         totalReps: reps,
         topWeight: weight,
+        topWeightReps: reps,
         totalVolume: volume,
       });
     });
@@ -318,7 +364,13 @@ export default function WorkoutReportsScreen() {
         });
 
         const latest = points[points.length - 1];
-        const bestWeight = Math.max(...points.map((point) => point.topWeight));
+        const weightRecord = getStrengthPersonalRecords(
+          points.map((point) => ({
+            point,
+            weight_kg: point.topWeight,
+            reps: point.topWeightReps,
+          })),
+        ).weight!.point;
         const totalSets = points.reduce((sum, point) => sum + point.setCount, 0);
         const totalVolume = points.reduce(
           (sum, point) => sum + point.totalVolume,
@@ -330,7 +382,8 @@ export default function WorkoutReportsScreen() {
           exercise_name: exercise?.name || "Unknown Exercise",
           muscle_group: exercise?.muscle_group || null,
           points,
-          bestWeight,
+          bestWeight: weightRecord.topWeight,
+          bestWeightReps: weightRecord.topWeightReps,
           latestWeight: latest?.topWeight || 0,
           latestSets: latest?.setCount || 0,
           totalSets,
@@ -442,7 +495,10 @@ export default function WorkoutReportsScreen() {
                 return (
                   <Pressable
                     key={report.exercise_id}
-                    onPress={() => setSelectedExerciseId(report.exercise_id)}
+                    onPress={() => {
+                      setSelectedExerciseId(report.exercise_id);
+                      setPage(1);
+                    }}
                     style={{
                       width: 180,
                       minHeight: 104,
@@ -478,7 +534,9 @@ export default function WorkoutReportsScreen() {
                           fontWeight: "900",
                         }}
                       >
-                        PR {report.bestWeight} kg
+                        {report.bestWeight > 0
+                          ? `PR ${report.bestWeight} kg`
+                          : `PR ${report.bestWeightReps} reps`}
                       </Text>
                     </View>
 
@@ -544,12 +602,20 @@ export default function WorkoutReportsScreen() {
 
               <View style={{ flexDirection: "row", gap: 8, marginTop: 14 }}>
                 <ReportStat
-                  label="PR"
-                  value={`${selectedReport.bestWeight} kg`}
+                  label={selectedReport.bestWeight > 0 ? "Weight PR" : "Rep PR"}
+                  value={
+                    selectedReport.bestWeight > 0
+                      ? `${selectedReport.bestWeight} kg`
+                      : `${selectedReport.bestWeightReps} reps`
+                  }
                 />
                 <ReportStat
-                  label="Latest"
-                  value={`${selectedReport.latestWeight} kg`}
+                  label={selectedReport.bestWeight > 0 ? "Reps at PR" : "Exercise"}
+                  value={
+                    selectedReport.bestWeight > 0
+                      ? `${selectedReport.bestWeightReps}`
+                      : "Bodyweight"
+                  }
                 />
                 <ReportStat
                   label="Sets"
@@ -587,7 +653,7 @@ export default function WorkoutReportsScreen() {
               Progress Log
             </Text>
 
-            {[...selectedReport.points].reverse().map((point) => (
+            {paginatedPoints.map((point) => (
               <View
                 key={point.workout_id}
                 style={{
@@ -617,7 +683,8 @@ export default function WorkoutReportsScreen() {
                   </Text>
 
                   <View style={{ alignItems: "flex-end" }}>
-                    {point.topWeight === selectedReport.bestWeight ? (
+                    {point.topWeight === selectedReport.bestWeight &&
+                    point.topWeightReps === selectedReport.bestWeightReps ? (
                       <Text
                         style={{
                           color: theme.colors.primary,
@@ -635,7 +702,9 @@ export default function WorkoutReportsScreen() {
                         fontWeight: "900",
                       }}
                     >
-                      {point.topWeight} kg
+                      {point.topWeight > 0
+                        ? `${point.topWeight} kg`
+                        : `${point.topWeightReps} reps`}
                     </Text>
                   </View>
                 </View>
@@ -650,6 +719,11 @@ export default function WorkoutReportsScreen() {
                 </View>
               </View>
             ))}
+            <PaginationControls
+              page={safePage}
+              totalPages={totalPages}
+              onPageChange={setPage}
+            />
           </>
         )}
       </ScrollView>
@@ -674,7 +748,13 @@ function ProgressChart({
   const plotWidth = chartWidth - left - right;
   const plotHeight = chartHeight - top - bottom;
   const visiblePoints = points.slice(-12);
-  const maxWeight = Math.max(...visiblePoints.map((point) => point.topWeight), 1);
+  const usesWeight = points.some((point) => point.topWeight > 0);
+  const maxPrimary = Math.max(
+    ...visiblePoints.map((point) =>
+      usesWeight ? point.topWeight : point.topWeightReps,
+    ),
+    1,
+  );
   const maxSets = Math.max(...visiblePoints.map((point) => point.setCount), 1);
   const slotWidth = plotWidth / Math.max(visiblePoints.length, 1);
   const barGap = 3;
@@ -703,7 +783,7 @@ function ProgressChart({
           marginBottom: 8,
         }}
       >
-        Weight and Sets
+        {usesWeight ? "Weight and Sets" : "Reps and Sets"}
       </Text>
 
       <Svg width={chartWidth - 24} height={chartHeight}>
@@ -726,7 +806,10 @@ function ProgressChart({
           const slotX = left + index * slotWidth;
           const groupWidth = barWidth * 2 + barGap;
           const groupX = slotX + (slotWidth - groupWidth) / 2;
-          const weightHeight = (point.topWeight / maxWeight) * plotHeight;
+          const primaryValue = usesWeight
+            ? point.topWeight
+            : point.topWeightReps;
+          const primaryHeight = (primaryValue / maxPrimary) * plotHeight;
           const setsHeight = (point.setCount / maxSets) * plotHeight;
           const shouldShowLabel =
             index === 0 ||
@@ -737,9 +820,9 @@ function ProgressChart({
             <Fragment key={point.workout_id}>
               <Rect
                 x={groupX}
-                y={top + plotHeight - weightHeight}
+                y={top + plotHeight - primaryHeight}
                 width={barWidth}
-                height={weightHeight}
+                height={primaryHeight}
                 rx={4}
                 fill={theme.colors.primary}
               />
@@ -772,12 +855,15 @@ function ProgressChart({
           fill={theme.colors.textMuted}
           fontSize={10}
         >
-          {maxWeight} kg
+          {maxPrimary} {usesWeight ? "kg" : "reps"}
         </SvgText>
       </Svg>
 
       <View style={{ flexDirection: "row", gap: 14, marginTop: 4 }}>
-        <LegendDot color={theme.colors.primary} label="Top weight" />
+        <LegendDot
+          color={theme.colors.primary}
+          label={usesWeight ? "Top weight" : "Top reps"}
+        />
         <LegendDot color={theme.colors.info} label="Sets" />
       </View>
     </View>

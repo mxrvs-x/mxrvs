@@ -10,15 +10,12 @@ import {
   setNativeAndroidBodyMetrics,
   startNativeAndroidStepTracker,
 } from "@/lib/androidStepTracker";
+import { calculateActivityMetrics } from "@/lib/activityCalculations";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Pedometer } from "expo-sensors";
 import { Platform } from "react-native";
 
 const DAILY_ACTIVITY_KEY = "daily_pedometer_activity_v1";
-const DEFAULT_STRIDE_METERS = 0.762;
-const WALKING_STRIDE_HEIGHT_RATIO = 0.415;
-const ESTIMATED_STEPS_PER_MOVING_MINUTE = 100;
-const WALKING_KCAL_PER_KG_KM = 0.5;
 
 export type DailyActivity = {
   date: string;
@@ -115,27 +112,19 @@ async function buildSnapshot({
     getCachedBodyStats(),
   ]);
 
-  const weight = Number(weightLog?.weight_kg);
-  const height = Number(bodyStats?.height_cm);
-  const strideMeters =
-    Number.isFinite(height) && height > 0
-      ? (height / 100) * WALKING_STRIDE_HEIGHT_RATIO
-      : DEFAULT_STRIDE_METERS;
-  const safeSteps = Math.max(0, Math.floor(steps));
-  const distanceKm = (safeSteps * strideMeters) / 1000;
-  const weightKg = Number.isFinite(weight) && weight > 0 ? weight : null;
+  const metrics = calculateActivityMetrics({
+    steps,
+    heightCm: Number(bodyStats?.height_cm),
+    weightKg: Number(weightLog?.weight_kg),
+  });
 
   snapshot = {
     date: dateKey(),
-    steps: safeSteps,
-    movingSeconds: Math.round(
-      (safeSteps / ESTIMATED_STEPS_PER_MOVING_MINUTE) * 60,
-    ),
-    distanceKm,
-    caloriesBurned: weightKg
-      ? Math.round(weightKg * distanceKm * WALKING_KCAL_PER_KG_KM)
-      : 0,
-    weightKg,
+    steps: metrics.steps,
+    movingSeconds: metrics.movingSeconds,
+    distanceKm: metrics.distanceKm,
+    caloriesBurned: metrics.caloriesBurned,
+    weightKg: metrics.weightKg,
     available,
     permissionGranted,
     trackingScope:

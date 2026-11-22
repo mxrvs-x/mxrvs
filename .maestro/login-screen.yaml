@@ -1,0 +1,10 @@
+appId: com.anonymous.mxrvs
+name: Login screen smoke test
+---
+- launchApp:
+    clearState: true
+- assertVisible: "mxrvs"
+- assertVisible: "Login to track your workouts and cardio."
+- assertVisible: "Email"
+- assertVisible: "Password"
+- assertVisible: "Login with Email"

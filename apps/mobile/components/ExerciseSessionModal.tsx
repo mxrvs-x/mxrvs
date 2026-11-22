@@ -1,3 +1,4 @@
+import ThemedAlert from "@/components/ThemedAlert";
 import { useTheme } from "@/lib/theme";
 import { useEffect, useState } from "react";
 import { Modal, Pressable, Text, TextInput, View } from "react-native";
@@ -54,6 +55,9 @@ export default function ExerciseSessionModal({
   const [reps, setReps] = useState("");
   const [weightKg, setWeightKg] = useState("");
   const [restSeconds, setRestSeconds] = useState("90");
+  const [validationMessage, setValidationMessage] = useState<string | null>(
+    null,
+  );
 
   useEffect(() => {
     if (!visible) return;
@@ -62,18 +66,22 @@ export default function ExerciseSessionModal({
     setReps("");
     setWeightKg("");
     setRestSeconds("90");
+    setValidationMessage(null);
   }, [visible, startingSetNumber]);
 
   function completeSet() {
     if (!exercise) return;
 
-    if (!reps || Number(reps) <= 0) {
-      alert("Enter valid reps.");
+    const numericReps = Number(reps);
+    const numericWeight = Number(weightKg);
+
+    if (!Number.isFinite(numericReps) || numericReps <= 0) {
+      setValidationMessage("Enter a valid number of reps greater than zero.");
       return;
     }
 
-    if (!weightKg || Number(weightKg) < 0) {
-      alert("Enter valid weight.");
+    if (!Number.isFinite(numericWeight) || numericWeight < 0 || !weightKg) {
+      setValidationMessage("Enter a valid weight. Use 0 for bodyweight sets.");
       return;
     }
 
@@ -380,6 +388,15 @@ export default function ExerciseSessionModal({
             </>
           )}
         </View>
+
+        <ThemedAlert
+          visible={Boolean(validationMessage)}
+          title="Invalid Set"
+          message={validationMessage || "Check the set details and try again."}
+          confirmText="OK"
+          danger
+          onClose={() => setValidationMessage(null)}
+        />
       </View>
     </Modal>
   );

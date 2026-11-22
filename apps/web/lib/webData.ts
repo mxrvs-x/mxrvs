@@ -108,7 +108,7 @@ export async function loadWebWorkouts() {
         .order("name", { ascending: true }),
       supabase
         .from("workouts")
-        .select("id, workout_date, workout_type, notes, duration_minutes, created_at")
+        .select("id, workout_date, workout_type, notes, duration_minutes, recovery_energy, recovery_sleep_quality, recovery_soreness, recovery_motivation, recovery_stress, created_at")
         .eq("user_id", user.id)
         .order("workout_date", { ascending: false })
         .order("created_at", { ascending: false }),
@@ -121,14 +121,26 @@ export async function loadWebWorkouts() {
   const exerciseRows = dedupeWebExercises((exercises || []) as Exercise[]);
   const exerciseMap = new Map(exerciseRows.map((exercise) => [exercise.id, exercise]));
 
-  let setRows: DbWorkoutSet[] = [];
+  const setRows: DbWorkoutSet[] = [];
   if (workoutIds.length > 0) {
-    const { data } = await supabase
-      .from("workout_sets")
-      .select("id, workout_id, exercise_id, set_number, reps, weight_kg, rest_seconds")
-      .in("workout_id", workoutIds);
+    const pageSize = 500;
+    for (let from = 0; ; from += pageSize) {
+      const { data, error: setsError } = await supabase
+        .from("workout_sets")
+        .select("id, workout_id, exercise_id, set_number, reps, weight_kg, rest_seconds")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: true })
+        .range(from, from + pageSize - 1);
 
-    setRows = (data || []) as DbWorkoutSet[];
+      if (setsError) {
+        console.error("Load web workout sets error:", setsError);
+        return null;
+      }
+
+      const pageRows = (data || []) as DbWorkoutSet[];
+      setRows.push(...pageRows);
+      if (pageRows.length < pageSize) break;
+    }
   }
 
   const mappedWorkouts: Workout[] = workoutRows.map((workout) => ({
@@ -164,7 +176,7 @@ export async function loadWebWorkoutDetails(workoutId: string) {
     await Promise.all([
       supabase
         .from("workouts")
-        .select("id, workout_date, workout_type, notes, duration_minutes, created_at")
+        .select("id, workout_date, workout_type, notes, duration_minutes, recovery_energy, recovery_sleep_quality, recovery_soreness, recovery_motivation, recovery_stress, created_at")
         .eq("id", workoutId)
         .eq("user_id", user.id)
         .maybeSingle(),
@@ -288,8 +300,13 @@ export async function saveWebWorkout(workout: Workout) {
       workout_type: workout.workout_type,
       notes: workout.notes.trim() || null,
       duration_minutes: workout.duration_minutes,
+      recovery_energy: workout.recovery_energy,
+      recovery_sleep_quality: workout.recovery_sleep_quality,
+      recovery_soreness: workout.recovery_soreness,
+      recovery_motivation: workout.recovery_motivation,
+      recovery_stress: workout.recovery_stress,
     })
-    .select("id, workout_date, workout_type, notes, duration_minutes, created_at")
+    .select("id, workout_date, workout_type, notes, duration_minutes, recovery_energy, recovery_sleep_quality, recovery_soreness, recovery_motivation, recovery_stress, created_at")
     .single();
 
   if (error || !data) return null;
@@ -320,6 +337,19 @@ export async function saveWebWorkout(workout: Workout) {
   };
 }
 
+export async function deleteWebWorkout(workoutId: string) {
+  const user = await getWebUser();
+  if (!user) return false;
+
+  const { error } = await supabase
+    .from("workouts")
+    .delete()
+    .eq("id", workoutId)
+    .eq("user_id", user.id);
+
+  return !error;
+}
+
 export async function loadWebCardio() {
   const user = await getWebUser();
   if (!user) return null;
@@ -334,10 +364,25 @@ export async function loadWebCardio() {
   if (error) return null;
   return (data || []).map((session) => ({
     ...(session as CardioSession),
+    distance_km: Number(session.distance_km) || 0,
+    duration_seconds: Number(session.duration_seconds) || 0,
     calories_burned: Number(session.calories_burned) || 0,
     steps: Number(session.steps) || 0,
     notes: session.notes || "",
   }));
+}
+
+export async function deleteWebCardioSession(sessionId: string) {
+  const user = await getWebUser();
+  if (!user) return false;
+
+  const { error } = await supabase
+    .from("cardio_sessions")
+    .delete()
+    .eq("id", sessionId)
+    .eq("user_id", user.id);
+
+  return !error;
 }
 
 export async function loadWebCreatine() {

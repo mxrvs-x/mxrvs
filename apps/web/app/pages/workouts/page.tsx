@@ -1,14 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { CSSProperties, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { History, Play, Settings } from "lucide-react";
 import {
   emptyWorkouts,
   FormattedNotes,
   formatDate,
   formatWorkoutType,
-  getTodayWorkoutPlan,
   MiniStat,
   toDateKey,
   totalVolume,
@@ -18,31 +17,13 @@ import {
 import { loadWebWorkouts, type SyncState } from "@/lib/webData";
 import { appAlert } from "@/lib/sweetAlert";
 
-const splitColors: Record<WorkoutType, string> = {
-  push: "#ef4444",
-  pull: "#3b82f6",
-  legs: "#a855f7",
-  upper: "#f97316",
-  lower: "#22c55e",
-  rest: "#6b7280",
-};
-
 export default function WorkoutsPage() {
-  const suggested = useMemo(() => getTodayWorkoutPlan(), []);
   const [syncState, setSyncState] = useState<SyncState>("local");
   const [workouts, setWorkouts] = useState<Workout[]>(emptyWorkouts);
   const [todayWorkout, setTodayWorkout] = useState<{
     workout_type: WorkoutType;
     duration_minutes: number;
   } | null>(null);
-
-  useEffect(() => {
-    document.documentElement.dataset.workoutTheme = suggested.type;
-
-    return () => {
-      delete document.documentElement.dataset.workoutTheme;
-    };
-  }, [suggested.type]);
 
   useEffect(() => {
     let active = true;
@@ -103,33 +84,22 @@ export default function WorkoutsPage() {
         </div>
         <Link
           className="button"
-          href={`/pages/workouts/setup?split=${suggested.type}`}
+          href="/pages/workouts/setup"
         >
           <Settings size={18} aria-hidden="true" />
           Setup Exercises
         </Link>
       </header>
 
-      <section
-        className="card split-themed suggested-workout"
-        style={
-          { "--split-primary": splitColors[suggested.type] } as CSSProperties
-        }
-      >
-        <p className="eyebrow" style={{ color: "inherit" }}>
-          Suggested Focus
+      <section className="card stack suggested-workout">
+        <p className="eyebrow">
+          Start Training
         </p>
-        <h2>
-          {suggested.short} {suggested.label}
-        </h2>
-        <p>
-          {suggested.type === "rest"
-            ? "Recovery day. Keep it light, walk, stretch, or train anyway if you need to."
-            : "This is today's planned split. Start a session to choose exercises and log sets."}
-        </p>
+        <h2>Choose today&apos;s workout split</h2>
+        <p>Select Push, Pull, Legs, Upper Body, Lower, or Arms before starting.</p>
 
         {todayWorkout ? (
-          <div className="suggested-alert">
+          <div className="panel">
             <strong>Already logged today</strong>
             <span>
               {formatWorkoutType(todayWorkout.workout_type)} -{" "}
@@ -139,11 +109,11 @@ export default function WorkoutsPage() {
         ) : null}
 
         <Link
-          className="button suggested-start"
-          href={`/pages/workouts/session?split=${suggested.type}`}
+          className="button primary"
+          href="/pages/workouts/session"
         >
           <Play size={18} aria-hidden="true" />
-          {suggested.type === "rest" ? "Train Anyway" : "Start Session"}
+          Choose Split
         </Link>
       </section>
 
@@ -155,7 +125,7 @@ export default function WorkoutsPage() {
           </div>
           <Link
             className="button"
-            href={`/pages/workouts/history?split=${suggested.type}`}
+            href="/pages/workouts/history"
           >
             <History size={18} aria-hidden="true" />
             View All

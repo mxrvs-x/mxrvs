@@ -1,19 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { History, Pencil, Play, Plus, Trash2 } from "lucide-react";
 import {
   emptyExercises,
   formatMuscleGroup,
-  getTodayWorkoutPlan,
-  isWorkoutType,
   Modal,
   MUSCLE_GROUPS,
   type Exercise,
   type MuscleGroup,
-  type WorkoutType,
 } from "@/app/components/shared";
 import {
   deleteWebExercise,
@@ -38,24 +34,10 @@ const emptyExerciseForm: ExerciseForm = {
 };
 
 export default function WorkoutSetupPage() {
-  const params = useSearchParams();
-  const suggested = useMemo(() => getTodayWorkoutPlan(), []);
-  const routeSplit = params.get("split");
-  const currentSplit: WorkoutType = isWorkoutType(routeSplit)
-    ? routeSplit
-    : suggested.type;
   const [syncState, setSyncState] = useState<SyncState>("local");
   const [exercises, setExercises] = useState<Exercise[]>(emptyExercises);
   const [filter, setFilter] = useState<"all" | MuscleGroup>("all");
   const [exerciseForm, setExerciseForm] = useState<ExerciseForm | null>(null);
-
-  useEffect(() => {
-    document.documentElement.dataset.workoutTheme = currentSplit;
-
-    return () => {
-      delete document.documentElement.dataset.workoutTheme;
-    };
-  }, [currentSplit]);
 
   useEffect(() => {
     let active = true;
@@ -177,14 +159,14 @@ export default function WorkoutSetupPage() {
         <div className="row responsive">
           <Link
             className="button"
-            href={`/pages/workouts/history?split=${currentSplit}`}
+            href="/pages/workouts/history"
           >
             <History size={18} aria-hidden="true" />
             History
           </Link>
           <Link
             className="button primary"
-            href={`/pages/workouts/session?split=${currentSplit}`}
+            href="/pages/workouts/session"
           >
             <Play size={18} aria-hidden="true" />
             Start

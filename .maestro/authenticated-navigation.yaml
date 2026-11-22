@@ -1,0 +1,28 @@
+appId: com.anonymous.mxrvs
+name: Authenticated core navigation smoke test
+env:
+  E2E_EMAIL: ${E2E_EMAIL}
+  E2E_PASSWORD: ${E2E_PASSWORD}
+---
+- launchApp:
+    clearState: true
+- tapOn:
+    text: "Email"
+- inputText: ${E2E_EMAIL}
+- tapOn:
+    text: "Password"
+- inputText: ${E2E_PASSWORD}
+- hideKeyboard
+- tapOn: "Login with Email"
+- extendedWaitUntil:
+    visible: "Workouts"
+    timeout: 15000
+- assertVisible: "Start Workout"
+- tapOn: "Cardio"
+- assertVisible: "Cardio"
+- tapOn: "Creatine"
+- assertVisible: "Creatine"
+- tapOn: "Profile"
+- assertVisible: "Profile"
+- tapOn: "Workouts"
+- assertVisible: "Workouts"

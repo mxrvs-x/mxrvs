@@ -2,6 +2,7 @@
 
 import { Check, Minus, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import Pagination from "@/app/components/Pagination";
 import {
   ActivityCalendar,
   CreatineChart,
@@ -19,6 +20,8 @@ import {
 } from "@/lib/webData";
 import { appAlert, appConfirm, appToast } from "@/lib/sweetAlert";
 
+const PAGE_SIZE = 10;
+
 export default function CreatinePage() {
   const today = useMemo(() => toDateKey(), []);
   const [logs, setLogs] = useLocalState<CreatineLog[]>("mxrvs-web-creatine", emptyCreatine);
@@ -26,6 +29,7 @@ export default function CreatinePage() {
   const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
   const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
   const [syncState, setSyncState] = useState<SyncState>("local");
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     let active = true;
@@ -61,6 +65,15 @@ export default function CreatinePage() {
     const date = new Date(`${log.date}T00:00:00`);
     return date.getMonth() === calendarMonth && date.getFullYear() === calendarYear;
   });
+  const totalPages = Math.max(1, Math.ceil(logs.length / PAGE_SIZE));
+  const paginatedLogs = logs.slice(
+    (page - 1) * PAGE_SIZE,
+    page * PAGE_SIZE,
+  );
+
+  useEffect(() => {
+    setPage((current) => Math.min(current, totalPages));
+  }, [totalPages]);
 
   async function toggleLog() {
     if (selectedLog) {
@@ -165,7 +178,7 @@ export default function CreatinePage() {
                 <p className="muted">No creatine logs yet.</p>
               </div>
             ) : null}
-            {logs.map((log) => (
+            {paginatedLogs.map((log) => (
               <article className="list-item row between" key={log.id}>
                 <div>
                   <h3>{formatDate(log.date)}</h3>
@@ -175,6 +188,11 @@ export default function CreatinePage() {
               </article>
             ))}
           </div>
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            onPageChange={setPage}
+          />
         </div>
       </section>
     </div>

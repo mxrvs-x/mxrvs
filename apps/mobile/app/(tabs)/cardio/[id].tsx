@@ -5,9 +5,9 @@ import { AppTheme, useTheme } from "@/lib/theme";
 import { supabase } from "@/lib/supabase";
 import * as MediaLibrary from "expo-media-library";
 import * as Sharing from "expo-sharing";
-import { Copy, Download, Share2, X } from "lucide-react-native";
+import { Copy, Download, Share2, Trash2, X } from "lucide-react-native";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   ImageBackground,
@@ -56,6 +56,7 @@ export default function CardioDetailsScreen() {
 
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [session, setSession] = useState<CardioSession | null>(null);
   const [exportBackgroundUri, setExportBackgroundUri] = useState<string | null>(
     null,
@@ -67,13 +68,13 @@ export default function CardioDetailsScreen() {
   const [alertTitle, setAlertTitle] = useState("");
   const [alertMessage, setAlertMessage] = useState("");
   const [alertConfirmText, setAlertConfirmText] = useState("OK");
+  const [alertCancelText, setAlertCancelText] = useState<string | undefined>();
   const [alertDanger, setAlertDanger] = useState(false);
+  const [alertOnConfirm, setAlertOnConfirm] = useState<
+    (() => void) | undefined
+  >();
 
-  useEffect(() => {
-    loadSession();
-  }, [id]);
-
-  async function loadSession() {
+  const loadSession = useCallback(async () => {
     if (!id) return;
 
     setLoading(true);
@@ -93,7 +94,11 @@ export default function CardioDetailsScreen() {
 
     setSession(data);
     setLoading(false);
-  }
+  }, [id]);
+
+  useEffect(() => {
+    void loadSession();
+  }, [loadSession]);
 
   function formatTime(totalSeconds?: number | null) {
     if (!totalSeconds) return "0:00";
@@ -175,17 +180,23 @@ export default function CardioDetailsScreen() {
     title,
     message,
     confirmText = "OK",
+    cancelText,
     danger = false,
+    onConfirm,
   }: {
     title: string;
     message: string;
     confirmText?: string;
+    cancelText?: string;
     danger?: boolean;
+    onConfirm?: () => void;
   }) {
     setAlertTitle(title);
     setAlertMessage(message);
     setAlertConfirmText(confirmText);
+    setAlertCancelText(cancelText);
     setAlertDanger(danger);
+    setAlertOnConfirm(() => onConfirm);
     setAlertOpen(true);
   }
 
@@ -240,6 +251,43 @@ export default function CardioDetailsScreen() {
         danger: true,
       });
     }
+  }
+
+  async function deleteCardioSession() {
+    if (!session || deleting) return;
+
+    setDeleting(true);
+    const { error } = await supabase
+      .from("cardio_sessions")
+      .delete()
+      .eq("id", session.id)
+      .eq("user_id", session.user_id);
+
+    if (error) {
+      console.log("Delete cardio session error:", error);
+      setDeleting(false);
+      showAlert({
+        title: "Delete Failed",
+        message: "Could not delete this cardio session. Please try again.",
+        danger: true,
+      });
+      return;
+    }
+
+    router.back();
+  }
+
+  function confirmDeleteCardioSession() {
+    if (deleting) return;
+
+    showAlert({
+      title: "Delete Cardio Session?",
+      message: "This permanently deletes this cardio session.",
+      confirmText: "Delete Session",
+      cancelText: "Cancel",
+      danger: true,
+      onConfirm: () => void deleteCardioSession(),
+    });
   }
 
   async function confirmExport() {
@@ -599,17 +647,17 @@ export default function CardioDetailsScreen() {
                 <ExportMetric
                   label="Steps"
                   value={`${session.steps || 0}`}
-                  dark={Boolean(exportBackgroundUri)}
+                  onImageBackground={Boolean(exportBackgroundUri)}
                 />
                 <ExportMetric
                   label="Duration"
                   value={formatTime(session.duration_seconds)}
-                  dark={Boolean(exportBackgroundUri)}
+                  onImageBackground={Boolean(exportBackgroundUri)}
                 />
                 <ExportMetric
                   label="Calories"
                   value={`${session.calories_burned || 0}`}
-                  dark={Boolean(exportBackgroundUri)}
+                  onImageBackground={Boolean(exportBackgroundUri)}
                 />
               </View>
             </View>
@@ -836,6 +884,40 @@ export default function CardioDetailsScreen() {
               </Text>
             </View>
           )}
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Delete cardio session"
+            disabled={deleting}
+            onPress={confirmDeleteCardioSession}
+            style={{
+              minHeight: 52,
+              borderRadius: 18,
+              borderWidth: 1,
+              borderColor: theme.colors.danger ?? "#ef4444",
+              alignItems: "center",
+              justifyContent: "center",
+              flexDirection: "row",
+              gap: 10,
+              marginTop: 18,
+              opacity: deleting ? 0.55 : 1,
+            }}
+          >
+            {deleting ? (
+              <ActivityIndicator color={theme.colors.danger ?? "#ef4444"} />
+            ) : (
+              <Trash2 size={20} color={theme.colors.danger ?? "#ef4444"} />
+            )}
+            <Text
+              style={{
+                color: theme.colors.danger ?? "#ef4444",
+                fontWeight: "900",
+                fontSize: 16,
+              }}
+            >
+              {deleting ? "Deleting..." : "Delete Cardio Session"}
+            </Text>
+          </Pressable>
         </View>
       </ScrollView>
 
@@ -844,8 +926,16 @@ export default function CardioDetailsScreen() {
         title={alertTitle}
         message={alertMessage}
         confirmText={alertConfirmText}
+        cancelText={alertCancelText}
         danger={alertDanger}
         onClose={() => setAlertOpen(false)}
+        onConfirm={() => {
+          setAlertOpen(false);
+
+          if (alertOnConfirm) {
+            alertOnConfirm();
+          }
+        }}
       />
     </>
   );
@@ -971,12 +1061,14 @@ function RouteTrace({
 function ExportMetric({
   label,
   value,
-  dark,
+  onImageBackground,
 }: {
   label: string;
   value: string;
-  dark: boolean;
+  onImageBackground: boolean;
 }) {
+  const theme = useTheme();
+
   return (
     <View
       style={{
@@ -984,14 +1076,20 @@ function ExportMetric({
         minWidth: "30%",
         borderRadius: 16,
         padding: 12,
-        backgroundColor: dark ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.06)",
+        backgroundColor: onImageBackground
+          ? "rgba(255,255,255,0.18)"
+          : theme.colors.surfaceAlt,
         borderWidth: 1,
-        borderColor: dark ? "rgba(255,255,255,0.24)" : "rgba(0,0,0,0.08)",
+        borderColor: onImageBackground
+          ? "rgba(255,255,255,0.24)"
+          : theme.colors.border,
       }}
     >
       <RNText
         style={{
-          color: dark ? "rgba(255,255,255,0.72)" : "#64748B",
+          color: onImageBackground
+            ? "rgba(255,255,255,0.72)"
+            : theme.colors.textMuted,
           fontSize: 11,
           fontWeight: "800",
           textTransform: "uppercase",
@@ -1002,7 +1100,7 @@ function ExportMetric({
 
       <RNText
         style={{
-          color: dark ? "#FFFFFF" : "#0F172A",
+          color: onImageBackground ? "#FFFFFF" : theme.colors.text,
           fontSize: 18,
           fontWeight: "900",
           marginTop: 5,

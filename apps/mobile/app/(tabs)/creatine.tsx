@@ -9,8 +9,8 @@ import {
 import { syncCreatineReminderState } from "@/lib/creatineNotifications";
 import { useTheme } from "@/lib/theme";
 import NetInfo from "@react-native-community/netinfo";
-import { useFocusEffect } from "expo-router";
-import { CalendarCheck2, Check, Minus, X } from "lucide-react-native";
+import { useFocusEffect, useRouter } from "expo-router";
+import { Check, ChevronRight, History, Minus, X } from "lucide-react-native";
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -21,11 +21,11 @@ import {
   Text,
   View,
 } from "react-native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function CreatineScreen() {
   const theme = useTheme();
-  const insets = useSafeAreaInsets();
+  const router = useRouter();
 
   const today = useMemo(() => toDateKey(new Date()), []);
   const now = new Date();
@@ -44,6 +44,7 @@ export default function CreatineScreen() {
     () => logs.find((log) => log.date === selectedDate) ?? null,
     [logs, selectedDate],
   );
+  const recentLogs = useMemo(() => logs.slice(0, 5), [logs]);
 
   async function loadLogs(showLoader = false) {
     if (showLoader) setLoading(true);
@@ -165,11 +166,11 @@ export default function CreatineScreen() {
       style={{ flex: 1, backgroundColor: theme.colors.background }}
     >
       <FlatList
-        data={logs}
+        data={recentLogs}
         keyExtractor={(item) => item.id}
         contentContainerStyle={{
           padding: 16,
-          paddingBottom: insets.bottom + 32,
+          paddingBottom: 20,
         }}
         refreshControl={
           <RefreshControl
@@ -345,10 +346,7 @@ export default function CreatineScreen() {
                 alignItems: "center",
               }}
             >
-              <View
-                style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
-              >
-                <CalendarCheck2 size={18} color={theme.colors.primary} />
+              <View>
                 <Text
                   style={{
                     color: theme.colors.text,
@@ -356,18 +354,41 @@ export default function CreatineScreen() {
                     fontWeight: "900",
                   }}
                 >
-                  Attendance
+                  Recent Logs
+                </Text>
+                <Text
+                  style={{
+                    color: theme.colors.textMuted,
+                    fontSize: 12,
+                    fontWeight: "700",
+                    marginTop: 3,
+                  }}
+                >
+                  {currentMonthLogs.length} logged this month
                 </Text>
               </View>
 
-              <Text
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => router.push("/creatine-history")}
                 style={{
-                  color: theme.colors.textMuted,
-                  fontWeight: "900",
+                  minHeight: 42,
+                  paddingHorizontal: 12,
+                  borderRadius: theme.radius.md,
+                  backgroundColor: theme.colors.surfaceAlt,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 6,
                 }}
               >
-                {currentMonthLogs.length} this month
-              </Text>
+                <History size={17} color={theme.colors.primary} />
+                <Text
+                  style={{ color: theme.colors.primary, fontWeight: "900" }}
+                >
+                  View All
+                </Text>
+                <ChevronRight size={16} color={theme.colors.primary} />
+              </Pressable>
             </View>
           </View>
         }

@@ -27,7 +27,14 @@ ChartJS.register(
   Filler,
 );
 
-export type WorkoutType = "push" | "pull" | "legs" | "upper" | "lower" | "rest";
+export type WorkoutType =
+  | "push"
+  | "pull"
+  | "legs"
+  | "upper"
+  | "lower"
+  | "arms"
+  | "rest";
 export type MuscleGroup =
   | "chest"
   | "back"
@@ -53,7 +60,50 @@ export type WorkoutSet = {
   rest_seconds: number;
 };
 
-export type Workout = {
+export type RecoveryCheckIn = {
+  recovery_energy: number | null;
+  recovery_sleep_quality: number | null;
+  recovery_soreness: number | null;
+  recovery_motivation: number | null;
+  recovery_stress: number | null;
+};
+
+export type RecoveryMetricKey = keyof RecoveryCheckIn;
+
+export const RECOVERY_METRICS: Array<{
+  key: RecoveryMetricKey;
+  label: string;
+  hint: string;
+}> = [
+  { key: "recovery_energy", label: "Energy", hint: "1 low · 5 high" },
+  {
+    key: "recovery_sleep_quality",
+    label: "Sleep Quality",
+    hint: "1 poor · 5 excellent",
+  },
+  { key: "recovery_soreness", label: "Soreness", hint: "1 none · 5 severe" },
+  { key: "recovery_motivation", label: "Motivation", hint: "1 low · 5 high" },
+  { key: "recovery_stress", label: "Stress", hint: "1 low · 5 high" },
+];
+
+export function createRecoveryCheckIn(defaultScore: number | null = null) {
+  return {
+    recovery_energy: defaultScore,
+    recovery_sleep_quality: defaultScore,
+    recovery_soreness: defaultScore,
+    recovery_motivation: defaultScore,
+    recovery_stress: defaultScore,
+  } satisfies RecoveryCheckIn;
+}
+
+export function recoveryCheckInLines(checkIn: Partial<RecoveryCheckIn>) {
+  return RECOVERY_METRICS.flatMap((metric) => {
+    const score = checkIn[metric.key];
+    return typeof score === "number" ? [`${metric.label}: ${score}/5`] : [];
+  });
+}
+
+export type Workout = RecoveryCheckIn & {
   id: string;
   workout_date: string;
   workout_type: WorkoutType;
@@ -110,23 +160,10 @@ export const WORKOUT_PLANS = [
   { type: "push" as const, label: "Push", short: "P" },
   { type: "pull" as const, label: "Pull", short: "P" },
   { type: "legs" as const, label: "Legs", short: "L" },
-  { type: "upper" as const, label: "Upper", short: "U" },
-  { type: "lower" as const, label: "Lower / Arms", short: "LA" },
+  { type: "upper" as const, label: "Upper Body", short: "U" },
+  { type: "lower" as const, label: "Lower", short: "L" },
+  { type: "arms" as const, label: "Arms", short: "A" },
 ];
-
-export const WEEK_SPLIT = [
-  { type: "rest" as const, label: "Rest", short: "R" },
-  WORKOUT_PLANS[0],
-  WORKOUT_PLANS[1],
-  WORKOUT_PLANS[2],
-  { type: "rest" as const, label: "Rest", short: "R" },
-  WORKOUT_PLANS[3],
-  WORKOUT_PLANS[4],
-];
-
-export function getTodayWorkoutPlan() {
-  return WEEK_SPLIT[new Date().getDay()];
-}
 
 export function id(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -184,6 +221,7 @@ export function isWorkoutType(value: unknown): value is WorkoutType {
     value === "legs" ||
     value === "upper" ||
     value === "lower" ||
+    value === "arms" ||
     value === "rest"
   );
 }
@@ -196,26 +234,13 @@ export function formatMuscleGroup(group: string) {
 }
 
 const SPLIT_MUSCLE_GROUPS: Record<Exclude<WorkoutType, "rest">, MuscleGroup[]> = {
-  push: ["chest", "shoulders", "arms"],
-  pull: ["back", "arms"],
+  push: ["chest", "back", "shoulders", "arms"],
+  pull: ["chest", "back", "shoulders", "arms"],
   legs: ["legs", "core"],
   upper: ["chest", "back", "shoulders", "arms"],
-  lower: ["legs", "shoulders", "arms", "core"],
+  lower: ["legs", "arms", "core"],
+  arms: ["arms"],
 };
-
-function isRearDeltExercise(exercise: Pick<Exercise, "name" | "muscle_group">) {
-  const name = exercise.name.trim().toLowerCase();
-
-  return (
-    exercise.muscle_group === "shoulders" &&
-    (name.includes("rear delt") ||
-      name.includes("rear delts") ||
-      name.includes("rear deltoid") ||
-      name.includes("face pull") ||
-      name.includes("reverse fly") ||
-      name.includes("reverse pec deck"))
-  );
-}
 
 export function isExerciseRecommendedForWorkout(
   exercise: Exercise,
@@ -223,10 +248,7 @@ export function isExerciseRecommendedForWorkout(
 ) {
   if (type === "rest") return false;
 
-  return (
-    SPLIT_MUSCLE_GROUPS[type].includes(exercise.muscle_group) ||
-    (type === "pull" && isRearDeltExercise(exercise))
-  );
+  return SPLIT_MUSCLE_GROUPS[type].includes(exercise.muscle_group);
 }
 
 export function noteLines(notes: string) {
@@ -479,21 +501,27 @@ export function Modal({
 }
 
 export function useChartOptions(): ChartOptions<"bar" | "line"> {
-  return useMemo(
-    () => ({
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { labels: { color: cssVar("--text-muted"), boxWidth: 12 } },
-        tooltip: { mode: "index", intersect: false },
-      },
-      scales: {
-        x: { ticks: { color: cssVar("--text-muted") }, grid: { color: "transparent" } },
-        y: { ticks: { color: cssVar("--text-muted") }, grid: { color: cssVar("--border") } },
-      },
-    }),
-    [],
-  );
+  const [themeVersion, setThemeVersion] = useState(0);
+
+  useEffect(() => {
+    const refreshTheme = () => setThemeVersion((current) => current + 1);
+    window.addEventListener("mxrvs-theme-change", refreshTheme);
+    return () => window.removeEventListener("mxrvs-theme-change", refreshTheme);
+  }, []);
+
+  void themeVersion;
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { labels: { color: cssVar("--text-muted"), boxWidth: 12 } },
+      tooltip: { mode: "index", intersect: false },
+    },
+    scales: {
+      x: { ticks: { color: cssVar("--text-muted") }, grid: { color: "transparent" } },
+      y: { ticks: { color: cssVar("--text-muted") }, grid: { color: cssVar("--border") } },
+    },
+  };
 }
 
 function cssVar(name: string) {
@@ -503,26 +531,86 @@ function cssVar(name: string) {
 
 export function WorkoutVolumeChart({ workouts }: { workouts: Workout[] }) {
   const options = useChartOptions();
-  const visible = [...workouts].sort((a, b) => a.workout_date.localeCompare(b.workout_date)).slice(-10);
+  const visible = Array.from(
+    workouts.reduce<
+      Map<string, { workout_date: string; volume: number; sets: number }>
+    >((days, workout) => {
+      const current = days.get(workout.workout_date) || {
+        workout_date: workout.workout_date,
+        volume: 0,
+        sets: 0,
+      };
+
+      current.volume += totalVolume(workout);
+      current.sets += workout.sets.length;
+      days.set(workout.workout_date, current);
+      return days;
+    }, new Map()),
+  )
+    .map(([, day]) => day)
+    .sort((a, b) => a.workout_date.localeCompare(b.workout_date))
+    .slice(-10);
+
+  if (visible.length === 0) {
+    return <p className="muted">Complete a workout to see progress here.</p>;
+  }
+
+  if (visible.every((day) => day.sets === 0)) {
+    return <p className="muted">No logged workout sets to chart yet.</p>;
+  }
+
   const data = {
     labels: visible.map((workout) => formatShortDate(workout.workout_date)),
     datasets: [
       {
         label: "Volume kg",
-        data: visible.map(totalVolume),
+        data: visible.map((day) => day.volume),
         backgroundColor: cssVar("--primary"),
         borderRadius: 6,
+        minBarLength: 2,
+        yAxisID: "volume",
       },
       {
         label: "Sets",
-        data: visible.map((workout) => workout.sets.length),
+        data: visible.map((day) => day.sets),
         backgroundColor: cssVar("--info"),
         borderRadius: 6,
+        minBarLength: 2,
+        yAxisID: "sets",
       },
     ],
   };
 
-  return <Bar data={data} options={options as ChartOptions<"bar">} />;
+  const workoutOptions: ChartOptions<"bar"> = {
+    ...(options as ChartOptions<"bar">),
+    scales: {
+      x: options.scales?.x,
+      volume: {
+        beginAtZero: true,
+        position: "left",
+        ticks: { color: cssVar("--text-muted") },
+        grid: { color: cssVar("--border") },
+        title: { display: true, text: "Volume (kg)", color: cssVar("--text-muted") },
+      },
+      sets: {
+        beginAtZero: true,
+        position: "right",
+        ticks: { color: cssVar("--text-muted"), precision: 0 },
+        grid: { drawOnChartArea: false },
+        title: { display: true, text: "Sets", color: cssVar("--text-muted") },
+      },
+    },
+  };
+
+  return (
+    <Bar
+      aria-label="Workout volume and sets over time"
+      data={data}
+      options={workoutOptions}
+      redraw
+      role="img"
+    />
+  );
 }
 
 export function CardioReportChart({ sessions }: { sessions: CardioSession[] }) {

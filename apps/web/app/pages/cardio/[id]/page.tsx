@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { ArrowLeft, Copy } from "lucide-react";
+import { useParams, useRouter } from "next/navigation";
+import { ArrowLeft, Copy, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   emptyCardio,
@@ -13,8 +13,12 @@ import {
   paceText,
   type CardioSession,
 } from "@/app/components/shared";
-import { loadWebCardio, type SyncState } from "@/lib/webData";
-import { appAlert, appToast } from "@/lib/sweetAlert";
+import {
+  deleteWebCardioSession,
+  loadWebCardio,
+  type SyncState,
+} from "@/lib/webData";
+import { appAlert, appConfirm, appToast } from "@/lib/sweetAlert";
 
 function routeParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -50,9 +54,11 @@ function buildCardioClipboardText(session: CardioSession) {
 
 export default function CardioDetailsPage() {
   const params = useParams();
+  const router = useRouter();
   const sessionId = routeParam(params.id);
   const [syncState, setSyncState] = useState<SyncState>("local");
   const [sessions, setSessions] = useState<CardioSession[]>(emptyCardio);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -94,6 +100,34 @@ export default function CardioDetailsPage() {
     }
   }
 
+  async function deleteCardioSession() {
+    if (!session || deleting) return;
+
+    const confirmed = await appConfirm({
+      title: "Delete Cardio Session?",
+      text: "This permanently deletes this cardio session.",
+      confirmButtonText: "Delete Session",
+      icon: "warning",
+    });
+    if (!confirmed) return;
+
+    setDeleting(true);
+    const deleted = await deleteWebCardioSession(session.id);
+    if (!deleted) {
+      setDeleting(false);
+      await appAlert(
+        "Delete Failed",
+        "Could not delete this cardio session. Please try again.",
+        "error",
+      );
+      return;
+    }
+
+    await appToast("Cardio session deleted");
+    router.push("/pages/cardio");
+    router.refresh();
+  }
+
   if (!session) {
     return (
       <div className="page">
@@ -133,6 +167,15 @@ export default function CardioDetailsPage() {
           <button className="button" onClick={copyCardioDetails} type="button">
             <Copy size={18} aria-hidden="true" />
             Copy
+          </button>
+          <button
+            className="button danger"
+            disabled={deleting}
+            onClick={deleteCardioSession}
+            type="button"
+          >
+            <Trash2 size={18} aria-hidden="true" />
+            {deleting ? "Deleting..." : "Delete"}
           </button>
           <Link className="button" href="/pages/cardio">
             <ArrowLeft size={18} aria-hidden="true" />

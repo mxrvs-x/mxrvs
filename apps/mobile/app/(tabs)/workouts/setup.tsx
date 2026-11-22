@@ -12,7 +12,6 @@ import {
   dedupeExercisesByMuscleGroup,
   formatMuscleGroup,
   groupExercisesByMuscleGroup,
-  isWorkoutType,
   sortExercisesByMuscleGroup,
   type MuscleGroup,
   type WorkoutType,
@@ -20,7 +19,6 @@ import {
 import {
   Stack,
   useFocusEffect,
-  useLocalSearchParams,
   useRouter,
 } from "expo-router";
 import { Plus, SquarePen, Trash2, X } from "lucide-react-native";
@@ -33,8 +31,6 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-
-type SetupThemeType = WorkoutType;
 
 type Exercise = {
   id: string;
@@ -71,13 +67,10 @@ const EMPTY_FORM: ExerciseForm = {
   is_compound: false,
 };
 
-function isSetupThemeType(value: unknown): value is SetupThemeType {
-  return typeof value === "string" && isWorkoutType(value);
-}
-
 export default function WorkoutSetupScreen() {
   const router = useRouter();
   const theme = useTheme();
+  const { setSessionTheme } = theme;
   const { width: screenWidth } = useWindowDimensions();
 
   const [loading, setLoading] = useState(true);
@@ -99,12 +92,6 @@ export default function WorkoutSetupScreen() {
     (() => void) | undefined
   >();
 
-  const params = useLocalSearchParams<{ split?: SetupThemeType }>();
-
-  const routeSplit: SetupThemeType = isSetupThemeType(params.split)
-    ? params.split
-    : "push";
-
   const [filter, setFilter] = useState<"all" | MuscleGroup>("all");
 
   const filteredExercises = useMemo(() => {
@@ -125,7 +112,7 @@ export default function WorkoutSetupScreen() {
     return groupExercisesByMuscleGroup(filteredExercises);
   }, [filteredExercises]);
 
-  function showAlert({
+  const showAlert = useCallback(({
     title,
     message,
     confirmText = "OK",
@@ -139,7 +126,7 @@ export default function WorkoutSetupScreen() {
     cancelText?: string;
     danger?: boolean;
     onConfirm?: () => void;
-  }) {
+  }) => {
     setAlertTitle(title);
     setAlertMessage(message);
     setAlertConfirmText(confirmText);
@@ -147,9 +134,9 @@ export default function WorkoutSetupScreen() {
     setAlertDanger(danger);
     setAlertOnConfirm(() => onConfirm);
     setAlertOpen(true);
-  }
+  }, []);
 
-  async function loadExercises() {
+  const loadExercises = useCallback(async () => {
     setLoading(true);
 
     const online = await isOnline();
@@ -186,7 +173,7 @@ export default function WorkoutSetupScreen() {
     setExercises(nextExercises);
     await cacheWorkoutExercises(nextExercises);
     setLoading(false);
-  }
+  }, [showAlert]);
   function openAddModal() {
     setForm({
       ...EMPTY_FORM,
@@ -322,17 +309,17 @@ export default function WorkoutSetupScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      theme.setSessionTheme(routeSplit);
+      setSessionTheme("default");
 
       return () => {
-        theme.setSessionTheme("default");
+        setSessionTheme("default");
       };
-    }, [routeSplit, theme.setSessionTheme]),
+    }, [setSessionTheme]),
   );
 
   useEffect(() => {
-    loadExercises();
-  }, []);
+    void loadExercises();
+  }, [loadExercises]);
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.background }}>

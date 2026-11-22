@@ -7,16 +7,9 @@ import {
   Activity,
   Dumbbell,
   FlaskConical,
-  Moon,
-  Sun,
   UserRound,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import {
-  getStoredTheme,
-  setStoredTheme,
-  type ThemeMode,
-} from "@/app/components/ThemeBoot";
+import { useEffect, useState } from "react";
 import { getWebUser } from "@/lib/webData";
 import { hasActiveStoredWorkoutSession } from "@/lib/workoutSessionStore";
 
@@ -34,7 +27,6 @@ export default function PagesLayout({
 }) {
   const pathname = usePathname() || "";
   const router = useRouter();
-  const [themeMode, setThemeMode] = useState<ThemeMode>("dark");
   const [authReady, setAuthReady] = useState(false);
 
   useEffect(() => {
@@ -57,14 +49,6 @@ export default function PagesLayout({
   }, [router]);
 
   useEffect(() => {
-    setThemeMode(getStoredTheme());
-  }, []);
-
-  useEffect(() => {
-    setStoredTheme(themeMode);
-  }, [themeMode]);
-
-  useEffect(() => {
     const warnBeforeUnload = (event: BeforeUnloadEvent) => {
       if (!hasActiveStoredWorkoutSession()) return;
 
@@ -79,12 +63,6 @@ export default function PagesLayout({
     };
   }, []);
 
-  const currentLabel = useMemo(() => {
-    return (
-      links.find((link) => pathname.startsWith(link.href))?.label || "mxrvs"
-    );
-  }, [pathname]);
-
   if (!authReady) {
     return (
       <main className="auth-shell">
@@ -93,10 +71,10 @@ export default function PagesLayout({
             <Image src="/mxrvs.png" alt="" width={40} height={40} priority />
             <div>
               <strong>mxrvs</strong>
-              <span>Checking session</span>
+              <span>Train. Track. Progress.</span>
             </div>
           </div>
-          <p className="muted">Loading your Supabase session...</p>
+          <p className="muted">Loading your training space...</p>
         </section>
       </main>
     );
@@ -109,7 +87,6 @@ export default function PagesLayout({
           <Image src="/mxrvs.png" alt="" width={36} height={36} priority />
           <div>
             <strong>mxrvs</strong>
-            <span>{currentLabel}</span>
           </div>
         </div>
 
@@ -132,26 +109,6 @@ export default function PagesLayout({
           })}
         </nav>
 
-        <div className="theme-toggle" aria-label="Theme">
-          <button
-            aria-pressed={themeMode === "light"}
-            className={themeMode === "light" ? "active" : ""}
-            onClick={() => setThemeMode("light")}
-            title="Light mode"
-            type="button"
-          >
-            <Sun size={18} aria-hidden="true" />
-          </button>
-          <button
-            aria-pressed={themeMode === "dark"}
-            className={themeMode === "dark" ? "active" : ""}
-            onClick={() => setThemeMode("dark")}
-            title="Dark mode"
-            type="button"
-          >
-            <Moon size={18} aria-hidden="true" />
-          </button>
-        </div>
       </aside>
 
       <main className="page-frame">{children}</main>

@@ -15,6 +15,16 @@ export const BACKGROUND_CARDIO_LOCATION_TASK =
 
 const BACKGROUND_CARDIO_ROUTE_KEY = "background_cardio_route_points";
 const MAX_BACKGROUND_POINTS = 2000;
+let routeStoragePromise: Promise<void> = Promise.resolve();
+
+function withRouteStorageLock<T>(operation: () => Promise<T>) {
+  const result = routeStoragePromise.then(operation, operation);
+  routeStoragePromise = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
+}
 
 async function readBackgroundRoutePoints() {
   const raw = await AsyncStorage.getItem(BACKGROUND_CARDIO_ROUTE_KEY);
@@ -24,15 +34,20 @@ async function readBackgroundRoutePoints() {
 async function appendBackgroundRoutePoints(points: BackgroundCardioRoutePoint[]) {
   if (points.length === 0) return;
 
-  const existing = await readBackgroundRoutePoints();
-  const merged = [...existing, ...points]
-    .sort((a, b) => a.timestamp - b.timestamp)
-    .slice(-MAX_BACKGROUND_POINTS);
+  await withRouteStorageLock(async () => {
+    const existing = await readBackgroundRoutePoints();
+    const byTimestamp = new Map(
+      [...existing, ...points].map((point) => [point.timestamp, point]),
+    );
+    const merged = [...byTimestamp.values()]
+      .sort((a, b) => a.timestamp - b.timestamp)
+      .slice(-MAX_BACKGROUND_POINTS);
 
-  await AsyncStorage.setItem(
-    BACKGROUND_CARDIO_ROUTE_KEY,
-    JSON.stringify(merged),
-  );
+    await AsyncStorage.setItem(
+      BACKGROUND_CARDIO_ROUTE_KEY,
+      JSON.stringify(merged),
+    );
+  });
 }
 
 if (!TaskManager.isTaskDefined(BACKGROUND_CARDIO_LOCATION_TASK)) {
@@ -59,13 +74,17 @@ if (!TaskManager.isTaskDefined(BACKGROUND_CARDIO_LOCATION_TASK)) {
 }
 
 export async function resetBackgroundCardioRoutePoints() {
-  await AsyncStorage.removeItem(BACKGROUND_CARDIO_ROUTE_KEY);
+  await withRouteStorageLock(() =>
+    AsyncStorage.removeItem(BACKGROUND_CARDIO_ROUTE_KEY),
+  );
 }
 
 export async function drainBackgroundCardioRoutePoints() {
-  const points = await readBackgroundRoutePoints();
-  await resetBackgroundCardioRoutePoints();
-  return points;
+  return withRouteStorageLock(async () => {
+    const points = await readBackgroundRoutePoints();
+    await AsyncStorage.removeItem(BACKGROUND_CARDIO_ROUTE_KEY);
+    return points;
+  });
 }
 
 export async function startBackgroundCardioLocation() {
