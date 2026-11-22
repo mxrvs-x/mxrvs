@@ -2,6 +2,7 @@ import { cacheOfflineBodyWeightKg, isOnline } from "@/lib/offlineCardio";
 import {
   cacheOfflineUser,
   getOfflineUserEmail,
+  getOfflineUserId,
   resolveOfflineUserId,
 } from "@/lib/offlineUser";
 import { supabase } from "@/lib/supabase";
@@ -39,9 +40,17 @@ export type BodyWeightLogRecord = OfflineBodyWeightLog & {
   offline?: boolean;
 };
 
-export async function getOfflineBodyWeightLogs() {
+async function getAllOfflineBodyWeightLogs() {
   const raw = await AsyncStorage.getItem(OFFLINE_WEIGHT_KEY);
   return raw ? (JSON.parse(raw) as OfflineBodyWeightLog[]) : [];
+}
+
+export async function getOfflineBodyWeightLogs() {
+  const userId = await getOfflineUserId();
+  if (!userId) return [];
+  return (await getAllOfflineBodyWeightLogs()).filter(
+    (log) => log.user_id === userId,
+  );
 }
 
 export async function getCachedBodyWeightLogs() {
@@ -72,7 +81,7 @@ function isSamePendingBodyWeightLog(
 }
 
 export async function saveOfflineBodyWeightLog(log: OfflineBodyWeightLog) {
-  const existing = await getOfflineBodyWeightLogs();
+  const existing = await getAllOfflineBodyWeightLogs();
   await setOfflineBodyWeightLogs([
     log,
     ...existing.filter((item) => !isSamePendingBodyWeightLog(item, log)),
@@ -80,7 +89,7 @@ export async function saveOfflineBodyWeightLog(log: OfflineBodyWeightLog) {
 }
 
 export async function removeOfflineBodyWeightLog(tempId: string) {
-  const existing = await getOfflineBodyWeightLogs();
+  const existing = await getAllOfflineBodyWeightLogs();
   await setOfflineBodyWeightLogs(
     existing.filter((log) => log.temp_id !== tempId),
   );

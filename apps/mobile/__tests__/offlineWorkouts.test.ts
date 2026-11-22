@@ -11,6 +11,7 @@ jest.mock("@/lib/offlineCardio", () => ({
 }));
 
 jest.mock("@/lib/offlineUser", () => ({
+  getOfflineUserId: jest.fn(),
   resolveOfflineUserId: jest.fn(),
 }));
 
@@ -21,7 +22,7 @@ jest.mock("@/lib/supabase", () => ({
 }));
 
 import { isOnline } from "../lib/offlineCardio";
-import { resolveOfflineUserId } from "../lib/offlineUser";
+import { getOfflineUserId, resolveOfflineUserId } from "../lib/offlineUser";
 import { supabase } from "../lib/supabase";
 
 import {
@@ -35,6 +36,8 @@ import {
 const mockIsOnline = isOnline as jest.MockedFunction<typeof isOnline>;
 const mockResolveOfflineUserId =
   resolveOfflineUserId as jest.MockedFunction<typeof resolveOfflineUserId>;
+const mockGetOfflineUserId =
+  getOfflineUserId as jest.MockedFunction<typeof getOfflineUserId>;
 const mockFrom = supabase.from as jest.Mock;
 
 type Deferred<T> = {
@@ -122,6 +125,7 @@ describe("offline workout synchronization", () => {
 
     mockIsOnline.mockResolvedValue(true);
     mockResolveOfflineUserId.mockResolvedValue("user-1");
+    mockGetOfflineUserId.mockResolvedValue("user-1");
     mockLookupLimit.mockResolvedValue({ data: [], error: null });
     mockWorkoutSingle.mockResolvedValue({
       data: { id: "remote-workout-1" },
@@ -147,6 +151,21 @@ describe("offline workout synchronization", () => {
     });
     expect(await getOfflineWorkouts()).toHaveLength(1);
     expect(mockFrom).not.toHaveBeenCalled();
+  });
+
+  it("exposes only the active user's queued workouts", async () => {
+    await saveOfflineWorkout(workout({ temp_id: "user-1-workout" }));
+    await saveOfflineWorkout(
+      workout({ temp_id: "user-2-workout", user_id: "user-2" }),
+    );
+
+    await expect(getOfflineWorkouts()).resolves.toEqual([
+      expect.objectContaining({ temp_id: "user-1-workout" }),
+    ]);
+    mockGetOfflineUserId.mockResolvedValue("user-2");
+    await expect(getOfflineWorkouts()).resolves.toEqual([
+      expect.objectContaining({ temp_id: "user-2-workout" }),
+    ]);
   });
 
   it("uploads a workout and its sets before removing the queue entry", async () => {

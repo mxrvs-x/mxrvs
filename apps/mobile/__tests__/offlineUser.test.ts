@@ -15,16 +15,25 @@ jest.mock("@/lib/supabase", () => ({
   },
 }));
 
+jest.mock("@/lib/androidStepTracker", () => ({
+  setNativeAndroidBodyMetrics: jest.fn(),
+}));
+
 import {
   cacheOfflineUser,
   getOfflineUserEmail,
   getOfflineUserId,
   resolveOfflineUserId,
 } from "../lib/offlineUser";
+import { setNativeAndroidBodyMetrics } from "../lib/androidStepTracker";
 import { supabase } from "../lib/supabase";
 
 const mockGetSession = supabase.auth.getSession as jest.Mock;
 const mockGetUser = supabase.auth.getUser as jest.Mock;
+const mockSetNativeAndroidBodyMetrics =
+  setNativeAndroidBodyMetrics as jest.MockedFunction<
+    typeof setNativeAndroidBodyMetrics
+  >;
 
 describe("offline user identity resolution", () => {
   let consoleLog: jest.SpyInstance;
@@ -36,6 +45,7 @@ describe("offline user identity resolution", () => {
 
     mockGetSession.mockResolvedValue({ data: { session: null }, error: null });
     mockGetUser.mockResolvedValue({ data: { user: null }, error: null });
+    mockSetNativeAndroidBodyMetrics.mockResolvedValue(null);
   });
 
   afterEach(() => {
@@ -55,6 +65,34 @@ describe("offline user identity resolution", () => {
 
     await expect(getOfflineUserId()).resolves.toBe("user-2");
     await expect(getOfflineUserEmail()).resolves.toBeNull();
+  });
+
+  it("clears user-scoped caches but preserves pending queues on account change", async () => {
+    await cacheOfflineUser({ id: "user-1", email: "first@example.com" });
+    await AsyncStorage.multiSet([
+      ["cached_workouts", "cached workout data"],
+      ["cached_body_weight_logs", "cached weight data"],
+      ["offline_cardio_weight_kg", "70"],
+      ["offline_workouts", "pending workouts"],
+      ["offline_creatine_logs", "pending creatine"],
+    ]);
+
+    await cacheOfflineUser({ id: "user-2", email: "second@example.com" });
+
+    await expect(AsyncStorage.getItem("cached_workouts")).resolves.toBeNull();
+    await expect(
+      AsyncStorage.getItem("cached_body_weight_logs"),
+    ).resolves.toBeNull();
+    await expect(
+      AsyncStorage.getItem("offline_cardio_weight_kg"),
+    ).resolves.toBeNull();
+    await expect(AsyncStorage.getItem("offline_workouts")).resolves.toBe(
+      "pending workouts",
+    );
+    await expect(AsyncStorage.getItem("offline_creatine_logs")).resolves.toBe(
+      "pending creatine",
+    );
+    expect(mockSetNativeAndroidBodyMetrics).toHaveBeenCalledWith(null, null);
   });
 
   it("resolves and caches the active session user first", async () => {

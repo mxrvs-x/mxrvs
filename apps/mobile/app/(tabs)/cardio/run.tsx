@@ -1,6 +1,12 @@
 import ThemedAlert from "@/components/ThemedAlert";
 import { SafeRouteMap, type MapRegion } from "@/components/SafeRouteMap";
 import { requestFitnessPermissions } from "@/lib/appPermissions";
+import {
+  acceptedGpsDistanceKm,
+  calculateElapsedSeconds,
+  estimateStepDistanceKm as estimateCardioStepDistanceKm,
+  isGpsReliable as isCardioGpsReliable,
+} from "@/lib/cardioTracking";
 import { toLocalDateKey } from "@/lib/dates";
 import {
   drainBackgroundCardioRoutePoints,
@@ -120,46 +126,19 @@ function useRunSession() {
 }
 
 function elapsedSeconds(session = runSession) {
-  if (!session.tracking) return session.seconds;
-
-  if (session.isPaused || !session.startedAtMs) {
-    return Math.floor(session.activeMs / 1000);
-  }
-
-  return Math.floor(
-    (session.activeMs + Date.now() - session.startedAtMs) / 1000,
-  );
-}
-
-function calculateDistanceKm(a: RoutePoint, b: RoutePoint) {
-  const R = 6371;
-
-  const dLat = ((b.latitude - a.latitude) * Math.PI) / 180;
-  const dLon = ((b.longitude - a.longitude) * Math.PI) / 180;
-
-  const lat1 = (a.latitude * Math.PI) / 180;
-  const lat2 = (b.latitude * Math.PI) / 180;
-
-  const x =
-    Math.sin(dLat / 2) ** 2 +
-    Math.sin(dLon / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
-
-  const c = 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
-
-  return R * c;
+  return calculateElapsedSeconds(session);
 }
 
 function isGpsReliable(accuracy: number | null) {
-  if (!accuracy) return false;
-  return accuracy <= 25;
+  return isCardioGpsReliable(accuracy, 25);
 }
 
 function estimateStepDistanceKm(steps: number, heightCm: number | null) {
-  if (!heightCm || heightCm <= 0) return 0;
-
-  const strideM = (heightCm / 100) * RUNNING_STRIDE_HEIGHT_RATIO;
-
-  return (steps * strideM) / 1000;
+  return estimateCardioStepDistanceKm(
+    steps,
+    heightCm,
+    RUNNING_STRIDE_HEIGHT_RATIO,
+  );
 }
 
 function handleLocationUpdate(location: Location.LocationObject) {
@@ -200,15 +179,13 @@ function handleLocationUpdate(location: Location.LocationObject) {
   }
 
   const lastPoint = lastPointRef;
-  let addedKm = 0;
-
-  if (lastPoint && isGpsReliable(accuracy)) {
-    const distance = calculateDistanceKm(lastPoint, point);
-
-    if (distance > 0.001 && distance < 0.08) {
-      addedKm = distance;
-    }
-  }
+  const addedKm = acceptedGpsDistanceKm({
+    previous: lastPoint,
+    current: point,
+    accuracyMeters: accuracy,
+    maxAccuracyMeters: 25,
+    maxSegmentKm: 0.08,
+  });
 
   lastPointRef = point;
 

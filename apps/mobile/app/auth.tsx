@@ -1,4 +1,9 @@
 import ThemedAlert from "@/components/ThemedAlert";
+import {
+  authenticateBiometricSession,
+  persistBiometricPreference,
+  readBiometricReadiness,
+} from "@/lib/authRecovery";
 import { cacheOfflineUser } from "@/lib/offlineUser";
 import { useTheme } from "@/lib/theme";
 import * as LocalAuthentication from "expo-local-authentication";
@@ -79,31 +84,25 @@ export default function AuthScreen() {
     }
 
     try {
-      const savedEmail = await SecureStore.getItemAsync(SAVED_EMAIL_KEY);
-      const biometricEnabled = await SecureStore.getItemAsync(
-        BIOMETRIC_ENABLED_KEY,
-      );
+      const readiness = await readBiometricReadiness({
+        getSavedEmail: () => SecureStore.getItemAsync(SAVED_EMAIL_KEY),
+        getBiometricEnabled: () =>
+          SecureStore.getItemAsync(BIOMETRIC_ENABLED_KEY),
+        getSession: async () => {
+          const {
+            data: { session },
+          } = await supabase.auth.getSession();
+          return session;
+        },
+        hasHardware: LocalAuthentication.hasHardwareAsync,
+        isEnrolled: LocalAuthentication.isEnrolledAsync,
+        onError: (error) => console.error("Failed to initialize auth", error),
+      });
 
-      if (savedEmail) {
-        setEmail(savedEmail);
+      if (readiness.savedEmail) {
+        setEmail(readiness.savedEmail);
       }
-
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      const hasHardware = await LocalAuthentication.hasHardwareAsync();
-      const isEnrolled = await LocalAuthentication.isEnrolledAsync();
-
-      setBiometricReady(
-        Boolean(
-          session &&
-            savedEmail &&
-            biometricEnabled === "true" &&
-            hasHardware &&
-            isEnrolled,
-        ),
-      );
+      setBiometricReady(readiness.biometricReady);
     } catch (error) {
       console.error("Failed to initialize auth", error);
       setBiometricReady(false);
@@ -149,10 +148,18 @@ export default function AuthScreen() {
       return;
     }
 
-    await SecureStore.setItemAsync(SAVED_EMAIL_KEY, email.trim());
-    await SecureStore.setItemAsync(BIOMETRIC_ENABLED_KEY, "true");
+    await persistBiometricPreference({
+      saveEmail: () =>
+        SecureStore.setItemAsync(SAVED_EMAIL_KEY, email.trim()),
+      enableBiometrics: () =>
+        SecureStore.setItemAsync(BIOMETRIC_ENABLED_KEY, "true"),
+      onError: (storageError) =>
+        console.error("Failed to save biometric preference", storageError),
+    });
     if (data.user) {
-      await cacheOfflineUser(data.user);
+      await cacheOfflineUser(data.user).catch((cacheError) => {
+        console.error("Failed to cache signed-in user", cacheError);
+      });
     }
 
     router.replace("/(tabs)/workouts" as any);
@@ -170,35 +177,46 @@ export default function AuthScreen() {
 
     setLoading(true);
 
-    const result = await LocalAuthentication.authenticateAsync({
-      promptMessage: "Unlock mxrvs",
-      fallbackLabel: "Use passcode",
-      cancelLabel: "Cancel",
+    const result = await authenticateBiometricSession({
+      authenticate: () =>
+        LocalAuthentication.authenticateAsync({
+          promptMessage: "Unlock mxrvs",
+          fallbackLabel: "Use passcode",
+          cancelLabel: "Cancel",
+        }),
+      getSession: async () => {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        return session;
+      },
+      clearBiometricPreference: () =>
+        SecureStore.deleteItemAsync(BIOMETRIC_ENABLED_KEY),
+      onError: (biometricError) =>
+        console.error("Biometric login recovery error", biometricError),
     });
-
-    if (!result.success) {
-      setLoading(false);
-      return;
-    }
-
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
 
     setLoading(false);
 
-    if (session) {
-      await cacheOfflineUser(session.user);
+    if (result.status === "authenticated") {
+      await cacheOfflineUser(result.user).catch((cacheError) => {
+        console.error("Failed to cache biometric user", cacheError);
+      });
       router.replace("/(tabs)/workouts" as any);
-    } else {
+    } else if (result.status === "expired") {
       showAlert({
         title: "Session Expired",
         message: "Please login again with your email and password.",
         danger: true,
       });
 
-      await SecureStore.deleteItemAsync(BIOMETRIC_ENABLED_KEY);
       setBiometricReady(false);
+    } else if (result.status === "error") {
+      showAlert({
+        title: "Biometric Login Failed",
+        message: "Please try again or login with your email and password.",
+        danger: true,
+      });
     }
   }
 

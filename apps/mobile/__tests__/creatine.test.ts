@@ -22,6 +22,7 @@ jest.mock("@/lib/supabase", () => ({
 
 import { supabase } from "../lib/supabase";
 import {
+  cacheOfflineCreatineUserId,
   cacheCreatineLogs,
   deleteCreatineLog,
   getOfflineCreatineLogs,
@@ -143,6 +144,7 @@ describe("creatine offline synchronization", () => {
 
   beforeEach(async () => {
     await AsyncStorage.clear();
+    await cacheOfflineCreatineUserId("user-1");
     jest.clearAllMocks();
     consoleLog = jest.spyOn(console, "log").mockImplementation(() => {});
 
@@ -198,6 +200,24 @@ describe("creatine offline synchronization", () => {
     });
     expect(await getOfflineCreatineLogs()).toHaveLength(1);
     expect(mockFrom).not.toHaveBeenCalled();
+  });
+
+  it("exposes only the active user's queued creatine logs", async () => {
+    await saveOfflineCreatineLog(offlineLog());
+    await saveOfflineCreatineLog(
+      offlineLog({
+        temp_id: "user-2-creatine",
+        user_id: "user-2",
+      }),
+    );
+
+    await expect(getOfflineCreatineLogs()).resolves.toEqual([
+      expect.objectContaining({ user_id: "user-1" }),
+    ]);
+    await cacheOfflineCreatineUserId("user-2");
+    await expect(getOfflineCreatineLogs()).resolves.toEqual([
+      expect.objectContaining({ temp_id: "user-2-creatine" }),
+    ]);
   });
 
   it("uploads and removes a queued entry after success", async () => {

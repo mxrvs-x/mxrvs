@@ -16,6 +16,27 @@ export type StoredWorkoutSession = {
   notes: string;
 };
 
+const WORKOUT_TYPES: WorkoutType[] = [
+  "push",
+  "pull",
+  "legs",
+  "upper",
+  "lower",
+  "rest",
+];
+
+function isWorkoutType(value: unknown): value is WorkoutType {
+  return WORKOUT_TYPES.includes(value as WorkoutType);
+}
+
+function finiteNumber(value: unknown, fallback = 0) {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function nonNegativeNumber(value: unknown) {
+  return Math.max(0, finiteNumber(value));
+}
+
 export function readStoredWorkoutSession() {
   if (typeof window === "undefined") return null;
 
@@ -23,28 +44,51 @@ export function readStoredWorkoutSession() {
     const raw = window.localStorage.getItem(ACTIVE_WORKOUT_SESSION_KEY);
     if (!raw) return null;
 
-    const session = JSON.parse(raw) as StoredWorkoutSession;
-    if (!session.started || !session.selectedType) return null;
+    const session = JSON.parse(raw) as Partial<StoredWorkoutSession> | null;
+    if (
+      !session ||
+      typeof session !== "object" ||
+      session.started !== true ||
+      !isWorkoutType(session.selectedType)
+    ) {
+      return null;
+    }
 
     const now = Date.now();
+    const paused = session.paused === true;
+    const elapsedUpdatedAt = finiteNumber(session.elapsedUpdatedAt);
+    const restUpdatedAt = finiteNumber(session.restUpdatedAt);
     const elapsedDelta =
-      !session.paused && session.elapsedUpdatedAt
-        ? Math.max(0, Math.floor((now - session.elapsedUpdatedAt) / 1000))
+      !paused && elapsedUpdatedAt
+        ? Math.max(0, Math.floor((now - elapsedUpdatedAt) / 1000))
         : 0;
     const restDelta =
-      !session.paused && session.restUpdatedAt
-        ? Math.max(0, Math.floor((now - session.restUpdatedAt) / 1000))
+      !paused && restUpdatedAt
+        ? Math.max(0, Math.floor((now - restUpdatedAt) / 1000))
         : 0;
 
     return {
-      ...session,
-      elapsedSeconds: Math.max(0, Number(session.elapsedSeconds || 0) + elapsedDelta),
-      restRemaining: Math.max(0, Number(session.restRemaining || 0) - restDelta),
+      selectedType: session.selectedType,
       selectedExerciseIds: Array.isArray(session.selectedExerciseIds)
-        ? session.selectedExerciseIds
+        ? session.selectedExerciseIds.filter(
+            (exerciseId): exerciseId is string => typeof exerciseId === "string",
+          )
         : [],
+      started: true,
+      paused,
+      elapsedSeconds: nonNegativeNumber(session.elapsedSeconds) + elapsedDelta,
+      elapsedUpdatedAt,
+      restRemaining: Math.max(
+        0,
+        nonNegativeNumber(session.restRemaining) - restDelta,
+      ),
+      restUpdatedAt,
+      restExerciseId:
+        typeof session.restExerciseId === "string"
+          ? session.restExerciseId
+          : null,
       sets: Array.isArray(session.sets) ? session.sets : [],
-      notes: session.notes || "",
+      notes: typeof session.notes === "string" ? session.notes : "",
     };
   } catch {
     return null;

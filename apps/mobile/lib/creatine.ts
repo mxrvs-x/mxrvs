@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { getOfflineUserId } from "@/lib/offlineUser";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import NetInfo from "@react-native-community/netinfo";
 
@@ -63,9 +64,18 @@ export async function resolveCreatineUserId() {
   return getOfflineCreatineUserId();
 }
 
-export async function getOfflineCreatineLogs() {
+async function getAllOfflineCreatineLogs() {
   const raw = await AsyncStorage.getItem(OFFLINE_CREATINE_KEY);
   return raw ? (JSON.parse(raw) as OfflineCreatineLog[]) : [];
+}
+
+export async function getOfflineCreatineLogs() {
+  const userId =
+    (await getOfflineUserId()) ?? (await getOfflineCreatineUserId());
+  if (!userId) return [];
+  return (await getAllOfflineCreatineLogs()).filter(
+    (log) => log.user_id === userId,
+  );
 }
 
 export async function getCachedCreatineLogs() {
@@ -82,14 +92,19 @@ async function setOfflineCreatineLogs(logs: OfflineCreatineLog[]) {
 }
 
 export async function saveOfflineCreatineLog(log: OfflineCreatineLog) {
-  const existing = await getOfflineCreatineLogs();
-  const updated = [log, ...existing.filter((item) => item.date !== log.date)];
+  const existing = await getAllOfflineCreatineLogs();
+  const updated = [
+    log,
+    ...existing.filter(
+      (item) => item.user_id !== log.user_id || item.date !== log.date,
+    ),
+  ];
 
   await setOfflineCreatineLogs(updated);
 }
 
 export async function removeOfflineCreatineLog(tempId: string) {
-  const existing = await getOfflineCreatineLogs();
+  const existing = await getAllOfflineCreatineLogs();
   const updated = existing.filter((log) => log.temp_id !== tempId);
 
   await setOfflineCreatineLogs(updated);

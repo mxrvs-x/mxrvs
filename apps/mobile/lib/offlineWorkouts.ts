@@ -1,5 +1,5 @@
 import { isOnline } from "@/lib/offlineCardio";
-import { resolveOfflineUserId } from "@/lib/offlineUser";
+import { getOfflineUserId, resolveOfflineUserId } from "@/lib/offlineUser";
 import { supabase } from "@/lib/supabase";
 import {
   dedupeExercisesByMuscleGroup,
@@ -44,9 +44,17 @@ type SyncResult = { synced: number; remaining: number };
 
 let syncPromise: Promise<SyncResult> | null = null;
 
-export async function getOfflineWorkouts() {
+async function getAllOfflineWorkouts() {
   const raw = await AsyncStorage.getItem(OFFLINE_WORKOUTS_KEY);
   return raw ? (JSON.parse(raw) as OfflineWorkout[]) : [];
+}
+
+export async function getOfflineWorkouts() {
+  const userId = await getOfflineUserId();
+  if (!userId) return [];
+  return (await getAllOfflineWorkouts()).filter(
+    (workout) => workout.user_id === userId,
+  );
 }
 
 export async function getCachedWorkouts() {
@@ -100,7 +108,7 @@ function isSamePendingWorkout(a: OfflineWorkout, b: OfflineWorkout) {
 }
 
 export async function saveOfflineWorkout(workout: OfflineWorkout) {
-  const existing = await getOfflineWorkouts();
+  const existing = await getAllOfflineWorkouts();
   await setOfflineWorkouts([
     workout,
     ...existing.filter((item) => !isSamePendingWorkout(item, workout)),
@@ -108,7 +116,7 @@ export async function saveOfflineWorkout(workout: OfflineWorkout) {
 }
 
 export async function removeOfflineWorkout(tempId: string) {
-  const existing = await getOfflineWorkouts();
+  const existing = await getAllOfflineWorkouts();
   await setOfflineWorkouts(
     existing.filter((workout) => workout.temp_id !== tempId),
   );

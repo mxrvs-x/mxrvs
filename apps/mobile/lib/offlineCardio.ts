@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { getOfflineUserId } from "@/lib/offlineUser";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import NetInfo from "@react-native-community/netinfo";
 
@@ -37,9 +38,17 @@ export async function isOnline() {
   return Boolean(state.isConnected && state.isInternetReachable !== false);
 }
 
-export async function getOfflineCardioSessions() {
+async function getAllOfflineCardioSessions() {
   const raw = await AsyncStorage.getItem(OFFLINE_CARDIO_KEY);
   return raw ? (JSON.parse(raw) as OfflineCardioSession[]) : [];
+}
+
+export async function getOfflineCardioSessions() {
+  const userId = (await getOfflineUserId()) ?? (await getOfflineCardioUserId());
+  if (!userId) return [];
+  return (await getAllOfflineCardioSessions()).filter(
+    (session) => session.user_id === userId,
+  );
 }
 
 export async function getCachedCardioSessions() {
@@ -79,7 +88,7 @@ function isSamePendingCardioSession(
 }
 
 export async function saveOfflineCardioSession(session: OfflineCardioSession) {
-  const existing = await getOfflineCardioSessions();
+  const existing = await getAllOfflineCardioSessions();
   const updated = [
     session,
     ...existing.filter((item) => !isSamePendingCardioSession(item, session)),
@@ -161,7 +170,7 @@ export async function resolveCardioUserId() {
 }
 
 export async function removeOfflineCardioSession(tempId: string) {
-  const existing = await getOfflineCardioSessions();
+  const existing = await getAllOfflineCardioSessions();
   const updated = existing.filter((s) => s.temp_id !== tempId);
 
   await AsyncStorage.setItem(OFFLINE_CARDIO_KEY, JSON.stringify(updated));

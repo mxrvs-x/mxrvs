@@ -14,6 +14,7 @@ jest.mock("@/lib/offlineCardio", () => ({
 jest.mock("@/lib/offlineUser", () => ({
   cacheOfflineUser: jest.fn(),
   getOfflineUserEmail: jest.fn(),
+  getOfflineUserId: jest.fn(),
   resolveOfflineUserId: jest.fn(),
 }));
 
@@ -32,6 +33,7 @@ import {
 } from "../lib/offlineCardio";
 import {
   getOfflineUserEmail,
+  getOfflineUserId,
   resolveOfflineUserId,
 } from "../lib/offlineUser";
 import { supabase } from "../lib/supabase";
@@ -99,6 +101,8 @@ const mockResolveOfflineUserId =
   resolveOfflineUserId as jest.MockedFunction<typeof resolveOfflineUserId>;
 const mockGetOfflineUserEmail =
   getOfflineUserEmail as jest.MockedFunction<typeof getOfflineUserEmail>;
+const mockGetOfflineUserId =
+  getOfflineUserId as jest.MockedFunction<typeof getOfflineUserId>;
 const mockFrom = supabase.from as jest.Mock;
 const mockLookupEq = jest.fn();
 const mockLookupLimit = jest.fn();
@@ -157,6 +161,7 @@ describe("offline body-weight synchronization", () => {
     mockIsOnline.mockResolvedValue(true);
     mockResolveOfflineUserId.mockResolvedValue("user-1");
     mockGetOfflineUserEmail.mockResolvedValue("athlete@example.com");
+    mockGetOfflineUserId.mockResolvedValue("user-1");
     mockLookupLimit.mockResolvedValue({ data: [], error: null });
     mockInsertSingle.mockResolvedValue({
       data: storedWeight({ id: "remote-weight-1" }),
@@ -207,6 +212,21 @@ describe("offline body-weight synchronization", () => {
     });
     expect(await getOfflineBodyWeightLogs()).toHaveLength(1);
     expect(mockFrom).not.toHaveBeenCalled();
+  });
+
+  it("exposes only the active user's queued weight logs", async () => {
+    await saveOfflineBodyWeightLog(offlineWeight());
+    await saveOfflineBodyWeightLog(
+      offlineWeight({ temp_id: "user-2-weight", user_id: "user-2" }),
+    );
+
+    await expect(getOfflineBodyWeightLogs()).resolves.toEqual([
+      expect.objectContaining({ user_id: "user-1" }),
+    ]);
+    mockGetOfflineUserId.mockResolvedValue("user-2");
+    await expect(getOfflineBodyWeightLogs()).resolves.toEqual([
+      expect.objectContaining({ temp_id: "user-2-weight" }),
+    ]);
   });
 
   it("uploads a measurement, removes it, and refreshes the widget cache", async () => {

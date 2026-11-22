@@ -21,6 +21,7 @@ jest.mock("@/lib/supabase", () => ({
 import NetInfo from "@react-native-community/netinfo";
 import { supabase } from "../lib/supabase";
 import {
+  cacheOfflineCardioUserId,
   cacheCardioSessions,
   getCachedCardioSessions,
   getOfflineCardioSessions,
@@ -103,6 +104,7 @@ describe("offline cardio synchronization", () => {
 
   beforeEach(async () => {
     await AsyncStorage.clear();
+    await cacheOfflineCardioUserId("user-1");
     jest.clearAllMocks();
     consoleLog = jest.spyOn(console, "log").mockImplementation(() => {});
 
@@ -155,6 +157,21 @@ describe("offline cardio synchronization", () => {
     });
     expect(await getOfflineCardioSessions()).toHaveLength(1);
     expect(mockFrom).not.toHaveBeenCalled();
+  });
+
+  it("exposes only the active user's queued cardio sessions", async () => {
+    await saveOfflineCardioSession(offlineSession());
+    await saveOfflineCardioSession(
+      offlineSession({ temp_id: "user-2-cardio", user_id: "user-2" }),
+    );
+
+    await expect(getOfflineCardioSessions()).resolves.toEqual([
+      expect.objectContaining({ user_id: "user-1" }),
+    ]);
+    await cacheOfflineCardioUserId("user-2");
+    await expect(getOfflineCardioSessions()).resolves.toEqual([
+      expect.objectContaining({ temp_id: "user-2-cardio" }),
+    ]);
   });
 
   it("uploads a session before removing it from the queue", async () => {
