@@ -1,44 +1,32 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import { Play, Settings } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import Pagination from "@/app/components/Pagination";
 import {
   ActivityCalendar,
   emptyWorkouts,
   FormattedNotes,
   formatDate,
   formatWorkoutType,
-  getTodayWorkoutPlan,
-  isWorkoutType,
   MiniStat,
   totalVolume,
-  type WorkoutType,
   type Workout,
   WorkoutVolumeChart,
 } from "@/app/components/shared";
 import { loadWebWorkouts, type SyncState } from "@/lib/webData";
+import { getStrengthPersonalRecords } from "@/lib/personalRecords";
 import { appAlert } from "@/lib/sweetAlert";
 
+const PAGE_SIZE = 8;
+
 export default function WorkoutHistoryPage() {
-  const params = useSearchParams();
-  const suggested = useMemo(() => getTodayWorkoutPlan(), []);
-  const routeSplit = params.get("split");
-  const currentSplit: WorkoutType = isWorkoutType(routeSplit)
-    ? routeSplit
-    : suggested.type;
   const [syncState, setSyncState] = useState<SyncState>("local");
   const [workouts, setWorkouts] = useState<Workout[]>(emptyWorkouts);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-
-  useEffect(() => {
-    document.documentElement.dataset.workoutTheme = currentSplit;
-
-    return () => {
-      delete document.documentElement.dataset.workoutTheme;
-    };
-  }, [currentSplit]);
+  const [page, setPage] = useState(1);
+  const [selectedExerciseKey, setSelectedExerciseKey] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -80,6 +68,44 @@ export default function WorkoutHistoryPage() {
       ? sorted.filter((workout) => workout.workout_date === selectedDate)
       : sorted;
   }, [selectedDate, workouts]);
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredWorkouts.length / PAGE_SIZE),
+  );
+  const paginatedWorkouts = filteredWorkouts.slice(
+    (page - 1) * PAGE_SIZE,
+    page * PAGE_SIZE,
+  );
+  const exerciseRecords = useMemo(() => {
+    const grouped = new Map<
+      string,
+      Array<Workout["sets"][number]>
+    >();
+
+    workouts.forEach((workout) => {
+      workout.sets.forEach((set) => {
+        if (Number(set.reps) <= 0) return;
+        const key = set.exercise_name.trim().toLowerCase() || set.exercise_id;
+        grouped.set(key, [...(grouped.get(key) || []), set]);
+      });
+    });
+
+    return Array.from(grouped.entries())
+      .map(([key, sets]) => ({
+        key,
+        name: sets[0]?.exercise_name || "Exercise",
+        ...getStrengthPersonalRecords(sets),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [workouts]);
+  const selectedExerciseRecord =
+    exerciseRecords.find((record) => record.key === selectedExerciseKey) ||
+    exerciseRecords[0] ||
+    null;
+
+  useEffect(() => {
+    setPage(1);
+  }, [selectedDate]);
 
   return (
     <div className="page">
@@ -95,14 +121,14 @@ export default function WorkoutHistoryPage() {
         <div className="row responsive">
           <Link
             className="button"
-            href={`/pages/workouts/setup?split=${currentSplit}`}
+            href="/pages/workouts/setup"
           >
             <Settings size={18} aria-hidden="true" />
             Setup
           </Link>
           <Link
             className="button primary"
-            href={`/pages/workouts/session?split=${currentSplit}`}
+            href="/pages/workouts/session"
           >
             <Play size={18} aria-hidden="true" />
             Start
@@ -136,6 +162,55 @@ export default function WorkoutHistoryPage() {
             <div className="chart-wrap">
               <WorkoutVolumeChart workouts={workouts} />
             </div>
+            {selectedExerciseRecord ? (
+              <div className="stack" style={{ marginTop: 16 }}>
+                <div className="field">
+                  <label htmlFor="workout-pr-exercise">Exercise PR</label>
+                  <select
+                    className="select"
+                    id="workout-pr-exercise"
+                    onChange={(event) => setSelectedExerciseKey(event.target.value)}
+                    value={selectedExerciseRecord.key}
+                  >
+                    {exerciseRecords.map((record) => (
+                      <option key={record.key} value={record.key}>
+                        {record.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="row wrap">
+                  <MiniStat
+                    label={
+                      Number(selectedExerciseRecord.weight?.weight_kg) > 0
+                        ? "Weight PR"
+                        : "Rep PR"
+                    }
+                    value={
+                      selectedExerciseRecord.weight
+                        ? Number(selectedExerciseRecord.weight.weight_kg) > 0
+                          ? `${selectedExerciseRecord.weight.weight_kg} kg`
+                          : `${selectedExerciseRecord.weight.reps} reps`
+                        : "--"
+                    }
+                  />
+                  <MiniStat
+                    label={
+                      Number(selectedExerciseRecord.weight?.weight_kg) > 0
+                        ? "Reps at PR"
+                        : "Exercise"
+                    }
+                    value={
+                      selectedExerciseRecord.weight
+                        ? Number(selectedExerciseRecord.weight.weight_kg) > 0
+                          ? `${selectedExerciseRecord.weight.reps}`
+                          : "Bodyweight"
+                        : "--"
+                    }
+                  />
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -156,7 +231,7 @@ export default function WorkoutHistoryPage() {
               </div>
             ) : null}
 
-            {filteredWorkouts.map((workout) => (
+            {paginatedWorkouts.map((workout) => (
               <Link
                 className="list-item stack"
                 href={`/pages/workouts/${workout.id}`}
@@ -185,6 +260,11 @@ export default function WorkoutHistoryPage() {
               </Link>
             ))}
           </div>
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            onPageChange={setPage}
+          />
         </div>
       </section>
     </div>

@@ -1,4 +1,5 @@
 import ActivityCalendar from "@/components/ActivityCalendar";
+import PaginationControls from "@/components/PaginationControls";
 import { isOnline } from "@/lib/offlineCardio";
 import { resolveOfflineUserId } from "@/lib/offlineUser";
 import {
@@ -25,7 +26,7 @@ import {
   useRouter,
 } from "expo-router";
 import { BarChart3, X } from "lucide-react-native";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -54,6 +55,8 @@ type WorkoutSet = {
   weight_kg: number;
 };
 
+const PAGE_SIZE = 8;
+
 export default function WorkoutHistoryScreen() {
   const router = useRouter();
   const theme = useTheme();
@@ -70,6 +73,7 @@ export default function WorkoutHistoryScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
 
   function handleClosePress() {
     router.back();
@@ -203,6 +207,18 @@ export default function WorkoutHistoryScreen() {
     if (!selectedDate) return sessions;
     return sessions.filter((s) => s.workout_date === selectedDate);
   }, [sessions, selectedDate]);
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredSessions.length / PAGE_SIZE),
+  );
+  const paginatedSessions = useMemo(
+    () => filteredSessions.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [filteredSessions, page],
+  );
+
+  useEffect(() => {
+    setPage(1);
+  }, [selectedDate]);
 
   function formatDate(date: string) {
     return new Date(date).toLocaleDateString("en-PH", {
@@ -244,11 +260,11 @@ export default function WorkoutHistoryScreen() {
 
       <FlatList
         style={{ flex: 1 }}
-        data={filteredSessions}
+        data={paginatedSessions}
         keyExtractor={(item) => item.id}
         contentContainerStyle={{
           padding: 16,
-          paddingBottom: 80,
+          paddingBottom: 20,
         }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
@@ -359,6 +375,13 @@ export default function WorkoutHistoryScreen() {
                 : "No workout sessions yet."}
             </Text>
           </View>
+        }
+        ListFooterComponent={
+          <PaginationControls
+            page={page}
+            totalPages={totalPages}
+            onPageChange={setPage}
+          />
         }
         renderItem={({ item }) => (
           <Pressable

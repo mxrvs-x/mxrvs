@@ -1,9 +1,12 @@
 import { useTheme } from "@/lib/theme";
 import { Tabs } from "expo-router";
 import { Activity, Dumbbell, FlaskConical, UserRound } from "lucide-react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function TabsLayout() {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
+  const bottomInset = Math.max(insets.bottom, 8);
 
   return (
     <Tabs
@@ -11,10 +14,25 @@ export default function TabsLayout() {
         headerShown: false,
         tabBarStyle: {
           backgroundColor: theme.colors.surface,
-          borderTopColor: theme.colors.border,
+          borderTopWidth: 0,
+          height: 64 + bottomInset,
+          paddingTop: 8,
+          paddingBottom: bottomInset,
+          elevation: 12,
+          shadowColor: "#000000",
+          shadowOpacity: theme.mode === "dark" ? 0.3 : 0.1,
+          shadowRadius: 14,
+          shadowOffset: { width: 0, height: -4 },
         },
         tabBarActiveTintColor: theme.colors.primary,
         tabBarInactiveTintColor: theme.colors.textMuted,
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: "800",
+        },
+        tabBarItemStyle: {
+          borderRadius: 16,
+        },
       }}
     >
       <Tabs.Screen
@@ -59,6 +77,13 @@ export default function TabsLayout() {
 
       <Tabs.Screen
         name="weight-reports"
+        options={{
+          href: null,
+        }}
+      />
+
+      <Tabs.Screen
+        name="creatine-history"
         options={{
           href: null,
         }}

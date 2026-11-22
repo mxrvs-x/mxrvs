@@ -199,6 +199,29 @@ describe("offline workout synchronization", () => {
     expect(await getOfflineWorkouts()).toEqual([]);
   });
 
+  it("syncs recovery check-in scores with an offline workout", async () => {
+    const pending = workout({
+      recovery_energy: 4,
+      recovery_sleep_quality: 3,
+      recovery_soreness: 2,
+      recovery_motivation: 5,
+      recovery_stress: 1,
+    });
+    await saveOfflineWorkout(pending);
+
+    await syncOfflineWorkouts();
+
+    expect(mockWorkoutInsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        recovery_energy: 4,
+        recovery_sleep_quality: 3,
+        recovery_soreness: 2,
+        recovery_motivation: 5,
+        recovery_stress: 1,
+      }),
+    );
+  });
+
   it("keeps the complete workout queued when its parent insert fails", async () => {
     await saveOfflineWorkout(workout());
     mockWorkoutSingle.mockResolvedValue({
@@ -324,6 +347,13 @@ describe("offline workout synchronization", () => {
       workout_type: "push",
       notes: null,
       duration_minutes: 30,
+      recovery: {
+        recovery_energy: 4,
+        recovery_sleep_quality: 3,
+        recovery_soreness: 2,
+        recovery_motivation: 5,
+        recovery_stress: 2,
+      },
       sets: workout().sets,
     });
 
@@ -331,6 +361,11 @@ describe("offline workout synchronization", () => {
       temp_id: `offline_workout_2026-11-21_${Date.now()}`,
       user_id: "user-1",
       created_at: "2026-11-21T10:00:00.000Z",
+      recovery_energy: 4,
+      recovery_sleep_quality: 3,
+      recovery_soreness: 2,
+      recovery_motivation: 5,
+      recovery_stress: 2,
     });
     expect(await getOfflineWorkouts()).toEqual([created]);
   });

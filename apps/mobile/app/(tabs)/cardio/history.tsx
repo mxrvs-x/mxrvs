@@ -1,4 +1,5 @@
 import ActivityCalendar from "@/components/ActivityCalendar";
+import PaginationControls from "@/components/PaginationControls";
 import { AppTheme, useTheme } from "@/lib/theme";
 import {
   cacheCardioSessions,
@@ -11,7 +12,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import NetInfo from "@react-native-community/netinfo";
 import { Stack, useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -35,6 +36,8 @@ type CardioSession = {
   offline?: boolean;
 };
 
+const PAGE_SIZE = 8;
+
 export default function CardioHistoryScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -49,6 +52,7 @@ export default function CardioHistoryScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
 
   async function loadSessions(showLoader = false) {
     if (showLoader) setLoading(true);
@@ -129,6 +133,18 @@ export default function CardioHistoryScreen() {
     if (!selectedDate) return sessions;
     return sessions.filter((s) => s.session_date === selectedDate);
   }, [sessions, selectedDate]);
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredSessions.length / PAGE_SIZE),
+  );
+  const paginatedSessions = useMemo(
+    () => filteredSessions.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [filteredSessions, page],
+  );
+
+  useEffect(() => {
+    setPage(1);
+  }, [selectedDate]);
 
   function formatTime(sec: number) {
     if (!sec) return "0:00";
@@ -197,7 +213,7 @@ export default function CardioHistoryScreen() {
 
       <FlatList
         style={{ flex: 1 }}
-        data={filteredSessions}
+        data={paginatedSessions}
         keyExtractor={(item) => item.id}
         contentContainerStyle={{ padding: 16, paddingBottom: 20 }}
         refreshControl={
@@ -315,6 +331,13 @@ export default function CardioHistoryScreen() {
                 : "No cardio sessions yet."}
             </Text>
           </View>
+        }
+        ListFooterComponent={
+          <PaginationControls
+            page={page}
+            totalPages={totalPages}
+            onPageChange={setPage}
+          />
         }
         renderItem={({ item }) => (
           <Pressable

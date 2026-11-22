@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { ArrowLeft, Copy } from "lucide-react";
+import { useParams, useRouter } from "next/navigation";
+import { ArrowLeft, Copy, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
   emptyWorkouts,
@@ -10,12 +10,17 @@ import {
   formatDate,
   formatWorkoutType,
   MiniStat,
+  recoveryCheckInLines,
   totalVolume,
   type Workout,
   type WorkoutSet,
 } from "@/app/components/shared";
-import { loadWebWorkoutDetails, type SyncState } from "@/lib/webData";
-import { appAlert, appToast } from "@/lib/sweetAlert";
+import {
+  deleteWebWorkout,
+  loadWebWorkoutDetails,
+  type SyncState,
+} from "@/lib/webData";
+import { appAlert, appConfirm, appToast } from "@/lib/sweetAlert";
 
 function routeParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -45,6 +50,11 @@ function buildWorkoutClipboardText(workout: Workout, groupedSets: WorkoutSet[][]
 
   if (workout.notes.trim()) {
     lines.push("", "Notes:", workout.notes.trim());
+  }
+
+  const recoveryLines = recoveryCheckInLines(workout);
+  if (recoveryLines.length > 0) {
+    lines.push("", "Recovery Check-in:", ...recoveryLines);
   }
 
   lines.push("", "Exercises:");
@@ -82,9 +92,11 @@ function buildWorkoutClipboardText(workout: Workout, groupedSets: WorkoutSet[][]
 
 export default function WorkoutDetailsPage() {
   const params = useParams();
+  const router = useRouter();
   const workoutId = routeParam(params.id);
   const [syncState, setSyncState] = useState<SyncState>("local");
   const [workouts, setWorkouts] = useState<Workout[]>(emptyWorkouts);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -117,15 +129,6 @@ export default function WorkoutDetailsPage() {
     [workout],
   );
 
-  useEffect(() => {
-    if (!workout) return;
-    document.documentElement.dataset.workoutTheme = workout.workout_type;
-
-    return () => {
-      delete document.documentElement.dataset.workoutTheme;
-    };
-  }, [workout]);
-
   async function copyWorkoutDetails() {
     if (!workout) return;
 
@@ -141,6 +144,34 @@ export default function WorkoutDetailsPage() {
         "error",
       );
     }
+  }
+
+  async function deleteWorkout() {
+    if (!workout || deleting) return;
+
+    const confirmed = await appConfirm({
+      title: "Delete Workout?",
+      text: "This permanently deletes the workout and all of its logged sets.",
+      confirmButtonText: "Delete Workout",
+      icon: "warning",
+    });
+    if (!confirmed) return;
+
+    setDeleting(true);
+    const deleted = await deleteWebWorkout(workout.id);
+    if (!deleted) {
+      setDeleting(false);
+      await appAlert(
+        "Delete Failed",
+        "Could not delete this workout. Please try again.",
+        "error",
+      );
+      return;
+    }
+
+    await appToast("Workout deleted");
+    router.push("/pages/workouts/history");
+    router.refresh();
   }
 
   if (!workout) {
@@ -180,6 +211,15 @@ export default function WorkoutDetailsPage() {
             <Copy size={18} aria-hidden="true" />
             Copy
           </button>
+          <button
+            className="button danger"
+            disabled={deleting}
+            onClick={deleteWorkout}
+            type="button"
+          >
+            <Trash2 size={18} aria-hidden="true" />
+            {deleting ? "Deleting..." : "Delete"}
+          </button>
           <Link
             className="button"
             href={`/pages/workouts/history?split=${workout.workout_type}`}
@@ -211,6 +251,17 @@ export default function WorkoutDetailsPage() {
             <h2>Notes</h2>
             <FormattedNotes notes={workout.notes} fallback="No notes saved." />
           </div>
+
+          {recoveryCheckInLines(workout).length > 0 ? (
+            <div className="card stack">
+              <h2>Recovery Check-in</h2>
+              {recoveryCheckInLines(workout).map((line) => (
+                <p className="muted" key={line}>
+                  {line}
+                </p>
+              ))}
+            </div>
+          ) : null}
         </div>
 
         <div className="stack log-panel">

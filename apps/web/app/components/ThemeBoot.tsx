@@ -4,23 +4,20 @@ import { useEffect } from "react";
 
 export type ThemeMode = "light" | "dark";
 
-export function getStoredTheme(): ThemeMode {
-  if (typeof window === "undefined") return "dark";
-
-  const stored = window.localStorage.getItem("mxrvs-web-theme");
-  return stored === "light" || stored === "dark" ? stored : "dark";
-}
-
-export function setStoredTheme(theme: ThemeMode) {
-  if (typeof window === "undefined") return;
-
+function applyTheme(theme: ThemeMode) {
   document.documentElement.dataset.theme = theme;
-  window.localStorage.setItem("mxrvs-web-theme", theme);
+  window.dispatchEvent(new CustomEvent("mxrvs-theme-change"));
 }
 
 export default function ThemeBoot() {
   useEffect(() => {
-    setStoredTheme(getStoredTheme());
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const syncTheme = () => applyTheme(media.matches ? "dark" : "light");
+
+    syncTheme();
+    media.addEventListener("change", syncTheme);
+
+    return () => media.removeEventListener("change", syncTheme);
   }, []);
 
   return null;

@@ -1,3 +1,4 @@
+import PaginationControls from "@/components/PaginationControls";
 import { isOnline } from "@/lib/offlineCardio";
 import { loadBodyWeightLogs } from "@/lib/offlineWeight";
 import { resolveOfflineUserId } from "@/lib/offlineUser";
@@ -17,6 +18,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Circle, Line, Polyline, Text as SvgText } from "react-native-svg";
+
+const PAGE_SIZE = 10;
 
 type BodyWeightLog = {
   id: string;
@@ -70,8 +73,16 @@ export default function WeightReportsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [logs, setLogs] = useState<BodyWeightLog[]>([]);
+  const [page, setPage] = useState(1);
 
   const dailyLogs = useMemo(() => latestDailyLogs(logs), [logs]);
+  const descendingLogs = useMemo(() => [...dailyLogs].reverse(), [dailyLogs]);
+  const totalPages = Math.max(1, Math.ceil(descendingLogs.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const paginatedLogs = descendingLogs.slice(
+    (safePage - 1) * PAGE_SIZE,
+    safePage * PAGE_SIZE,
+  );
   const latestLog = dailyLogs[dailyLogs.length - 1] || null;
   const firstLog = dailyLogs[0] || null;
   const latestFatLog =
@@ -305,7 +316,7 @@ export default function WeightReportsScreen() {
               Recent Logs
             </Text>
 
-            {[...dailyLogs].reverse().map((log) => (
+            {paginatedLogs.map((log) => (
               <View key={log.id} style={logRowStyle(theme)}>
                 <View>
                   <Text style={{ color: theme.colors.text, fontWeight: "900" }}>
@@ -328,6 +339,11 @@ export default function WeightReportsScreen() {
                 </Text>
               </View>
             ))}
+            <PaginationControls
+              page={safePage}
+              totalPages={totalPages}
+              onPageChange={setPage}
+            />
           </>
         )}
       </ScrollView>

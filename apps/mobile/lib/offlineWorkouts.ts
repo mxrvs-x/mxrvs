@@ -1,6 +1,7 @@
 import { isOnline } from "@/lib/offlineCardio";
 import { getOfflineUserId, resolveOfflineUserId } from "@/lib/offlineUser";
 import { supabase } from "@/lib/supabase";
+import type { RecoveryCheckIn } from "@/lib/recoveryCheckIn";
 import {
   dedupeExercisesByMuscleGroup,
   type WorkoutType,
@@ -31,6 +32,11 @@ export type OfflineWorkout = {
   workout_type: WorkoutType;
   notes: string | null;
   duration_minutes: number;
+  recovery_energy?: number | null;
+  recovery_sleep_quality?: number | null;
+  recovery_soreness?: number | null;
+  recovery_motivation?: number | null;
+  recovery_stress?: number | null;
   created_at: string;
   sets: OfflineWorkoutSet[];
 };
@@ -99,6 +105,13 @@ function isSamePendingWorkout(a: OfflineWorkout, b: OfflineWorkout) {
       a.workout_date === b.workout_date &&
       a.workout_type === b.workout_type &&
       a.duration_minutes === b.duration_minutes &&
+      (a.recovery_energy ?? null) === (b.recovery_energy ?? null) &&
+      (a.recovery_sleep_quality ?? null) ===
+        (b.recovery_sleep_quality ?? null) &&
+      (a.recovery_soreness ?? null) === (b.recovery_soreness ?? null) &&
+      (a.recovery_motivation ?? null) ===
+        (b.recovery_motivation ?? null) &&
+      (a.recovery_stress ?? null) === (b.recovery_stress ?? null) &&
       (a.notes ?? null) === (b.notes ?? null) &&
       a.sets.length === b.sets.length &&
       a.sets.every((set, index) =>
@@ -144,6 +157,11 @@ export function mapOfflineWorkout(workout: OfflineWorkout) {
     workout_type: workout.workout_type,
     notes: workout.notes,
     duration_minutes: workout.duration_minutes,
+    recovery_energy: workout.recovery_energy ?? null,
+    recovery_sleep_quality: workout.recovery_sleep_quality ?? null,
+    recovery_soreness: workout.recovery_soreness ?? null,
+    recovery_motivation: workout.recovery_motivation ?? null,
+    recovery_stress: workout.recovery_stress ?? null,
     created_at: workout.created_at,
     set_count: workout.sets.length,
     total_volume: totalVolume,
@@ -246,12 +264,14 @@ export async function createOfflineWorkout({
   workout_type,
   notes,
   duration_minutes,
+  recovery,
   sets,
 }: {
   workout_date: string;
   workout_type: WorkoutType;
   notes: string | null;
   duration_minutes: number;
+  recovery: RecoveryCheckIn;
   sets: OfflineWorkoutSet[];
 }) {
   const userId = await resolveOfflineUserId();
@@ -267,6 +287,7 @@ export async function createOfflineWorkout({
     workout_type,
     notes,
     duration_minutes,
+    ...recovery,
     created_at: new Date().toISOString(),
     sets,
   };

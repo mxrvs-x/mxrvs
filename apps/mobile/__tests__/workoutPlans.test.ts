@@ -21,7 +21,7 @@ const exercise = (
 });
 
 describe("workout plan validation and formatting", () => {
-  it.each(["push", "pull", "legs", "upper", "lower", "rest"])(
+  it.each(["push", "pull", "legs", "upper", "lower", "arms", "rest"])(
     "accepts the %s workout type",
     (type) => {
       expect(isWorkoutType(type)).toBe(true);
@@ -42,7 +42,8 @@ describe("workout plan validation and formatting", () => {
   });
 
   it("returns and formats known plans", () => {
-    expect(getWorkoutPlan("lower").label).toBe("Lower / Arms");
+    expect(getWorkoutPlan("lower").label).toBe("Lower");
+    expect(getWorkoutPlan("arms").label).toBe("Arms");
     expect(getWorkoutPlan("rest").label).toBe("Rest");
     expect(formatWorkoutType("pull")).toBe("Pull");
   });
@@ -73,6 +74,44 @@ describe("exercise recommendations", () => {
         "legs",
       ),
     ).toBe(true);
+    expect(
+      isExerciseRecommendedForWorkout(
+        exercise({ name: "Curl", muscle_group: "arms" }),
+        "arms",
+      ),
+    ).toBe(true);
+    expect(
+      isExerciseRecommendedForWorkout(
+        exercise({ name: "Plank", muscle_group: "core" }),
+        "lower",
+      ),
+    ).toBe(true);
+    expect(
+      isExerciseRecommendedForWorkout(
+        exercise({ name: "Curl", muscle_group: "arms" }),
+        "lower",
+      ),
+    ).toBe(true);
+  });
+
+  it("shares every upper-body group across Push, Pull, and Upper Body", () => {
+    const upperExercises = [
+      exercise({ name: "Bench Press", muscle_group: "chest" }),
+      exercise({ name: "Barbell Row", muscle_group: "back" }),
+      exercise({ name: "Lateral Raise", muscle_group: "shoulders" }),
+      exercise({ name: "Curl", muscle_group: "arms" }),
+    ];
+
+    ["push", "pull", "upper"].forEach((split) => {
+      upperExercises.forEach((item) => {
+        expect(
+          isExerciseRecommendedForWorkout(
+            item,
+            split as "push" | "pull" | "upper",
+          ),
+        ).toBe(true);
+      });
+    });
   });
 
   it.each(["Rear Delt Raise", "Face Pull", "Reverse Pec Deck"])(
@@ -87,13 +126,13 @@ describe("exercise recommendations", () => {
     },
   );
 
-  it("does not include unrelated shoulder exercises in pull workouts", () => {
+  it("includes all shoulder exercises in pull workouts", () => {
     expect(
       isExerciseRecommendedForWorkout(
         exercise({ name: "Lateral Raise", muscle_group: "shoulders" }),
         "pull",
       ),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("does not recommend exercises for rest days", () => {

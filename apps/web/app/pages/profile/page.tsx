@@ -3,6 +3,7 @@
 import { BarChart3, Ruler, Scale, UserRound } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import Pagination from "@/app/components/Pagination";
 import {
   BodyWeightLog,
   emptyProfile,
@@ -22,6 +23,8 @@ import {
 } from "@/lib/webData";
 import { appAlert, appConfirm, appToast } from "@/lib/sweetAlert";
 
+const PAGE_SIZE = 10;
+
 function formatNumber(value?: number | null, unit = "") {
   if (value === null || value === undefined || !Number.isFinite(Number(value))) return "--";
   return `${Number(value).toFixed(Number(value) % 1 === 0 ? 0 : 1)}${unit}`;
@@ -33,6 +36,7 @@ export default function ProfilePage() {
   const [weightModalOpen, setWeightModalOpen] = useState(false);
   const [heightModalOpen, setHeightModalOpen] = useState(false);
   const [syncState, setSyncState] = useState<SyncState>("local");
+  const [weightPage, setWeightPage] = useState(1);
 
   useEffect(() => {
     let active = true;
@@ -59,6 +63,15 @@ export default function ProfilePage() {
   const latestLog = useMemo(() => {
     return [...profile.weightLogs].sort((a, b) => b.logged_at.localeCompare(a.logged_at))[0] || null;
   }, [profile.weightLogs]);
+  const weightTotalPages = Math.max(
+    1,
+    Math.ceil(profile.weightLogs.length / PAGE_SIZE),
+  );
+  const safeWeightPage = Math.min(weightPage, weightTotalPages);
+  const paginatedWeightLogs = profile.weightLogs.slice(
+    (safeWeightPage - 1) * PAGE_SIZE,
+    safeWeightPage * PAGE_SIZE,
+  );
 
   async function logWeight(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -230,7 +243,7 @@ export default function ProfilePage() {
             <strong className="muted">{profile.weightLogs.length}</strong>
           </div>
           <div className="stack log-scroll">
-            {profile.weightLogs.map((log) => (
+            {paginatedWeightLogs.map((log) => (
               <article className="list-item stack" key={log.id}>
                 <div className="row between">
                   <div>
@@ -245,6 +258,11 @@ export default function ProfilePage() {
               </article>
             ))}
           </div>
+          <Pagination
+            page={safeWeightPage}
+            totalPages={weightTotalPages}
+            onPageChange={setWeightPage}
+          />
         </div>
       </section>
 

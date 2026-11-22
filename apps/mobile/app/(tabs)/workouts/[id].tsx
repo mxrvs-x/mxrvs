@@ -1,5 +1,9 @@
 import ExportBackgroundPicker from "@/components/ExportBackgroundPicker";
 import ThemedAlert from "@/components/ThemedAlert";
+import {
+  recoveryCheckInLines,
+  type RecoveryCheckIn,
+} from "@/lib/recoveryCheckIn";
 import { supabase } from "@/lib/supabase";
 import { useTheme } from "@/lib/theme";
 import {
@@ -16,7 +20,7 @@ import {
   useRouter,
 } from "expo-router";
 import * as Sharing from "expo-sharing";
-import { Copy, Download, Share2, X } from "lucide-react-native";
+import { Copy, Download, Share2, Trash2, X } from "lucide-react-native";
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -28,8 +32,9 @@ import {
 } from "react-native";
 import { captureRef } from "react-native-view-shot";
 
-type Workout = {
+type Workout = RecoveryCheckIn & {
   id: string;
+  user_id: string;
   workout_date: string;
   workout_type: WorkoutType;
   notes: string | null;
@@ -106,6 +111,7 @@ export default function WorkoutDetailsScreen() {
 
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [workout, setWorkout] = useState<Workout | null>(null);
   const [sets, setSets] = useState<DisplaySet[]>([]);
   const [exportBackgroundUri, setExportBackgroundUri] = useState<string | null>(
@@ -223,6 +229,11 @@ export default function WorkoutDetailsScreen() {
       lines.push("", "Notes:", workout.notes);
     }
 
+    const recoveryLines = recoveryCheckInLines(workout);
+    if (recoveryLines.length > 0) {
+      lines.push("", "Recovery Check-in:", ...recoveryLines);
+    }
+
     lines.push("", "Exercises:");
 
     if (groupedExercises.length === 0) {
@@ -284,6 +295,44 @@ export default function WorkoutDetailsScreen() {
         danger: true,
       });
     }
+  }
+
+  async function deleteWorkout() {
+    if (!workout || deleting) return;
+
+    setDeleting(true);
+    const { error } = await supabase
+      .from("workouts")
+      .delete()
+      .eq("id", workout.id)
+      .eq("user_id", workout.user_id);
+
+    if (error) {
+      console.log("Delete workout error:", error);
+      setDeleting(false);
+      showAlert({
+        title: "Delete Failed",
+        message: "Could not delete this workout. Please try again.",
+        danger: true,
+      });
+      return;
+    }
+
+    router.back();
+  }
+
+  function confirmDeleteWorkout() {
+    if (deleting) return;
+
+    showAlert({
+      title: "Delete Workout?",
+      message:
+        "This permanently deletes the workout and all of its logged sets.",
+      confirmText: "Delete Workout",
+      cancelText: "Cancel",
+      danger: true,
+      onConfirm: () => void deleteWorkout(),
+    });
   }
 
   async function confirmExport() {
@@ -960,6 +1009,37 @@ export default function WorkoutDetailsScreen() {
                 )}
               </View>
 
+              {recoveryCheckInLines(workout).length > 0 ? (
+                <View
+                  style={{
+                    backgroundColor: theme.colors.surface,
+                    borderRadius: 16,
+                    padding: 16,
+                    borderWidth: 1,
+                    borderColor: theme.colors.border,
+                    marginTop: 18,
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: theme.colors.text,
+                      fontWeight: "900",
+                      fontSize: 18,
+                    }}
+                  >
+                    Recovery Check-in
+                  </Text>
+                  {recoveryCheckInLines(workout).map((line) => (
+                    <Text
+                      key={line}
+                      style={{ color: theme.colors.textMuted, marginTop: 7 }}
+                    >
+                      {line}
+                    </Text>
+                  ))}
+                </View>
+              ) : null}
+
               <Text
                 style={{
                   fontSize: 18,
@@ -988,6 +1068,44 @@ export default function WorkoutDetailsScreen() {
                 No sets found.
               </Text>
             </View>
+          }
+          ListFooterComponent={
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Delete workout"
+              disabled={deleting}
+              onPress={confirmDeleteWorkout}
+              style={{
+                minHeight: 52,
+                borderRadius: 18,
+                borderWidth: 1,
+                borderColor: theme.colors.danger ?? "#ef4444",
+                alignItems: "center",
+                justifyContent: "center",
+                flexDirection: "row",
+                gap: 10,
+                marginTop: 14,
+                opacity: deleting ? 0.55 : 1,
+              }}
+            >
+              {deleting ? (
+                <ActivityIndicator color={theme.colors.danger ?? "#ef4444"} />
+              ) : (
+                <Trash2
+                  size={20}
+                  color={theme.colors.danger ?? "#ef4444"}
+                />
+              )}
+              <Text
+                style={{
+                  color: theme.colors.danger ?? "#ef4444",
+                  fontWeight: "900",
+                  fontSize: 16,
+                }}
+              >
+                {deleting ? "Deleting..." : "Delete Workout"}
+              </Text>
+            </Pressable>
           }
           renderItem={({ item }) => (
             <View

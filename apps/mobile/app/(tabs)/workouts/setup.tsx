@@ -12,7 +12,6 @@ import {
   dedupeExercisesByMuscleGroup,
   formatMuscleGroup,
   groupExercisesByMuscleGroup,
-  isWorkoutType,
   sortExercisesByMuscleGroup,
   type MuscleGroup,
   type WorkoutType,
@@ -20,7 +19,6 @@ import {
 import {
   Stack,
   useFocusEffect,
-  useLocalSearchParams,
   useRouter,
 } from "expo-router";
 import { Plus, SquarePen, Trash2, X } from "lucide-react-native";
@@ -33,8 +31,6 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-
-type SetupThemeType = WorkoutType;
 
 type Exercise = {
   id: string;
@@ -71,10 +67,6 @@ const EMPTY_FORM: ExerciseForm = {
   is_compound: false,
 };
 
-function isSetupThemeType(value: unknown): value is SetupThemeType {
-  return typeof value === "string" && isWorkoutType(value);
-}
-
 export default function WorkoutSetupScreen() {
   const router = useRouter();
   const theme = useTheme();
@@ -99,12 +91,6 @@ export default function WorkoutSetupScreen() {
   const [alertOnConfirm, setAlertOnConfirm] = useState<
     (() => void) | undefined
   >();
-
-  const params = useLocalSearchParams<{ split?: SetupThemeType }>();
-
-  const routeSplit: SetupThemeType = isSetupThemeType(params.split)
-    ? params.split
-    : "push";
 
   const [filter, setFilter] = useState<"all" | MuscleGroup>("all");
 
@@ -323,12 +309,12 @@ export default function WorkoutSetupScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      setSessionTheme(routeSplit);
+      setSessionTheme("default");
 
       return () => {
         setSessionTheme("default");
       };
-    }, [routeSplit, setSessionTheme]),
+    }, [setSessionTheme]),
   );
 
   useEffect(() => {

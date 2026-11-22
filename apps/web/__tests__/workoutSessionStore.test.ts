@@ -53,6 +53,16 @@ describe("web workout session persistence", () => {
     Reflect.deleteProperty(globalThis, "window");
   });
 
+  it("restores an Arms workout session", () => {
+    const { values } = installWindow();
+    values.set(
+      ACTIVE_WORKOUT_SESSION_KEY,
+      JSON.stringify(session({ selectedType: "arms" })),
+    );
+
+    expect(readStoredWorkoutSession()?.selectedType).toBe("arms");
+  });
+
   it("returns null during server rendering", () => {
     expect(readStoredWorkoutSession()).toBeNull();
     expect(hasActiveStoredWorkoutSession()).toBe(false);

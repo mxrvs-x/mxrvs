@@ -1,4 +1,11 @@
-export type WorkoutType = "push" | "pull" | "legs" | "upper" | "lower" | "rest";
+export type WorkoutType =
+  | "push"
+  | "pull"
+  | "legs"
+  | "upper"
+  | "lower"
+  | "arms"
+  | "rest";
 
 export type MuscleGroup =
   | "chest"
@@ -36,8 +43,9 @@ export const WORKOUT_PLANS: WorkoutPlan[] = [
   { type: "push", label: "Push", emoji: "P" },
   { type: "pull", label: "Pull", emoji: "P" },
   { type: "legs", label: "Legs", emoji: "L" },
-  { type: "upper", label: "Upper", emoji: "U" },
-  { type: "lower", label: "Lower / Arms", emoji: "LA" },
+  { type: "upper", label: "Upper Body", emoji: "U" },
+  { type: "lower", label: "Lower", emoji: "L" },
+  { type: "arms", label: "Arms", emoji: "A" },
 ];
 
 export const REST_PLAN: WorkoutPlan = {
@@ -46,20 +54,6 @@ export const REST_PLAN: WorkoutPlan = {
   emoji: "R",
 };
 
-export const WEEK_SPLIT: WorkoutPlan[] = [
-  { ...REST_PLAN, day: "Sunday" },
-  { ...WORKOUT_PLANS[0], day: "Monday" },
-  { ...WORKOUT_PLANS[1], day: "Tuesday" },
-  { ...WORKOUT_PLANS[2], day: "Wednesday" },
-  { ...REST_PLAN, day: "Thursday" },
-  { ...WORKOUT_PLANS[3], day: "Friday" },
-  { ...WORKOUT_PLANS[4], day: "Saturday" },
-];
-
-export function getTodayWorkoutPlan() {
-  return WEEK_SPLIT[new Date().getDay()];
-}
-
 export function isWorkoutType(value?: string | string[]): value is WorkoutType {
   return (
     value === "push" ||
@@ -67,6 +61,7 @@ export function isWorkoutType(value?: string | string[]): value is WorkoutType {
     value === "legs" ||
     value === "upper" ||
     value === "lower" ||
+    value === "arms" ||
     value === "rest"
   );
 }
@@ -95,26 +90,13 @@ export function formatMuscleGroup(group: string | null) {
 }
 
 const SPLIT_MUSCLE_GROUPS: Record<Exclude<WorkoutType, "rest">, MuscleGroup[]> = {
-  push: ["chest", "shoulders", "arms"],
-  pull: ["back", "arms"],
+  push: ["chest", "back", "shoulders", "arms"],
+  pull: ["chest", "back", "shoulders", "arms"],
   legs: ["legs", "core"],
   upper: ["chest", "back", "shoulders", "arms"],
-  lower: ["legs", "shoulders", "arms", "core"],
+  lower: ["legs", "arms", "core"],
+  arms: ["arms"],
 };
-
-function isRearDeltExercise(exercise: WorkoutExerciseMeta) {
-  const name = exercise.name.trim().toLowerCase();
-
-  return (
-    exercise.muscle_group === "shoulders" &&
-    (name.includes("rear delt") ||
-      name.includes("rear delts") ||
-      name.includes("rear deltoid") ||
-      name.includes("face pull") ||
-      name.includes("reverse fly") ||
-      name.includes("reverse pec deck"))
-  );
-}
 
 export function isExerciseRecommendedForWorkout(
   exercise: WorkoutExerciseMeta,
@@ -122,9 +104,8 @@ export function isExerciseRecommendedForWorkout(
 ) {
   if (type === "rest") return false;
 
-  return (
-    SPLIT_MUSCLE_GROUPS[type].includes(exercise.muscle_group as MuscleGroup) ||
-    (type === "pull" && isRearDeltExercise(exercise))
+  return SPLIT_MUSCLE_GROUPS[type].includes(
+    exercise.muscle_group as MuscleGroup,
   );
 }
 

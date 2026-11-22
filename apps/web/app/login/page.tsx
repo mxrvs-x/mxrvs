@@ -67,11 +67,11 @@ export default function LoginPage() {
             <Image src="/mxrvs.png" alt="" width={44} height={44} priority />
             <div>
               <strong>mxrvs</strong>
-              <span>Checking session</span>
+              <span>Train. Track. Progress.</span>
             </div>
           </div>
 
-          <p className="muted">Loading your Supabase session...</p>
+          <p className="muted">Loading your training space...</p>
         </section>
       </main>
     );
@@ -84,14 +84,13 @@ export default function LoginPage() {
           <Image src="/mxrvs.png" alt="" width={44} height={44} priority />
           <div>
             <strong>mxrvs</strong>
-            <span>Supabase login</span>
+            <span>Train. Track. Progress.</span>
           </div>
         </div>
 
         <div>
           <p className="eyebrow">Welcome back</p>
-          <h1>Sign in</h1>
-          <p className="muted">Use the same account as the mobile app.</p>
+          <h1>Ready to move?</h1>
         </div>
 
         <form className="stack" onSubmit={handleLogin}>
@@ -126,7 +125,7 @@ export default function LoginPage() {
             disabled={Boolean(supabaseConfigError) || loading}
             type="submit"
           >
-            {loading ? "Signing in..." : "Sign In"}
+            {loading ? "Signing in..." : "Continue"}
           </button>
         </form>
 

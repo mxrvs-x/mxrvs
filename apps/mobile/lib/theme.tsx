@@ -1,6 +1,12 @@
-import { usePathname } from "expo-router";
-import React, { createContext, useContext, useMemo, useState } from "react";
-import { useColorScheme } from "react-native";
+import * as SystemUI from "expo-system-ui";
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import { Appearance, type ColorSchemeName } from "react-native";
 
 export type SessionThemeKey =
   | "default"
@@ -9,6 +15,7 @@ export type SessionThemeKey =
   | "legs"
   | "upper"
   | "lower"
+  | "arms"
   | "rest";
 
 const shared = {
@@ -44,55 +51,25 @@ const shared = {
   },
 };
 
-const sessionColors: Record<SessionThemeKey, string> = {
-  default: "#16A34A",
-  push: "#EF4444",
-  pull: "#3B82F6",
-  legs: "#A855F7",
-  upper: "#F97316",
-  lower: "#22C55E",
-  rest: "#6B7280",
-};
-
-const sessionSoftColors: Record<SessionThemeKey, string> = {
-  default: "#DCFCE7",
-  push: "#FEE2E2",
-  pull: "#DBEAFE",
-  legs: "#F3E8FF",
-  upper: "#FFEDD5",
-  lower: "#DCFCE7",
-  rest: "#E5E7EB",
-};
-
-const sessionDarkColors: Record<SessionThemeKey, string> = {
-  default: "#052E16",
-  push: "#450A0A",
-  pull: "#172554",
-  legs: "#3B0764",
-  upper: "#431407",
-  lower: "#052E16",
-  rest: "#111827",
-};
-
 export const darkTheme = {
   ...shared,
   mode: "dark" as const,
   colors: {
     primary: "#16A34A",
     primaryDark: "#052E16",
-    primarySoft: "#DCFCE7",
+    primarySoft: "#052E16",
 
     accent: "#F97316",
-    accentSoft: "#FFEDD5",
+    accentSoft: "#431407",
 
-    background: "#0B0F0C",
-    surface: "#111827",
-    surfaceAlt: "#1F2937",
-    border: "#263238",
+    background: "#070B0A",
+    surface: "#101614",
+    surfaceAlt: "#18211E",
+    border: "#26332E",
 
-    text: "#E5E7EB",
-    textMuted: "#9CA3AF",
-    textFaint: "#6B7280",
+    text: "#F4F7F5",
+    textMuted: "#A4B0AA",
+    textFaint: "#718079",
     textInverse: "#FFFFFF",
 
     success: "#22C55E",
@@ -106,12 +83,13 @@ export const darkTheme = {
     fat: "#FB923C",
     fiber: "#A78BFA",
 
-    push: "#EF4444",
-    pull: "#3B82F6",
-    legs: "#A855F7",
-    upper: "#F97316",
-    lower: "#22C55E",
-    rest: "#6B7280",
+    push: "#16A34A",
+    pull: "#16A34A",
+    legs: "#16A34A",
+    upper: "#16A34A",
+    lower: "#16A34A",
+    arms: "#16A34A",
+    rest: "#16A34A",
 
     walking: "#22C55E",
     running: "#F97316",
@@ -145,10 +123,10 @@ export const lightTheme = {
     accent: "#F97316",
     accentSoft: "#FFEDD5",
 
-    background: "#F8FAFC",
+    background: "#F4F7F5",
     surface: "#FFFFFF",
-    surfaceAlt: "#F1F5F9",
-    border: "#E2E8F0",
+    surfaceAlt: "#EDF2EF",
+    border: "#DCE5E0",
 
     text: "#0F172A",
     textMuted: "#475569",
@@ -166,12 +144,13 @@ export const lightTheme = {
     fat: "#F97316",
     fiber: "#8B5CF6",
 
-    push: "#DC2626",
-    pull: "#2563EB",
-    legs: "#9333EA",
-    upper: "#EA580C",
+    push: "#16A34A",
+    pull: "#16A34A",
+    legs: "#16A34A",
+    upper: "#16A34A",
     lower: "#16A34A",
-    rest: "#64748B",
+    arms: "#16A34A",
+    rest: "#16A34A",
 
     walking: "#16A34A",
     running: "#EA580C",
@@ -213,75 +192,39 @@ const ThemeContext = createContext<AppTheme>({
   setSessionTheme: () => {},
 });
 
-function applySessionTheme(
-  baseTheme: BaseTheme,
-  sessionTheme: SessionThemeKey,
-  shouldApplySessionTheme: boolean,
-): AppTheme {
-  if (!shouldApplySessionTheme || sessionTheme === "default") {
-    return {
-      ...baseTheme,
-      sessionTheme,
-      setSessionTheme: () => {},
-    };
-  }
-
-  const primary = sessionColors[sessionTheme];
-  const primarySoft = sessionSoftColors[sessionTheme];
-  const primaryDark = sessionDarkColors[sessionTheme];
-
-  return {
-    ...baseTheme,
-    sessionTheme,
-    setSessionTheme: () => {},
-
-    colors: {
-      ...baseTheme.colors,
-
-      primary,
-      primarySoft,
-      primaryDark,
-
-      activeDay: primary,
-      selectedDay: primary,
-
-      accent: primary,
-      accentSoft: primarySoft,
-    },
-  };
-}
-
 export function AppThemeProvider({ children }: { children: React.ReactNode }) {
-  const scheme = useColorScheme();
-  const pathname = usePathname();
+  const [scheme, setScheme] = useState<ColorSchemeName>(() =>
+    Appearance.getColorScheme(),
+  );
+  useEffect(() => {
+    Appearance.setColorScheme(null);
+    setScheme(Appearance.getColorScheme());
+    const subscription = Appearance.addChangeListener(({ colorScheme }) => {
+      setScheme(colorScheme);
+    });
 
-  const [sessionTheme, setSessionTheme] = useState<SessionThemeKey>("default");
+    return () => subscription.remove();
+  }, []);
 
-  const shouldApplySessionTheme = pathname.startsWith("/workouts");
+  const baseTheme = useMemo<BaseTheme>(
+    () =>
+      scheme === "dark"
+        ? { ...darkTheme, colors: darkTheme.colors }
+        : { ...lightTheme, colors: lightTheme.colors },
+    [scheme],
+  );
 
-  const baseTheme: BaseTheme =
-    scheme === "dark"
-      ? {
-          ...darkTheme,
-          colors: darkTheme.colors,
-        }
-      : {
-          ...lightTheme,
-          colors: lightTheme.colors,
-        };
+  useEffect(() => {
+    void SystemUI.setBackgroundColorAsync(baseTheme.colors.background);
+  }, [baseTheme.colors.background]);
 
   const theme = useMemo<AppTheme>(() => {
-    const themed = applySessionTheme(
-      baseTheme,
-      sessionTheme,
-      shouldApplySessionTheme,
-    );
-
     return {
-      ...themed,
-      setSessionTheme,
+      ...baseTheme,
+      sessionTheme: "default",
+      setSessionTheme: () => {},
     };
-  }, [baseTheme, sessionTheme, shouldApplySessionTheme]);
+  }, [baseTheme]);
 
   return React.createElement(ThemeContext.Provider, { value: theme }, children);
 }

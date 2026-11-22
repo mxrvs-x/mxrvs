@@ -6,6 +6,7 @@ import {
   Check,
   Dumbbell,
   History,
+  Plus,
   Play,
   RotateCcw,
   Settings,
@@ -24,8 +25,11 @@ import {
   isWorkoutType,
   MiniStat,
   Modal,
+  RECOVERY_METRICS,
+  createRecoveryCheckIn,
   toDateKey,
   type Exercise,
+  type RecoveryCheckIn,
   type Workout,
   type WorkoutSet,
   type WorkoutType,
@@ -43,7 +47,7 @@ const REST_OPTIONS = [30, 60, 90, 120, 180, 240, 300];
 const REST_COMPLETE_SOUND = "/sounds/timer-complete.mp3";
 
 function getInitialSplit(value: string | null): WorkoutType {
-  return isWorkoutType(value) ? value : "push";
+  return isWorkoutType(value) && value !== "rest" ? value : "push";
 }
 
 function playRestCompleteSound() {
@@ -65,13 +69,16 @@ function playRestCompleteSound() {
 
 export default function WorkoutSessionPage() {
   const params = useSearchParams();
-  const routeSplit = getInitialSplit(params.get("split"));
-  const firstTrainingSplit = routeSplit === "rest" ? "push" : routeSplit;
+  const routeSplitParam = params.get("split");
+  const firstTrainingSplit = getInitialSplit(routeSplitParam);
 
   const [syncState, setSyncState] = useState<SyncState>("local");
   const [exercises, setExercises] = useState<Exercise[]>(emptyExercises);
   const [workouts, setWorkouts] = useState<Workout[]>(emptyWorkouts);
   const [selectedType, setSelectedType] = useState<WorkoutType>(firstTrainingSplit);
+  const [splitChosen, setSplitChosen] = useState(
+    isWorkoutType(routeSplitParam) && routeSplitParam !== "rest",
+  );
   const [selectedExerciseIds, setSelectedExerciseIds] = useState<Set<string>>(
     new Set(),
   );
@@ -84,17 +91,15 @@ export default function WorkoutSessionPage() {
   const [sets, setSets] = useState<WorkoutSet[]>([]);
   const [notes, setNotes] = useState("");
   const [activeExercise, setActiveExercise] = useState<Exercise | null>(null);
+  const [exercisePickerOpen, setExercisePickerOpen] = useState(false);
+  const [exerciseSearch, setExerciseSearch] = useState("");
   const [saving, setSaving] = useState(false);
   const [restoredSession, setRestoredSession] = useState(false);
+  const [recoveryVisible, setRecoveryVisible] = useState(false);
+  const [recovery, setRecovery] = useState<RecoveryCheckIn>(() =>
+    createRecoveryCheckIn(3),
+  );
   const previousRestRemainingRef = useRef(0);
-
-  useEffect(() => {
-    document.documentElement.dataset.workoutTheme = selectedType;
-
-    return () => {
-      delete document.documentElement.dataset.workoutTheme;
-    };
-  }, [selectedType]);
 
   useEffect(() => {
     let active = true;
@@ -124,6 +129,7 @@ export default function WorkoutSessionPage() {
 
     if (stored) {
       setSelectedType(stored.selectedType);
+      setSplitChosen(true);
       setSelectedExerciseIds(new Set(stored.selectedExerciseIds));
       setStarted(true);
       setPaused(stored.paused);
@@ -219,6 +225,8 @@ export default function WorkoutSessionPage() {
     (workout) => workout.workout_date === toDateKey(),
   );
   const visibleExercises = useMemo(() => {
+    if (!splitChosen) return [];
+
     return exercises
       .filter((exercise) =>
         isExerciseRecommendedForWorkout(exercise, selectedType),
@@ -229,11 +237,37 @@ export default function WorkoutSessionPage() {
           a.muscle_group.localeCompare(b.muscle_group) ||
           a.name.localeCompare(b.name),
       );
-  }, [exercises, selectedType]);
-  const selectedExercises = visibleExercises.filter((exercise) =>
-    selectedExerciseIds.has(exercise.id),
-  );
-  const activeExercises = started ? selectedExercises : visibleExercises;
+  }, [exercises, selectedType, splitChosen]);
+  const selectedExercises = exercises
+    .filter((exercise) => selectedExerciseIds.has(exercise.id))
+    .sort(
+      (a, b) =>
+        Number(b.is_compound) - Number(a.is_compound) ||
+        a.muscle_group.localeCompare(b.muscle_group) ||
+        a.name.localeCompare(b.name),
+    );
+  const activeExercises = started
+    ? selectedExercises
+    : visibleExercises;
+  const availableExercises = started
+    ? exercises
+        .filter((exercise) => !selectedExerciseIds.has(exercise.id))
+        .sort(
+        (a, b) =>
+          Number(b.is_compound) - Number(a.is_compound) ||
+          a.muscle_group.localeCompare(b.muscle_group) ||
+          a.name.localeCompare(b.name),
+      )
+    : [];
+  const matchingAvailableExercises = availableExercises.filter((exercise) => {
+    const query = exerciseSearch.trim().toLowerCase();
+    if (!query) return true;
+
+    return (
+      exercise.name.toLowerCase().includes(query) ||
+      formatMuscleGroup(exercise.muscle_group).toLowerCase().includes(query)
+    );
+  });
   const sessionVolume = sets.reduce(
     (sum, set) => sum + set.reps * set.weight_kg,
     0,
@@ -242,23 +276,83 @@ export default function WorkoutSessionPage() {
   function changeSplit(type: WorkoutType) {
     if (type === "rest" || started) return;
     setSelectedType(type);
+    setSplitChosen(true);
     setSelectedExerciseIds(new Set());
   }
 
   function toggleExercise(exerciseId: string) {
-    if (started) return;
-
     setSelectedExerciseIds((current) => {
       const next = new Set(current);
 
-      if (next.has(exerciseId)) next.delete(exerciseId);
-      else next.add(exerciseId);
+      if (next.has(exerciseId) && !started) next.delete(exerciseId);
+      else if (!next.has(exerciseId)) next.add(exerciseId);
 
       return next;
     });
   }
 
+  function handleExerciseClick(exercise: Exercise) {
+    if (started && selectedExerciseIds.has(exercise.id)) {
+      setActiveExercise(exercise);
+      return;
+    }
+    toggleExercise(exercise.id);
+  }
+
+  async function addExerciseToSession(exercise: Exercise) {
+    if (!started || selectedExerciseIds.has(exercise.id)) return;
+
+    toggleExercise(exercise.id);
+    setExerciseSearch("");
+    setExercisePickerOpen(false);
+    await appToast(`${exercise.name} added`);
+  }
+
+  async function removeExerciseFromSession(exercise: Exercise) {
+    if (!started || !selectedExerciseIds.has(exercise.id)) return;
+
+    const exerciseSetCount = sets.filter(
+      (set) => set.exercise_id === exercise.id,
+    ).length;
+    const confirmed = await appConfirm({
+      title: "Remove Exercise?",
+      text:
+        exerciseSetCount > 0
+          ? `This removes ${exercise.name} and its ${exerciseSetCount} logged set${exerciseSetCount === 1 ? "" : "s"} from this session.`
+          : `This removes ${exercise.name} from this session.`,
+      confirmButtonText: "Remove Exercise",
+      icon: "warning",
+    });
+    if (!confirmed) return;
+
+    setSelectedExerciseIds((current) => {
+      const next = new Set(current);
+      next.delete(exercise.id);
+      return next;
+    });
+    setSets((current) =>
+      current.filter((set) => set.exercise_id !== exercise.id),
+    );
+
+    if (activeExercise?.id === exercise.id) setActiveExercise(null);
+    if (restExerciseId === exercise.id) {
+      setRestRemaining(0);
+      setRestExerciseId(null);
+    }
+
+    await appToast(`${exercise.name} removed`);
+  }
+
   async function startWorkout() {
+    if (!splitChosen) {
+      await appAlert(
+        "Choose Workout Split",
+        "Select a workout split before starting your session.",
+        "warning",
+      );
+      return;
+    }
+
     if (selectedExerciseIds.size === 0) {
       await appAlert(
         "Select Exercises",
@@ -314,7 +408,7 @@ export default function WorkoutSessionPage() {
     await appToast("Set logged");
   }
 
-  async function saveWorkout() {
+  async function requestEndWorkout() {
     if (saving) return;
 
     if (sets.length === 0) {
@@ -334,6 +428,14 @@ export default function WorkoutSessionPage() {
 
     if (!confirmed) return;
 
+    setRecovery(createRecoveryCheckIn(3));
+    setRecoveryVisible(true);
+  }
+
+  async function saveWorkout(recoveryCheckIn: RecoveryCheckIn) {
+    if (saving) return;
+
+    setRecoveryVisible(false);
     setSaving(true);
 
     const workout: Workout = {
@@ -343,6 +445,7 @@ export default function WorkoutSessionPage() {
       notes,
       duration_minutes: Math.max(1, Math.round(elapsedSeconds / 60)),
       created_at: new Date().toISOString(),
+      ...recoveryCheckIn,
       sets,
     };
     const savedWorkout = await saveWebWorkout(workout);
@@ -375,7 +478,7 @@ export default function WorkoutSessionPage() {
       <header className="page-header">
         <div>
           <p className="eyebrow">Workout Session</p>
-          <h1>{formatWorkoutType(selectedType)}</h1>
+          <h1>{splitChosen ? formatWorkoutType(selectedType) : "Choose a Split"}</h1>
           <p className="muted">
             Data source:{" "}
             {syncState === "supabase" ? "Supabase" : "Waiting for session"}
@@ -398,13 +501,6 @@ export default function WorkoutSessionPage() {
           </Link>
         </div>
       </header>
-
-      {routeSplit === "rest" ? (
-        <div className="panel soft-panel">
-          <strong>Today is a rest day</strong>
-          <p>Choose a focus below if you still want to train.</p>
-        </div>
-      ) : null}
 
       {todayWorkout ? (
         <div className="panel soft-panel" style={{ marginTop: 12 }}>
@@ -434,7 +530,11 @@ export default function WorkoutSessionPage() {
             <div className="chips">
               {WORKOUT_PLANS.map((plan) => (
                 <button
-                  className={selectedType === plan.type ? "chip active" : "chip"}
+                  className={
+                    splitChosen && selectedType === plan.type
+                      ? "chip active"
+                      : "chip"
+                  }
                   disabled={started}
                   key={plan.type}
                   onClick={() => changeSplit(plan.type)}
@@ -455,7 +555,7 @@ export default function WorkoutSessionPage() {
             {!started ? (
               <button
                 className="button primary"
-                disabled={selectedExerciseIds.size === 0}
+                disabled={!splitChosen || selectedExerciseIds.size === 0}
                 onClick={startWorkout}
                 type="button"
               >
@@ -474,7 +574,7 @@ export default function WorkoutSessionPage() {
                 <button
                   className="button danger"
                   disabled={sets.length === 0 || saving}
-                  onClick={saveWorkout}
+                  onClick={requestEndWorkout}
                   type="button"
                 >
                   <Square size={16} aria-hidden="true" />
@@ -485,20 +585,86 @@ export default function WorkoutSessionPage() {
           </div>
 
           <div className="card stack">
-            <h2>{started ? "Selected Exercises" : "Select Exercises"}</h2>
+            <h2>{started ? "Session Exercises" : "Select Exercises"}</h2>
             <p className="muted">
               {started
-                ? `${selectedExercises.length} exercises in session`
-                : `${selectedExerciseIds.size} selected from ${formatWorkoutType(
-                    selectedType,
-                  )}`}
+                ? `${selectedExercises.length} exercises in this session.`
+                : splitChosen
+                  ? `${selectedExerciseIds.size} selected from ${formatWorkoutType(
+                      selectedType,
+                    )}`
+                  : "Choose a workout split to see matching exercises."}
             </p>
+
+            {started && availableExercises.length > 0 ? (
+              <div className="stack">
+                <button
+                  aria-expanded={exercisePickerOpen}
+                  className="button"
+                  onClick={() => {
+                    setExercisePickerOpen((current) => !current);
+                    setExerciseSearch("");
+                  }}
+                  type="button"
+                >
+                  <Plus size={18} aria-hidden="true" />
+                  {exercisePickerOpen ? "Close Exercise Picker" : "Add Exercise"}
+                </button>
+
+                {exercisePickerOpen ? (
+                  <div className="panel stack">
+                    <input
+                      aria-label="Search exercises"
+                      autoFocus
+                      className="input"
+                      onChange={(event) => setExerciseSearch(event.target.value)}
+                      placeholder="Search by exercise or muscle group..."
+                      type="search"
+                      value={exerciseSearch}
+                    />
+                    <div className="split-list session-scroll">
+                      {matchingAvailableExercises.map((exercise) => (
+                        <button
+                          className="list-item row between"
+                          key={exercise.id}
+                          onClick={() => void addExerciseToSession(exercise)}
+                          type="button"
+                        >
+                          <span style={{ textAlign: "left" }}>
+                            <strong>{exercise.name}</strong>
+                            <span
+                              className="muted"
+                              style={{ display: "block", marginTop: 4 }}
+                            >
+                              {formatMuscleGroup(exercise.muscle_group)} -{" "}
+                              {exercise.is_compound ? "Compound" : "Isolation"}
+                            </span>
+                          </span>
+                          <Plus size={18} aria-hidden="true" />
+                        </button>
+                      ))}
+                      {matchingAvailableExercises.length === 0 ? (
+                        <p className="muted">No exercises match your search.</p>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {started && availableExercises.length === 0 ? (
+              <p className="muted">All available exercises are in this session.</p>
+            ) : null}
 
             {activeExercises.length === 0 ? (
               <div className="panel">
-                <strong>No exercises found</strong>
+                <strong>
+                  {splitChosen ? "No exercises found" : "Choose a workout split"}
+                </strong>
                 <p className="muted">
-                  Add exercises for this split in your mobile setup first.
+                  {splitChosen
+                    ? "Add exercises for these muscle groups in setup first."
+                    : "Select Push, Pull, Legs, Upper Body, Lower, or Arms above."}
                 </p>
               </div>
             ) : null}
@@ -511,44 +677,56 @@ export default function WorkoutSessionPage() {
                 );
                 const blockedByRest =
                   started &&
+                  selected &&
                   restRemaining > 0 &&
                   restExerciseId !== null &&
                   restExerciseId !== exercise.id;
 
                 return (
-                  <button
-                    className="list-item exercise-row"
-                    disabled={blockedByRest}
-                    key={exercise.id}
-                    onClick={() =>
-                      started
-                        ? setActiveExercise(exercise)
-                        : toggleExercise(exercise.id)
-                    }
-                    style={{ opacity: blockedByRest ? 0.5 : 1 }}
-                    type="button"
-                  >
-                    {!started ? (
-                      <span className={selected ? "check-dot active" : "check-dot"}>
-                        {selected ? <Check size={14} /> : ""}
+                  <div className="row" key={exercise.id}>
+                    <button
+                      className="list-item exercise-row"
+                      disabled={blockedByRest}
+                      onClick={() => handleExerciseClick(exercise)}
+                      style={{ flex: 1, opacity: blockedByRest ? 0.5 : 1 }}
+                      type="button"
+                    >
+                      {!started || !selected ? (
+                        <span className={selected ? "check-dot active" : "check-dot"}>
+                          {selected ? <Check size={14} /> : started ? "+" : ""}
+                        </span>
+                      ) : (
+                        <Dumbbell size={20} />
+                      )}
+                      <span style={{ textAlign: "left" }}>
+                        <strong>{exercise.name}</strong>
+                        <span
+                          className="muted"
+                          style={{ display: "block", marginTop: 4 }}
+                        >
+                          {formatMuscleGroup(exercise.muscle_group)} -{" "}
+                          {exercise.is_compound ? "Compound" : "Isolation"}
+                        </span>
                       </span>
-                    ) : (
-                      <Dumbbell size={20} />
-                    )}
-                    <span style={{ textAlign: "left" }}>
-                      <strong>{exercise.name}</strong>
-                      <span
-                        className="muted"
-                        style={{ display: "block", marginTop: 4 }}
-                      >
-                        {formatMuscleGroup(exercise.muscle_group)} -{" "}
-                        {exercise.is_compound ? "Compound" : "Isolation"}
-                      </span>
-                    </span>
+                      {started ? (
+                        <MiniStat
+                          label={selected ? "Sets" : "Action"}
+                          value={selected ? `${exerciseSets.length}` : "Add"}
+                        />
+                      ) : null}
+                    </button>
                     {started ? (
-                      <MiniStat label="Sets" value={`${exerciseSets.length}`} />
+                      <button
+                        aria-label={`Remove ${exercise.name} from session`}
+                        className="icon-button"
+                        onClick={() => void removeExerciseFromSession(exercise)}
+                        title="Remove exercise from session"
+                        type="button"
+                      >
+                        <Trash2 size={18} aria-hidden="true" />
+                      </button>
                     ) : null}
-                  </button>
+                  </div>
                 );
               })}
             </div>
@@ -615,6 +793,63 @@ export default function WorkoutSessionPage() {
           </div>
         </aside>
       </section>
+
+      {recoveryVisible ? (
+        <Modal
+          title="Recovery Check-in"
+          onClose={() => setRecoveryVisible(false)}
+        >
+          <p className="muted">
+            Rate how you feel before saving. Soreness and Stress use higher
+            scores for more discomfort.
+          </p>
+          {RECOVERY_METRICS.map((metric) => (
+            <div className="field" key={metric.key}>
+              <div className="row between responsive">
+                <label>{metric.label}</label>
+                <span className="muted">{metric.hint}</span>
+              </div>
+              <div className="rest-picker">
+                {[1, 2, 3, 4, 5].map((score) => (
+                  <button
+                    className={
+                      recovery[metric.key] === score ? "chip active" : "chip"
+                    }
+                    key={score}
+                    onClick={() =>
+                      setRecovery((current) => ({
+                        ...current,
+                        [metric.key]: score,
+                      }))
+                    }
+                    type="button"
+                  >
+                    {score}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+          <div className="row responsive">
+            <button
+              className="button"
+              disabled={saving}
+              onClick={() => void saveWorkout(createRecoveryCheckIn())}
+              type="button"
+            >
+              Skip
+            </button>
+            <button
+              className="button primary"
+              disabled={saving}
+              onClick={() => void saveWorkout(recovery)}
+              type="button"
+            >
+              {saving ? "Saving..." : "Save Workout"}
+            </button>
+          </div>
+        </Modal>
+      ) : null}
 
       {activeExercise ? (
         <Modal

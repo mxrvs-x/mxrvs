@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import Pagination from "@/app/components/Pagination";
 import {
   ActivityCalendar,
   CardioReportChart,
@@ -14,7 +15,10 @@ import {
   useLocalState,
 } from "@/app/components/shared";
 import { loadWebCardio, type SyncState } from "@/lib/webData";
+import { getCardioPersonalRecords } from "@/lib/personalRecords";
 import { appAlert } from "@/lib/sweetAlert";
+
+const PAGE_SIZE = 8;
 
 function formatTime(seconds: number) {
   const h = Math.floor(seconds / 3600);
@@ -35,6 +39,7 @@ export default function CardioPage() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<"all" | "running" | "walking">("all");
   const [syncState, setSyncState] = useState<SyncState>("local");
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     let active = true;
@@ -71,10 +76,36 @@ export default function CardioPage() {
       .filter((session) => (selectedType === "all" ? true : session.cardio_type === selectedType))
       .sort((a, b) => b.session_date.localeCompare(a.session_date));
   }, [selectedDate, selectedType, sessions]);
+  const totalPages = Math.max(
+    1,
+    Math.ceil(visibleSessions.length / PAGE_SIZE),
+  );
+  const paginatedSessions = visibleSessions.slice(
+    (page - 1) * PAGE_SIZE,
+    page * PAGE_SIZE,
+  );
+
+  useEffect(() => {
+    setPage(1);
+  }, [selectedDate, selectedType]);
 
   const totalDistance = visibleSessions.reduce((sum, session) => sum + session.distance_km, 0);
   const totalTime = visibleSessions.reduce((sum, session) => sum + session.duration_seconds, 0);
   const totalCalories = visibleSessions.reduce((sum, session) => sum + session.calories_burned, 0);
+  const runningRecords = useMemo(
+    () =>
+      getCardioPersonalRecords(
+        sessions.filter((session) => session.cardio_type === "running"),
+      ),
+    [sessions],
+  );
+  const walkingRecords = useMemo(
+    () =>
+      getCardioPersonalRecords(
+        sessions.filter((session) => session.cardio_type === "walking"),
+      ),
+    [sessions],
+  );
 
   return (
     <div className="page">
@@ -117,6 +148,32 @@ export default function CardioPage() {
               <MiniStat label="Time" value={formatTime(totalTime)} />
               <MiniStat label="Calories" value={`${Math.round(totalCalories)} kcal`} />
             </div>
+            <div className="row wrap">
+              <MiniStat
+                label="Run Distance PR"
+                value={
+                  runningRecords.distance
+                    ? `${Number(runningRecords.distance.distance_km).toFixed(2)} km`
+                    : "--"
+                }
+              />
+              <MiniStat
+                label="Run Step PR"
+                value={runningRecords.steps?.steps?.toLocaleString() || "--"}
+              />
+              <MiniStat
+                label="Walk Distance PR"
+                value={
+                  walkingRecords.distance
+                    ? `${Number(walkingRecords.distance.distance_km).toFixed(2)} km`
+                    : "--"
+                }
+              />
+              <MiniStat
+                label="Walk Step PR"
+                value={walkingRecords.steps?.steps?.toLocaleString() || "--"}
+              />
+            </div>
             <div className="chart-wrap">
               <CardioReportChart sessions={visibleSessions} />
             </div>
@@ -136,7 +193,7 @@ export default function CardioPage() {
               </div>
             ) : null}
 
-            {visibleSessions.map((session) => (
+            {paginatedSessions.map((session) => (
               <Link
                 className="list-item stack"
                 href={`/pages/cardio/${session.id}`}
@@ -159,6 +216,11 @@ export default function CardioPage() {
               </Link>
             ))}
           </div>
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            onPageChange={setPage}
+          />
         </div>
       </section>
     </div>

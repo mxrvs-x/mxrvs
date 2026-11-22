@@ -22,6 +22,7 @@ const WORKOUT_TYPES: WorkoutType[] = [
   "legs",
   "upper",
   "lower",
+  "arms",
   "rest",
 ];
 
