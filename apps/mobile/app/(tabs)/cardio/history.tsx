@@ -5,6 +5,7 @@ import {
   getCachedCardioSessions,
   getOfflineCardioSessions,
   mapOfflineCardioSession,
+  mergeCardioSessions,
   syncOfflineCardioSessions,
 } from "@/lib/offlineCardio";
 import { supabase } from "@/lib/supabase";
@@ -71,19 +72,7 @@ export default function CardioHistoryScreen() {
     } = await supabase.auth.getUser();
 
     if (!user || !isOnline) {
-      const cachedDates = new Set(cachedSessions.map((session) => session.session_date));
-      setSessions(
-        [
-          ...mappedOffline.filter(
-            (session) => !cachedDates.has(session.session_date),
-          ),
-          ...cachedSessions,
-        ].sort(
-          (a, b) =>
-            new Date(b.session_date).getTime() -
-            new Date(a.session_date).getTime(),
-        ),
-      );
+      setSessions(mergeCardioSessions(mappedOffline, cachedSessions));
       setLoading(false);
       setRefreshing(false);
       return;
@@ -92,7 +81,7 @@ export default function CardioHistoryScreen() {
     const { data, error } = await supabase
       .from("cardio_sessions")
       .select(
-        "id, cardio_type, cardio_source, session_date, distance_km, duration_seconds, calories_burned, is_mock",
+        "id, cardio_type, cardio_source, session_date, distance_km, duration_seconds, calories_burned, is_mock, created_at",
       )
       .eq("user_id", user.id)
       .order("session_date", { ascending: false })
@@ -100,7 +89,7 @@ export default function CardioHistoryScreen() {
 
     if (error) {
       console.log("Load cardio history error:", error);
-      setSessions([...mappedOffline, ...cachedSessions]);
+      setSessions(mergeCardioSessions(mappedOffline, cachedSessions));
       setLoading(false);
       setRefreshing(false);
       return;
@@ -108,10 +97,7 @@ export default function CardioHistoryScreen() {
 
     await cacheCardioSessions(data as any);
 
-    const combined = [...mappedOffline, ...(data || [])].sort(
-      (a, b) =>
-        new Date(b.session_date).getTime() - new Date(a.session_date).getTime(),
-    );
+    const combined = mergeCardioSessions(mappedOffline, data || []);
 
     setSessions(combined);
     setLoading(false);

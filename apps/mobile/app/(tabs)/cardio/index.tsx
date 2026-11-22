@@ -11,6 +11,7 @@ import {
   getCachedCardioSessions,
   getOfflineCardioSessions,
   mapOfflineCardioSession,
+  mergeCardioSessions,
   syncOfflineCardioSessions,
 } from "@/lib/offlineCardio";
 import { supabase } from "@/lib/supabase";
@@ -86,15 +87,7 @@ export default function CardioHome() {
     } = await supabase.auth.getUser();
 
     if (!user || !isOnline) {
-      const cachedDates = new Set(cachedSessions.map((session) => session.session_date));
-      const merged = [
-        ...mappedOffline.filter((session) => !cachedDates.has(session.session_date)),
-        ...cachedSessions,
-      ].sort(
-        (a, b) =>
-          new Date(b.session_date).getTime() -
-          new Date(a.session_date).getTime(),
-      );
+      const merged = mergeCardioSessions(mappedOffline, cachedSessions);
 
       setSessions(merged.slice(0, 5));
       setWeeklySessions(merged);
@@ -112,7 +105,7 @@ export default function CardioHome() {
     const { data: recentData, error: recentError } = await supabase
       .from("cardio_sessions")
       .select(
-        "id, cardio_type, cardio_source, session_date, distance_km, duration_seconds, calories_burned, is_mock",
+        "id, cardio_type, cardio_source, session_date, distance_km, duration_seconds, calories_burned, is_mock, created_at",
       )
       .eq("user_id", user.id)
       .order("session_date", { ascending: false })
@@ -122,7 +115,7 @@ export default function CardioHome() {
     const { data: weeklyData, error: weeklyError } = await supabase
       .from("cardio_sessions")
       .select(
-        "id, cardio_type, cardio_source, session_date, distance_km, duration_seconds, calories_burned, is_mock",
+        "id, cardio_type, cardio_source, session_date, distance_km, duration_seconds, calories_burned, is_mock, created_at",
       )
       .eq("user_id", user.id)
       .gte("session_date", sevenDaysAgoString)
@@ -134,15 +127,12 @@ export default function CardioHome() {
       await cacheCardioSessions(weeklyData as any);
     }
 
-    const combinedRecent = [...mappedOffline, ...(recentData || [])]
-      .sort(
-        (a, b) =>
-          new Date(b.session_date).getTime() -
-          new Date(a.session_date).getTime(),
-      )
-      .slice(0, 5);
+    const combinedRecent = mergeCardioSessions(
+      mappedOffline,
+      recentData || [],
+    ).slice(0, 5);
 
-    const combinedWeekly = [...mappedOffline, ...(weeklyData || [])];
+    const combinedWeekly = mergeCardioSessions(mappedOffline, weeklyData || []);
 
     setSessions(combinedRecent);
     setWeeklySessions(combinedWeekly);

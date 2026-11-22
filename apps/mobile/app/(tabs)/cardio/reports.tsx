@@ -3,6 +3,7 @@ import {
   getCachedCardioSessions,
   getOfflineCardioSessions,
   mapOfflineCardioSession,
+  mergeCardioSessions,
   syncOfflineCardioSessions,
 } from "@/lib/offlineCardio";
 import { supabase } from "@/lib/supabase";
@@ -159,14 +160,8 @@ export default function CardioReportsScreen() {
     } = await supabase.auth.getUser();
 
     if (!user || !isOnline) {
-      const cachedDates = new Set(cachedSessions.map((session) => session.session_date));
       setSessions(
-        [
-          ...mappedOffline.filter(
-            (session) => !cachedDates.has(session.session_date),
-          ),
-          ...cachedSessions,
-        ] as CardioSession[],
+        mergeCardioSessions(mappedOffline, cachedSessions) as CardioSession[],
       );
       setLoading(false);
       setRefreshing(false);
@@ -184,14 +179,21 @@ export default function CardioReportsScreen() {
 
     if (error) {
       console.log("Load cardio reports error:", error);
-      setSessions([...mappedOffline, ...cachedSessions] as CardioSession[]);
+      setSessions(
+        mergeCardioSessions(mappedOffline, cachedSessions) as CardioSession[],
+      );
       setLoading(false);
       setRefreshing(false);
       return;
     }
 
     await cacheCardioSessions(data as any);
-    setSessions([...mappedOffline, ...((data || []) as CardioSession[])]);
+    setSessions(
+      mergeCardioSessions(
+        mappedOffline,
+        (data || []) as CardioSession[],
+      ) as CardioSession[],
+    );
     setLoading(false);
     setRefreshing(false);
   }

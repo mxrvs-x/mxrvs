@@ -67,6 +67,7 @@ function isSamePendingCardioSession(
     a.temp_id === b.temp_id ||
     (a.user_id === b.user_id &&
       a.session_date === b.session_date &&
+      a.created_at === b.created_at &&
       a.cardio_type === b.cardio_type &&
       a.cardio_source === b.cardio_source &&
       a.distance_km === b.distance_km &&
@@ -85,6 +86,38 @@ export async function saveOfflineCardioSession(session: OfflineCardioSession) {
   ];
 
   await AsyncStorage.setItem(OFFLINE_CARDIO_KEY, JSON.stringify(updated));
+}
+
+type CardioSessionIdentity = {
+  id?: string;
+  temp_id?: string;
+  session_date: string;
+  created_at?: string | null;
+};
+
+function cardioSessionKey(session: CardioSessionIdentity) {
+  return session.created_at || session.id || session.temp_id;
+}
+
+export function mergeCardioSessions<T extends CardioSessionIdentity>(
+  offlineSessions: T[],
+  storedSessions: T[],
+) {
+  const offlineKeys = new Set(
+    offlineSessions.map(cardioSessionKey).filter(Boolean),
+  );
+
+  return [
+    ...offlineSessions,
+    ...storedSessions.filter((session) => {
+      const key = cardioSessionKey(session);
+      return !key || !offlineKeys.has(key);
+    }),
+  ].sort((a, b) => {
+    const dateOrder = b.session_date.localeCompare(a.session_date);
+    if (dateOrder !== 0) return dateOrder;
+    return (b.created_at || "").localeCompare(a.created_at || "");
+  });
 }
 
 export async function cacheOfflineCardioUserId(userId: string) {
@@ -136,7 +169,9 @@ export async function removeOfflineCardioSession(tempId: string) {
 
 async function runOfflineCardioSync(): Promise<SyncResult> {
   const online = await isOnline();
-  if (!online) return { synced: 0, remaining: 0 };
+  if (!online) {
+    return { synced: 0, remaining: (await getOfflineCardioSessions()).length };
+  }
 
   const sessions = await getOfflineCardioSessions();
   if (sessions.length === 0) return { synced: 0, remaining: 0 };
@@ -150,7 +185,7 @@ async function runOfflineCardioSync(): Promise<SyncResult> {
       .from("cardio_sessions")
       .select("id")
       .eq("user_id", session.user_id)
-      .eq("session_date", session.session_date)
+      .eq("created_at", session.created_at)
       .limit(1);
 
     if (!existingError && existing && existing.length > 0) {
