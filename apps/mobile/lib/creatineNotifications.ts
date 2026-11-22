@@ -1,4 +1,5 @@
 import {
+  getCachedCreatineLogs,
   getOfflineCreatineLogs,
   syncOfflineCreatineLogs,
   toDateKey,
@@ -116,6 +117,11 @@ async function hasLoggedCreatineToday(userId: string) {
   const offlineLogs = await getOfflineCreatineLogs();
 
   if (offlineLogs.some((log) => log.date === today)) {
+    return true;
+  }
+
+  const cachedLogs = await getCachedCreatineLogs();
+  if (cachedLogs.some((log) => log.date === today)) {
     return true;
   }
 
