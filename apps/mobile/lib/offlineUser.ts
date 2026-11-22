@@ -9,6 +9,8 @@ export async function cacheOfflineUser(user: { id: string; email?: string | null
 
   if (user.email) {
     await AsyncStorage.setItem(OFFLINE_USER_EMAIL_KEY, user.email);
+  } else {
+    await AsyncStorage.removeItem(OFFLINE_USER_EMAIL_KEY);
   }
 }
 
