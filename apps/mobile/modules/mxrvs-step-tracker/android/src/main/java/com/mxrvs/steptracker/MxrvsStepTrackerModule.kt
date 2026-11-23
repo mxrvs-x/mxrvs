@@ -16,6 +16,10 @@ class MxrvsStepTrackerModule : Module() {
       StepCounterService.isSensorAvailable(context)
     }
 
+    AsyncFunction("hasActivityPermissionAsync") {
+      StepCounterService.hasActivityPermission(context)
+    }
+
     AsyncFunction("getSnapshotAsync") {
       StepTrackerStore.snapshot(context)
     }

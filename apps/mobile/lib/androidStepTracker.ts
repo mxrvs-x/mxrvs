@@ -23,6 +23,7 @@ export type NativeArchivedActivity = {
 
 type MxrvsStepTrackerModule = {
   isAvailableAsync(): Promise<boolean>;
+  hasActivityPermissionAsync(): Promise<boolean>;
   getSnapshotAsync(): Promise<NativeStepSnapshot>;
   startAsync(): Promise<NativeStepSnapshot>;
   stopAsync(): Promise<NativeStepSnapshot>;
@@ -49,6 +50,13 @@ export function hasNativeAndroidStepTracker() {
 
 export async function isNativeAndroidStepTrackerAvailable() {
   return (await nativeModule?.isAvailableAsync().catch(() => false)) ?? false;
+}
+
+export async function hasNativeAndroidActivityPermission() {
+  return (
+    (await nativeModule?.hasActivityPermissionAsync().catch(() => false)) ??
+    false
+  );
 }
 
 export async function getNativeAndroidStepSnapshot() {

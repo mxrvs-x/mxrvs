@@ -116,6 +116,36 @@ internal object StepTrackerStore {
     return delta
   }
 
+  @Synchronized
+  fun recordDetectedSteps(
+    context: Context,
+    detectedSteps: Int,
+    eventTimeMs: Long = System.currentTimeMillis(),
+    countSteps: Boolean = true
+  ): Int {
+    val storage = prefs(context)
+    val today = todayKey()
+    val eventDate = todayKey(Date(eventTimeMs))
+    val storedDate = storage.getString(KEY_DATE, null)
+
+    if (storedDate != null && storedDate != today) {
+      archiveStoredActivity(storage, storedDate)
+    }
+
+    val previousSteps =
+      if (storedDate == today) storage.getInt(KEY_STEPS, 0) else 0
+    val acceptedSteps =
+      if (eventDate == today && countSteps) detectedSteps.coerceAtLeast(0) else 0
+    val nextSteps = max(0, previousSteps + acceptedSteps)
+
+    storage.edit()
+      .putString(KEY_DATE, today)
+      .putInt(KEY_STEPS, nextSteps)
+      .apply()
+
+    return acceptedSteps
+  }
+
   fun setBodyMetrics(context: Context, weightKg: Double?, heightCm: Double?) {
     val editor = prefs(context).edit()
 

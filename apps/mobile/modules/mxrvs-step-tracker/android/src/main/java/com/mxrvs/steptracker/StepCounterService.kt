@@ -20,17 +20,19 @@ import androidx.core.content.ContextCompat
 
 class StepCounterService : Service(), SensorEventListener {
   private lateinit var sensorManager: SensorManager
-  private var stepCounter: Sensor? = null
+  private var stepSensor: Sensor? = null
 
   override fun onCreate() {
     super.onCreate()
     sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
-    stepCounter = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER)
+    stepSensor =
+      sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER)
+        ?: sensorManager.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR)
     createNotificationChannel()
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-    if (!hasActivityPermission(this) || stepCounter == null) {
+    if (!hasActivityPermission(this) || stepSensor == null) {
       stopSelf()
       return START_NOT_STICKY
     }
@@ -40,7 +42,7 @@ class StepCounterService : Service(), SensorEventListener {
     VehicleActivityTracker.register(this)
     sensorManager.registerListener(
       this,
-      stepCounter,
+      stepSensor,
       SensorManager.SENSOR_DELAY_NORMAL,
       SENSOR_BATCH_LATENCY_US
     )
@@ -49,18 +51,29 @@ class StepCounterService : Service(), SensorEventListener {
   }
 
   override fun onSensorChanged(event: SensorEvent) {
-    if (event.sensor.type != Sensor.TYPE_STEP_COUNTER) return
-
     val elapsedSinceEventMs =
       ((SystemClock.elapsedRealtimeNanos() - event.timestamp) / 1_000_000L)
         .coerceAtLeast(0L)
     val eventWallTimeMs = System.currentTimeMillis() - elapsedSinceEventMs
-    val delta = StepTrackerStore.recordSensorTotal(
-      this,
-      event.values[0].toInt(),
-      eventWallTimeMs,
-      countSteps = !StepTrackerStore.isInVehicle(this)
-    )
+    val countSteps = !StepTrackerStore.isInVehicle(this)
+    val delta =
+      when (event.sensor.type) {
+        Sensor.TYPE_STEP_COUNTER ->
+          StepTrackerStore.recordSensorTotal(
+            this,
+            event.values[0].toInt(),
+            eventWallTimeMs,
+            countSteps
+          )
+        Sensor.TYPE_STEP_DETECTOR ->
+          StepTrackerStore.recordDetectedSteps(
+            this,
+            event.values[0].toInt().coerceAtLeast(1),
+            eventWallTimeMs,
+            countSteps
+          )
+        else -> 0
+      }
     if (delta <= 0) return
 
     val steps = StepTrackerStore.getSteps(this)
@@ -143,7 +156,9 @@ class StepCounterService : Service(), SensorEventListener {
     // existing channel's importance after the user has installed it.
     private const val CHANNEL_ID = "mxrvs_daily_steps_v2"
     private const val NOTIFICATION_ID = 7312
-    private const val SENSOR_BATCH_LATENCY_US = 30_000_000
+    // Keep active cardio feedback responsive while still allowing the hardware
+    // pedometer to batch events briefly for power efficiency.
+    private const val SENSOR_BATCH_LATENCY_US = 1_000_000
 
     fun hasActivityPermission(context: Context): Boolean =
       Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
@@ -154,7 +169,8 @@ class StepCounterService : Service(), SensorEventListener {
 
     fun isSensorAvailable(context: Context): Boolean {
       val manager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
-      return manager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER) != null
+      return manager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER) != null ||
+        manager.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR) != null
     }
 
     fun start(context: Context) {

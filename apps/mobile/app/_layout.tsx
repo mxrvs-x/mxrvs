@@ -2,6 +2,7 @@ import AppUpdateGate from "@/components/AppUpdateGate";
 import CreatineReminderGate from "@/components/CreatineReminderGate";
 import DailyActivityGate from "@/components/DailyActivityGate";
 import OfflineSyncGate from "@/components/OfflineSyncGate";
+import PostLoginPermissionGate from "@/components/PostLoginPermissionGate";
 import WeightReminderGate from "@/components/WeightReminderGate";
 import "@/lib/backgroundCardioLocation";
 import { AppThemeProvider, useTheme } from "@/lib/theme";
@@ -18,6 +19,7 @@ function RootStack() {
       <StatusBar style={theme.mode === "dark" ? "light" : "dark"} />
       <AppUpdateGate />
       <OfflineSyncGate />
+      <PostLoginPermissionGate />
       <DailyActivityGate />
       <CreatineReminderGate />
       <WeightReminderGate />
