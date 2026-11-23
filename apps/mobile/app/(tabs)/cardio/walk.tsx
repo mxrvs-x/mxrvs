@@ -1,6 +1,7 @@
 import ThemedAlert from "@/components/ThemedAlert";
 import { SafeRouteMap, type MapRegion } from "@/components/SafeRouteMap";
 import { requestFitnessPermissions } from "@/lib/appPermissions";
+import { startCardioStepCounter } from "@/lib/cardioStepCounter";
 import {
   acceptedGpsDistanceKm,
   calculateElapsedSeconds,
@@ -28,7 +29,6 @@ import {
   subscribeVehicleActivity,
 } from "@/lib/vehicleActivity";
 import * as Location from "expo-location";
-import { Pedometer } from "expo-sensors";
 import { Stack, useRouter } from "expo-router";
 import { X } from "lucide-react-native";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -90,11 +90,10 @@ const walkSubscribers = new Set<() => void>();
 
 let timerRef: ReturnType<typeof setInterval> | null = null;
 let watchRef: Location.LocationSubscription | null = null;
-let pedometerRef: Pedometer.Subscription | null = null;
+let stopStepCounterRef: (() => void) | null = null;
 let stopVehicleActivityRef: (() => void) | null = null;
 
 let lastPointRef: RoutePoint | null = null;
-let lastRawStepsRef: number | null = null;
 let inVehicleRef = false;
 
 function getWalkSession() {
@@ -302,8 +301,8 @@ function stopWatchers() {
   watchRef?.remove();
   watchRef = null;
 
-  pedometerRef?.remove();
-  pedometerRef = null;
+  stopStepCounterRef?.();
+  stopStepCounterRef = null;
 
   stopVehicleActivityRef?.();
   stopVehicleActivityRef = null;
@@ -325,7 +324,6 @@ function resetSession() {
     walkSource: currentSource,
   });
 
-  lastRawStepsRef = null;
   lastPointRef = null;
 }
 
@@ -621,32 +619,15 @@ export default function WalkScreen() {
     });
 
     try {
-      const pedometerAvailable = await Pedometer.isAvailableAsync().catch(
-        () => false,
-      );
+      stopStepCounterRef = await startCardioStepCounter((delta) => {
+        const current = getWalkSession();
+        if (!current.tracking || current.isPaused || inVehicleRef) return;
 
-      if (pedometerAvailable) {
-        pedometerRef = Pedometer.watchStepCount((result) => {
-          const rawSteps = result.steps;
-
-          if (lastRawStepsRef === null) {
-            lastRawStepsRef = rawSteps;
-            return;
-          }
-
-          const previousRawSteps = lastRawStepsRef;
-          const delta = Math.max(0, rawSteps - previousRawSteps);
-
-          lastRawStepsRef = rawSteps;
-
-          if (getWalkSession().isPaused || inVehicleRef) return;
-
-          setWalkSession((prev) => ({
-            ...prev,
-            steps: prev.steps + delta,
-          }));
-        });
-      }
+        setWalkSession((prev) => ({
+          ...prev,
+          steps: prev.steps + delta,
+        }));
+      });
     } catch (error) {
       console.log("Start walk pedometer error:", error);
     }

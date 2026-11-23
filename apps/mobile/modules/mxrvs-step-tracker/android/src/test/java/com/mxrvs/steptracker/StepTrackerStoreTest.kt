@@ -52,6 +52,17 @@ class StepTrackerStoreTest {
   }
 
   @Test
+  fun `records step detector events and ignores them while in a vehicle`() {
+    assertEquals(1, StepTrackerStore.recordDetectedSteps(context, 1))
+    assertEquals(2, StepTrackerStore.recordDetectedSteps(context, 2))
+    assertEquals(
+      0,
+      StepTrackerStore.recordDetectedSteps(context, 1, countSteps = false)
+    )
+    assertEquals(3, StepTrackerStore.getSteps(context))
+  }
+
+  @Test
   fun `snapshot applies body metrics and tracking state`() {
     StepTrackerStore.setEnabled(context, true)
     StepTrackerStore.setBodyMetrics(context, 70.0, 180.0)

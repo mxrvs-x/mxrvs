@@ -5,6 +5,7 @@ import {
 } from "@/lib/offlineWeight";
 import {
   getNativeAndroidStepSnapshot,
+  hasNativeAndroidActivityPermission,
   hasNativeAndroidStepTracker,
   isNativeAndroidStepTrackerAvailable,
   setNativeAndroidBodyMetrics,
@@ -13,7 +14,7 @@ import {
 import { calculateActivityMetrics } from "@/lib/activityCalculations";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Pedometer } from "expo-sensors";
-import { Platform } from "react-native";
+import { PermissionsAndroid, Platform } from "react-native";
 
 const DAILY_ACTIVITY_KEY = "daily_pedometer_activity_v1";
 
@@ -157,8 +158,11 @@ export async function refreshDailyActivity() {
   const available = nativeAndroidTrackerAvailable
     ? true
     : await Pedometer.isAvailableAsync().catch(() => false);
-  const permission = await Pedometer.getPermissionsAsync().catch(() => null);
-  const permissionGranted = Boolean(permission?.granted);
+  const permissionGranted = nativeAndroidTrackerAvailable
+    ? await hasNativeAndroidActivityPermission()
+    : Boolean(
+        (await Pedometer.getPermissionsAsync().catch(() => null))?.granted,
+      );
   const stored = await loadStoredSteps();
 
   // The Android widget cannot query Supabase itself. Refresh the latest
@@ -214,14 +218,27 @@ export async function refreshDailyActivity() {
 }
 
 export async function requestDailyActivityPermission() {
-  const available = await Pedometer.isAvailableAsync().catch(() => false);
+  const nativeAvailable =
+    Platform.OS === "android" &&
+    hasNativeAndroidStepTracker() &&
+    (await isNativeAndroidStepTrackerAvailable());
+  const available =
+    nativeAvailable || (await Pedometer.isAvailableAsync().catch(() => false));
   if (!available) return refreshDailyActivity();
 
-  const permission = await Pedometer.requestPermissionsAsync().catch(
-    () => null,
-  );
+  const permissionGranted =
+    Platform.OS === "android"
+      ? Number(Platform.Version) < 29 ||
+        (await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.ACTIVITY_RECOGNITION,
+        ).catch(() => PermissionsAndroid.RESULTS.DENIED)) ===
+          PermissionsAndroid.RESULTS.GRANTED
+      : Boolean(
+          (await Pedometer.requestPermissionsAsync().catch(() => null))
+            ?.granted,
+        );
 
-  if (permission?.granted) {
+  if (permissionGranted) {
     await startDailyActivityTracking();
   }
 

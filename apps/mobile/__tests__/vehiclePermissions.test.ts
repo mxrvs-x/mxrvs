@@ -1,11 +1,17 @@
 jest.mock("react-native", () => ({
   Alert: { alert: jest.fn() },
   Linking: { openSettings: jest.fn() },
-  Platform: { OS: "android" },
+  Platform: { OS: "android", Version: 35 },
+  PermissionsAndroid: {
+    PERMISSIONS: { ACTIVITY_RECOGNITION: "android.permission.ACTIVITY_RECOGNITION" },
+    RESULTS: { GRANTED: "granted", DENIED: "denied" },
+    request: jest.fn(),
+  },
 }));
 
 jest.mock("@/lib/androidStepTracker", () => ({
   getNativeAndroidStepSnapshot: jest.fn(),
+  isNativeAndroidStepTrackerAvailable: jest.fn(),
 }));
 
 jest.mock("@/lib/dailyActivity", () => ({
@@ -14,6 +20,19 @@ jest.mock("@/lib/dailyActivity", () => ({
 
 jest.mock("expo-location", () => ({
   requestForegroundPermissionsAsync: jest.fn(),
+  requestBackgroundPermissionsAsync: jest.fn(),
+}));
+
+jest.mock("expo-image-picker", () => ({
+  requestCameraPermissionsAsync: jest.fn(),
+}));
+
+jest.mock("expo-media-library", () => ({
+  requestPermissionsAsync: jest.fn(),
+}));
+
+jest.mock("expo-notifications", () => ({
+  requestPermissionsAsync: jest.fn(),
 }));
 
 jest.mock("expo-sensors", () => ({
@@ -23,8 +42,14 @@ jest.mock("expo-sensors", () => ({
   },
 }));
 
-import { getNativeAndroidStepSnapshot } from "../lib/androidStepTracker";
-import { requestFitnessPermissions } from "../lib/appPermissions";
+import {
+  getNativeAndroidStepSnapshot,
+  isNativeAndroidStepTrackerAvailable,
+} from "../lib/androidStepTracker";
+import {
+  requestAllAppPermissions,
+  requestFitnessPermissions,
+} from "../lib/appPermissions";
 import { startDailyActivityTracking } from "../lib/dailyActivity";
 import {
   getVehicleActivitySnapshot,
@@ -32,8 +57,11 @@ import {
   subscribeVehicleActivity,
 } from "../lib/vehicleActivity";
 import * as Location from "expo-location";
+import * as ImagePicker from "expo-image-picker";
+import * as MediaLibrary from "expo-media-library";
+import * as Notifications from "expo-notifications";
 import { Pedometer } from "expo-sensors";
-import { Alert, Linking } from "react-native";
+import { Alert, Linking, PermissionsAndroid } from "react-native";
 
 type Deferred<T> = {
   promise: Promise<T>;
@@ -49,11 +77,19 @@ function deferred<T>(): Deferred<T> {
 }
 
 const mockNativeSnapshot = getNativeAndroidStepSnapshot as jest.Mock;
+const mockNativeAvailable = isNativeAndroidStepTrackerAvailable as jest.Mock;
 const mockStartDailyActivity = startDailyActivityTracking as jest.Mock;
 const mockLocationPermission =
   Location.requestForegroundPermissionsAsync as jest.Mock;
+const mockBackgroundLocationPermission =
+  Location.requestBackgroundPermissionsAsync as jest.Mock;
+const mockNotificationPermission =
+  Notifications.requestPermissionsAsync as jest.Mock;
+const mockPhotosPermission = MediaLibrary.requestPermissionsAsync as jest.Mock;
+const mockCameraPermission =
+  ImagePicker.requestCameraPermissionsAsync as jest.Mock;
 const mockPedometerAvailable = Pedometer.isAvailableAsync as jest.Mock;
-const mockPedometerPermission = Pedometer.requestPermissionsAsync as jest.Mock;
+const mockActivityPermission = PermissionsAndroid.request as jest.Mock;
 const mockAlert = Alert.alert as jest.Mock;
 const mockOpenSettings = Linking.openSettings as jest.Mock;
 
@@ -137,11 +173,13 @@ describe("fitness permission requests", () => {
     consoleLog = jest.spyOn(console, "log").mockImplementation(() => {});
     consoleError = jest.spyOn(console, "error").mockImplementation(() => {});
     mockLocationPermission.mockResolvedValue({ status: "granted" });
+    mockBackgroundLocationPermission.mockResolvedValue({ granted: true });
+    mockNotificationPermission.mockResolvedValue({ granted: true });
+    mockPhotosPermission.mockResolvedValue({ granted: true });
+    mockCameraPermission.mockResolvedValue({ granted: true });
+    mockNativeAvailable.mockResolvedValue(true);
     mockPedometerAvailable.mockResolvedValue(true);
-    mockPedometerPermission.mockResolvedValue({
-      granted: true,
-      status: "granted",
-    });
+    mockActivityPermission.mockResolvedValue(PermissionsAndroid.RESULTS.GRANTED);
     mockStartDailyActivity.mockResolvedValue(undefined);
   });
 
@@ -161,6 +199,24 @@ describe("fitness permission requests", () => {
     expect(mockAlert).not.toHaveBeenCalled();
   });
 
+  it("requests every app permission in the post-login flow", async () => {
+    await expect(requestAllAppPermissions()).resolves.toEqual({
+      activityGranted: true,
+      locationGranted: true,
+      backgroundLocationGranted: true,
+      notificationsGranted: true,
+      photosGranted: true,
+      cameraGranted: true,
+    });
+
+    expect(mockActivityPermission).toHaveBeenCalledTimes(1);
+    expect(mockLocationPermission).toHaveBeenCalledTimes(1);
+    expect(mockBackgroundLocationPermission).toHaveBeenCalledTimes(1);
+    expect(mockNotificationPermission).toHaveBeenCalledTimes(1);
+    expect(mockPhotosPermission).toHaveBeenCalledWith(false, ["photo"]);
+    expect(mockCameraPermission).toHaveBeenCalledTimes(1);
+  });
+
   it("blocks cardio and shows guidance when location is denied", async () => {
     mockLocationPermission.mockResolvedValue({ status: "denied" });
 
@@ -173,6 +229,7 @@ describe("fitness permission requests", () => {
   });
 
   it("blocks cardio when the pedometer is unavailable", async () => {
+    mockNativeAvailable.mockResolvedValue(false);
     mockPedometerAvailable.mockResolvedValue(false);
 
     await expect(requestFitnessPermissions()).resolves.toEqual({
@@ -181,15 +238,12 @@ describe("fitness permission requests", () => {
       pedometerAvailable: false,
       allGranted: false,
     });
-    expect(mockPedometerPermission).not.toHaveBeenCalled();
+    expect(mockActivityPermission).not.toHaveBeenCalled();
     expect(mockAlert).toHaveBeenCalledTimes(1);
   });
 
   it("does not start daily tracking when activity permission is denied", async () => {
-    mockPedometerPermission.mockResolvedValue({
-      granted: false,
-      status: "denied",
-    });
+    mockActivityPermission.mockResolvedValue(PermissionsAndroid.RESULTS.DENIED);
 
     await expect(requestFitnessPermissions()).resolves.toMatchObject({
       activityGranted: false,
