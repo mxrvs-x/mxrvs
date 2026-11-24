@@ -254,6 +254,24 @@ export default function CardioHome() {
         />
       </View>
 
+      <Pressable
+        onPress={() => router.push("/cardio/manual" as any)}
+        style={{
+          minHeight: 50,
+          marginTop: 10,
+          borderRadius: 16,
+          borderWidth: 1,
+          borderColor: theme.colors.border,
+          backgroundColor: theme.colors.surface,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Text style={{ color: theme.colors.text, fontWeight: "900" }}>
+          Add Cardio Manually
+        </Text>
+      </Pressable>
+
       <View
         style={{
           marginTop: 20,

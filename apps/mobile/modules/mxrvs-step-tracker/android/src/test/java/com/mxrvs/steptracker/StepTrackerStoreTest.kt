@@ -123,12 +123,22 @@ class StepTrackerStoreTest {
 
   @Test
   fun `stores vehicle state and update timestamp`() {
-    StepTrackerStore.setInVehicle(context, true, 1234L)
-    assertTrue(StepTrackerStore.isInVehicle(context))
-    assertEquals(1234L, StepTrackerStore.snapshot(context)["vehicleActivityUpdatedAt"])
+    val now = System.currentTimeMillis()
+    StepTrackerStore.setInVehicle(context, true, now)
+    assertTrue(StepTrackerStore.isInVehicle(context, now + 1_000L))
+    assertEquals(now, StepTrackerStore.snapshot(context)["vehicleActivityUpdatedAt"])
 
-    StepTrackerStore.setInVehicle(context, false, 5678L)
+    StepTrackerStore.setInVehicle(context, false, now + 2_000L)
     assertFalse(StepTrackerStore.isInVehicle(context))
+  }
+
+  @Test
+  fun `expires a stale vehicle state so walking can recover`() {
+    StepTrackerStore.setInVehicle(context, true, 1_000L)
+
+    assertTrue(StepTrackerStore.isInVehicle(context, 2_000L))
+    assertFalse(StepTrackerStore.isInVehicle(context, 5 * 60 * 1000L + 1_001L))
+    assertFalse(StepTrackerStore.isInVehicle(context, 5 * 60 * 1000L + 2_000L))
   }
 
   @Test

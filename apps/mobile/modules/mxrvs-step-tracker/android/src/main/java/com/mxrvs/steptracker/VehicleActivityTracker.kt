@@ -14,7 +14,9 @@ import com.google.android.gms.location.ActivityTransitionRequest
 import com.google.android.gms.location.DetectedActivity
 
 internal object VehicleActivityTracker {
-  private const val REQUEST_CODE = 7313
+  private const val TRANSITION_REQUEST_CODE = 7313
+  private const val CURRENT_ACTIVITY_REQUEST_CODE = 7314
+  private const val ACTIVITY_UPDATE_INTERVAL_MS = 15_000L
 
   fun register(context: Context) {
     if (!hasPermission(context)) return
@@ -33,22 +35,43 @@ internal object VehicleActivityTracker {
     ActivityRecognition.getClient(context)
       .requestActivityTransitionUpdates(
         ActivityTransitionRequest(transitions),
-        pendingIntent(context)
+        transitionPendingIntent(context)
       )
       .addOnFailureListener { error ->
         Log.w("MxrvsStepTracker", "Could not register vehicle transitions", error)
       }
-  }
 
-  fun unregister(context: Context) {
+    // Recover the current state when an EXIT transition was missed while the
+    // process or activity-recognition provider was asleep.
     ActivityRecognition.getClient(context)
-      .removeActivityTransitionUpdates(pendingIntent(context))
-      .addOnCompleteListener {
-        StepTrackerStore.setInVehicle(context, false, System.currentTimeMillis())
+      .requestActivityUpdates(
+        ACTIVITY_UPDATE_INTERVAL_MS,
+        currentActivityPendingIntent(context)
+      )
+      .addOnFailureListener { error ->
+        Log.w("MxrvsStepTracker", "Could not register current activity updates", error)
       }
   }
 
-  private fun pendingIntent(context: Context): PendingIntent {
+  fun unregister(context: Context) {
+    StepTrackerStore.setInVehicle(context, false, System.currentTimeMillis())
+    ActivityRecognition.getClient(context)
+      .removeActivityTransitionUpdates(transitionPendingIntent(context))
+    ActivityRecognition.getClient(context)
+      .removeActivityUpdates(currentActivityPendingIntent(context))
+  }
+
+  private fun transitionPendingIntent(context: Context): PendingIntent =
+    pendingIntent(context, TRANSITION_REQUEST_CODE, ACTION_TRANSITION)
+
+  private fun currentActivityPendingIntent(context: Context): PendingIntent =
+    pendingIntent(context, CURRENT_ACTIVITY_REQUEST_CODE, ACTION_CURRENT_ACTIVITY)
+
+  private fun pendingIntent(
+    context: Context,
+    requestCode: Int,
+    action: String
+  ): PendingIntent {
     val mutabilityFlag =
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         PendingIntent.FLAG_MUTABLE
@@ -59,8 +82,8 @@ internal object VehicleActivityTracker {
 
     return PendingIntent.getBroadcast(
       context,
-      REQUEST_CODE,
-      Intent(context, VehicleActivityReceiver::class.java),
+      requestCode,
+      Intent(context, VehicleActivityReceiver::class.java).setAction(action),
       flags
     )
   }
@@ -71,4 +94,9 @@ internal object VehicleActivityTracker {
         context,
         Manifest.permission.ACTIVITY_RECOGNITION
       ) == PackageManager.PERMISSION_GRANTED
+
+  private const val ACTION_TRANSITION =
+    "com.mxrvs.steptracker.action.VEHICLE_TRANSITION"
+  private const val ACTION_CURRENT_ACTIVITY =
+    "com.mxrvs.steptracker.action.CURRENT_ACTIVITY"
 }

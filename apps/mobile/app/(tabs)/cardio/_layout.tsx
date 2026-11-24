@@ -35,6 +35,13 @@ export default function CardioLayout() {
       />
 
       <Stack.Screen
+        name="manual"
+        options={{
+          title: "Add Cardio",
+        }}
+      />
+
+      <Stack.Screen
         name="history"
         options={{
           title: "All Activities",

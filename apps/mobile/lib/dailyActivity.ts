@@ -148,7 +148,11 @@ export function subscribeDailyActivity(listener: () => void) {
   return () => listeners.delete(listener);
 }
 
-export async function refreshDailyActivity() {
+export async function refreshDailyActivity({
+  syncBodyMetrics = true,
+}: {
+  syncBodyMetrics?: boolean;
+} = {}) {
   nativeAndroidTrackerAvailable =
     Platform.OS === "android" &&
     !nativeAndroidTrackerFailed &&
@@ -169,7 +173,9 @@ export async function refreshDailyActivity() {
   // body_weight_logs row while JS is active, then copy it into native storage
   // so calorie calculations continue after the app goes into the background.
   const [weightLog, bodyStats] = await Promise.all([
-    loadLatestBodyWeightLog(),
+    syncBodyMetrics
+      ? loadLatestBodyWeightLog()
+      : getCachedLatestBodyWeightLog(),
     getCachedBodyStats(),
   ]);
   const weight = Number(weightLog?.weight_kg);
