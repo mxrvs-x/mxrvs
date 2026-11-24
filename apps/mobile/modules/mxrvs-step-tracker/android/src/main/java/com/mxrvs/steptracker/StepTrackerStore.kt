@@ -26,6 +26,11 @@ internal object StepTrackerStore {
   private const val KEY_VEHICLE_UPDATED_AT = "vehicle_updated_at"
   private const val KEY_ARCHIVED_ACTIVITIES = "archived_activities"
 
+  // Current activity normally refreshes this every 15 seconds. If Android or
+  // Google Play services stops delivering updates, an old vehicle transition
+  // must not suppress real walking steps forever.
+  private const val VEHICLE_STATE_MAX_AGE_MS = 5 * 60 * 1000L
+
   private const val DEFAULT_STRIDE_METERS = 0.762
   private const val STRIDE_HEIGHT_RATIO = 0.415
   private const val STEPS_PER_MOVING_MINUTE = 100.0
@@ -163,8 +168,23 @@ internal object StepTrackerStore {
     editor.apply()
   }
 
-  fun isInVehicle(context: Context): Boolean =
-    prefs(context).getBoolean(KEY_IN_VEHICLE, false)
+  fun isInVehicle(
+    context: Context,
+    nowMs: Long = System.currentTimeMillis()
+  ): Boolean {
+    val storage = prefs(context)
+    if (!storage.getBoolean(KEY_IN_VEHICLE, false)) return false
+
+    val updatedAt = storage.getLong(KEY_VEHICLE_UPDATED_AT, 0L)
+    val isFresh = updatedAt > 0L && nowMs - updatedAt <= VEHICLE_STATE_MAX_AGE_MS
+    if (isFresh) return true
+
+    storage.edit()
+      .putBoolean(KEY_IN_VEHICLE, false)
+      .putLong(KEY_VEHICLE_UPDATED_AT, nowMs)
+      .apply()
+    return false
+  }
 
   fun setInVehicle(context: Context, inVehicle: Boolean, updatedAt: Long) {
     prefs(context).edit()
