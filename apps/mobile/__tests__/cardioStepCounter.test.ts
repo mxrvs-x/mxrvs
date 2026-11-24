@@ -46,6 +46,7 @@ describe("cardio step counter", () => {
   beforeEach(() => {
     jest.useFakeTimers();
     jest.clearAllMocks();
+    mockPedometerAvailable.mockResolvedValue(false);
   });
 
   afterEach(() => {
@@ -83,8 +84,8 @@ describe("cardio step counter", () => {
     stop();
   });
 
-  it("falls back to Expo without counting Android's synthetic first update", async () => {
-    mockNativeAvailable.mockResolvedValue(false);
+  it("prefers immediate Expo updates over native snapshot polling", async () => {
+    mockNativeAvailable.mockResolvedValue(true);
     mockPedometerAvailable.mockResolvedValue(true);
     let listener: ((result: { steps: number }) => void) | undefined;
     const remove = jest.fn();
@@ -95,10 +96,12 @@ describe("cardio step counter", () => {
     const onSteps = jest.fn();
 
     const stop = await startCardioStepCounter(onSteps);
+    listener?.({ steps: 1 });
     listener?.({ steps: 2 });
-    listener?.({ steps: 5 });
+    listener?.({ steps: 3 });
 
-    expect(onSteps.mock.calls).toEqual([[3]]);
+    expect(onSteps.mock.calls).toEqual([[1], [1]]);
+    expect(mockStartNative).not.toHaveBeenCalled();
     stop();
     expect(remove).toHaveBeenCalledTimes(1);
   });
