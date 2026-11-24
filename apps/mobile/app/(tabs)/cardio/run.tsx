@@ -440,7 +440,9 @@ export default function RunScreen() {
 
   useEffect(() => {
     return () => {
-      stopWatchers(); // Make sure this actually clears everything
+      // Keep module-level watchers alive while an active session temporarily
+      // unmounts. Previously the timer resumed but steps/GPS stayed stopped.
+      if (!getRunSession().tracking) stopWatchers();
     };
   }, []);
 
