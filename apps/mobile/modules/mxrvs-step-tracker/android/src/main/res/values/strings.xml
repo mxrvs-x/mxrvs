@@ -1,4 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
   <string name="mxrvs_activity_widget_description">Daily steps, moving time, and estimated calories</string>
+  <string name="sleep_widget_name">mxrvs Sleep</string>
+  <string name="sleep_widget_description">Start, pause, and finish a sleep recording</string>
+  <string name="sleep_widget_sign_in">Sign in to set up the widget</string>
+  <string name="sleep_widget_ready">Recording ready</string>
+  <string name="sleep_widget_awake">Awake · paused</string>
+  <string name="sleep_widget_recording">Recording sleep</string>
+  <string name="sleep_widget_idle">Ready to start</string>
+  <string name="sleep_widget_open">Open mxrvs</string>
+  <string name="sleep_widget_review">Review &amp; save</string>
+  <string name="sleep_widget_resume">Back to sleep</string>
+  <string name="sleep_widget_wake">Woke up</string>
+  <string name="sleep_widget_start">Start sleep</string>
+  <string name="sleep_widget_finish">Finish</string>
 </resources>

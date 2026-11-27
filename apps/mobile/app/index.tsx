@@ -1,7 +1,7 @@
 // app/index.tsx
 import { useTheme } from "@/lib/theme";
 import * as LocalAuthentication from "expo-local-authentication";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 import { resolveInitialAuthRoute } from "../lib/authRecovery";
@@ -11,6 +11,7 @@ import { supabase, supabaseConfigError } from "../lib/supabase";
 
 export default function Index() {
   const router = useRouter();
+  const { sleepWidget } = useLocalSearchParams<{ sleepWidget?: string }>();
   const theme = useTheme();
 
   useEffect(() => {
@@ -38,11 +39,15 @@ export default function Index() {
         onError: (error) => console.error("Failed to route user", error),
       });
 
-      router.replace(route as any);
+      router.replace(sleepWidget === "1"
+        ? route === "/auth"
+          ? { pathname: "/auth", params: { sleepWidget: "1" } }
+          : { pathname: "/(tabs)/sleep", params: { review: "widget" } }
+        : route);
     }
 
     routeUser();
-  }, [router]);
+  }, [router, sleepWidget]);
 
   return (
     <View

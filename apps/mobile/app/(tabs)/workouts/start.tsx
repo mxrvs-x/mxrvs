@@ -28,7 +28,7 @@ import {
   type WorkoutType,
   type WorkoutPlan,
 } from "@/lib/workoutPlans";
-import { Audio } from "expo-av";
+import { createAudioPlayer, setAudioModeAsync } from "expo-audio";
 import { Stack, useFocusEffect, useRouter } from "expo-router";
 import { Check, Plus, Trash2, X } from "lucide-react-native";
 import {
@@ -347,27 +347,26 @@ export default function StartWorkoutScreen() {
   }, []);
 
   async function playRestCompleteAlert() {
+    let player: ReturnType<typeof createAudioPlayer> | undefined;
     try {
       Vibration.vibrate([0, 500, 250, 500, 250, 700]);
 
-      await Audio.setAudioModeAsync({
-        playsInSilentModeIOS: true,
-        allowsRecordingIOS: false,
-        staysActiveInBackground: false,
+      await setAudioModeAsync({
+        playsInSilentMode: true,
+        allowsRecording: false,
+        shouldPlayInBackground: false,
       });
 
-      const { sound } = await Audio.Sound.createAsync(
-        require("@/assets/sounds/timer-complete.mp3"),
-      );
-
-      await sound.playAsync();
-
-      sound.setOnPlaybackStatusUpdate((status) => {
-        if (status.isLoaded && status.didJustFinish) {
-          sound.unloadAsync();
-        }
+      const sound = createAudioPlayer(require("@/assets/sounds/timer-complete.mp3"));
+      player = sound;
+      const subscription = sound.addListener("playbackStatusUpdate", (status) => {
+        if (!status.didJustFinish) return;
+        subscription.remove();
+        sound.remove();
       });
+      sound.play();
     } catch (error) {
+      player?.remove();
       console.log("Timer sound error:", error);
       Vibration.vibrate([0, 500, 250, 500]);
     }

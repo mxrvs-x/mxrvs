@@ -193,11 +193,11 @@ const ThemeContext = createContext<AppTheme>({
 });
 
 export function AppThemeProvider({ children }: { children: React.ReactNode }) {
-  const [scheme, setScheme] = useState<ColorSchemeName>(() =>
+  const [scheme, setScheme] = useState<ColorSchemeName | null>(() =>
     Appearance.getColorScheme(),
   );
   useEffect(() => {
-    Appearance.setColorScheme(null);
+    Appearance.setColorScheme("auto");
     setScheme(Appearance.getColorScheme());
     const subscription = Appearance.addChangeListener(({ colorScheme }) => {
       setScheme(colorScheme);

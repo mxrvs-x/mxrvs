@@ -7,7 +7,17 @@ import {
 import { supabase } from "@/lib/supabase";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import NetInfo from "@react-native-community/netinfo";
-import * as Notifications from "expo-notifications";
+import {
+  AndroidImportance,
+  SchedulableTriggerInputTypes,
+  cancelScheduledNotificationAsync,
+  getAllScheduledNotificationsAsync,
+  getPermissionsAsync,
+  requestPermissionsAsync,
+  scheduleNotificationAsync,
+  setNotificationChannelAsync,
+  setNotificationHandler,
+} from "expo-notifications";
 import { Platform } from "react-native";
 
 const CHANNEL_ID = "creatine-reminders";
@@ -20,7 +30,7 @@ const EVENING_HOUR = 21;
 let syncPromise: Promise<void> | null = null;
 
 export function configureCreatineNotifications() {
-  Notifications.setNotificationHandler({
+  setNotificationHandler({
     handleNotification: async () =>
       ({
         shouldPlaySound: true,
@@ -34,18 +44,18 @@ export function configureCreatineNotifications() {
 
 async function ensureNotificationPermission() {
   if (Platform.OS === "android") {
-    await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
+    await setNotificationChannelAsync(CHANNEL_ID, {
       name: "Creatine reminders",
-      importance: Notifications.AndroidImportance.HIGH,
+      importance: AndroidImportance.HIGH,
       vibrationPattern: [0, 250, 250, 250],
     });
   }
 
-  const current = await Notifications.getPermissionsAsync();
+  const current = await getPermissionsAsync();
 
   if (current.granted) return true;
 
-  const requested = await Notifications.requestPermissionsAsync();
+  const requested = await requestPermissionsAsync();
   return requested.granted;
 }
 
@@ -72,7 +82,7 @@ function nextReminderDate(hasLoggedToday: boolean) {
 async function scheduleNextReminder(hasLoggedToday: boolean) {
   const previousId = await AsyncStorage.getItem(REMINDER_ID_KEY);
   const scheduledNotifications =
-    await Notifications.getAllScheduledNotificationsAsync().catch(() => []);
+    await getAllScheduledNotificationsAsync().catch(() => []);
 
   const staleReminderIds = scheduledNotifications
     .filter((notification) => {
@@ -90,12 +100,12 @@ async function scheduleNextReminder(hasLoggedToday: boolean) {
   if (staleReminderIds.length > 0) {
     await Promise.all(
       staleReminderIds.map((id) =>
-        Notifications.cancelScheduledNotificationAsync(id).catch(() => {}),
+        cancelScheduledNotificationAsync(id).catch(() => {}),
       ),
     );
   }
 
-  const identifier = await Notifications.scheduleNotificationAsync({
+  const identifier = await scheduleNotificationAsync({
     content: {
       title: "Creatine check-in",
       body: "No creatine log for today yet. Take 5g and mark it done.",
@@ -103,7 +113,7 @@ async function scheduleNextReminder(hasLoggedToday: boolean) {
       data: { screen: "creatine", reminderType: REMINDER_TYPE },
     },
     trigger: {
-      type: Notifications.SchedulableTriggerInputTypes.DATE,
+      type: SchedulableTriggerInputTypes.DATE,
       date: nextReminderDate(hasLoggedToday),
       channelId: CHANNEL_ID,
     },
@@ -175,7 +185,7 @@ async function runCreatineReminderSync({
       hour >= MORNING_HOUR &&
       lastImmediateDate !== today
     ) {
-      await Notifications.scheduleNotificationAsync({
+      await scheduleNotificationAsync({
         content: {
           title: "Creatine check-in",
           body: "You have not logged creatine today. Take it now?",

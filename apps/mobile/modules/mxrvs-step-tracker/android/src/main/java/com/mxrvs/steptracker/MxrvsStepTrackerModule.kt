@@ -12,6 +12,21 @@ class MxrvsStepTrackerModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("MxrvsStepTracker")
 
+    AsyncFunction("setSleepWidgetOwnerAsync") { owner: String?, legacy: String? ->
+      SleepWidgetStore.setOwner(context, owner, legacy)
+      SleepWidgetProvider.updateAll(context)
+    }
+
+    AsyncFunction("getSleepRecordingAsync") { owner: String ->
+      SleepWidgetStore.read(context, owner)
+    }
+
+    AsyncFunction("replaceSleepRecordingAsync") { owner: String, expected: String?, next: String? ->
+      val saved = SleepWidgetStore.replace(context, owner, expected, next)
+      if (saved) SleepWidgetProvider.updateAll(context)
+      saved
+    }
+
     AsyncFunction("isAvailableAsync") {
       StepCounterService.isSensorAvailable(context)
     }

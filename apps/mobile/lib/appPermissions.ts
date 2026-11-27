@@ -2,7 +2,7 @@ import { startDailyActivityTracking } from "@/lib/dailyActivity";
 import { isNativeAndroidStepTrackerAvailable } from "@/lib/androidStepTracker";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
-import * as MediaLibrary from "expo-media-library";
+import * as MediaLibrary from "expo-media-library/legacy";
 import * as Notifications from "expo-notifications";
 import { Pedometer } from "expo-sensors";
 import {
