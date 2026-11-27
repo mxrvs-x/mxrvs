@@ -1,6 +1,16 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { refreshVehicleActivity } from "@/lib/vehicleActivity";
-import * as Location from "expo-location";
+import {
+  Accuracy,
+  LocationActivityType,
+  type LocationObject,
+  getBackgroundPermissionsAsync,
+  hasStartedLocationUpdatesAsync,
+  isBackgroundLocationAvailableAsync,
+  requestBackgroundPermissionsAsync,
+  startLocationUpdatesAsync,
+  stopLocationUpdatesAsync,
+} from "expo-location";
 import * as TaskManager from "expo-task-manager";
 
 export type BackgroundCardioRoutePoint = {
@@ -52,7 +62,7 @@ async function appendBackgroundRoutePoints(points: BackgroundCardioRoutePoint[])
 
 if (!TaskManager.isTaskDefined(BACKGROUND_CARDIO_LOCATION_TASK)) {
   TaskManager.defineTask<{
-    locations?: Location.LocationObject[];
+    locations?: LocationObject[];
   }>(BACKGROUND_CARDIO_LOCATION_TASK, async ({ data, error }) => {
     if (error) {
       console.log("Background cardio location error:", error);
@@ -89,7 +99,7 @@ export async function drainBackgroundCardioRoutePoints() {
 
 export async function startBackgroundCardioLocation() {
   try {
-    const available = await Location.isBackgroundLocationAvailableAsync().catch(
+    const available = await isBackgroundLocationAvailableAsync().catch(
       () => false,
     );
 
@@ -100,10 +110,10 @@ export async function startBackgroundCardioLocation() {
       };
     }
 
-    const existingPermission = await Location.getBackgroundPermissionsAsync();
+    const existingPermission = await getBackgroundPermissionsAsync();
     const permission = existingPermission.granted
       ? existingPermission
-      : await Location.requestBackgroundPermissionsAsync();
+      : await requestBackgroundPermissionsAsync();
 
     if (!permission.granted) {
       return {
@@ -112,23 +122,23 @@ export async function startBackgroundCardioLocation() {
       };
     }
 
-    const alreadyStarted = await Location.hasStartedLocationUpdatesAsync(
+    const alreadyStarted = await hasStartedLocationUpdatesAsync(
       BACKGROUND_CARDIO_LOCATION_TASK,
     ).catch(() => false);
 
     if (alreadyStarted) {
-      await Location.stopLocationUpdatesAsync(BACKGROUND_CARDIO_LOCATION_TASK);
+      await stopLocationUpdatesAsync(BACKGROUND_CARDIO_LOCATION_TASK);
     }
 
     await resetBackgroundCardioRoutePoints();
 
-    await Location.startLocationUpdatesAsync(BACKGROUND_CARDIO_LOCATION_TASK, {
-      accuracy: Location.Accuracy.Highest,
+    await startLocationUpdatesAsync(BACKGROUND_CARDIO_LOCATION_TASK, {
+      accuracy: Accuracy.Highest,
       timeInterval: 1000,
       distanceInterval: 1,
       pausesUpdatesAutomatically: false,
       showsBackgroundLocationIndicator: true,
-      activityType: Location.LocationActivityType.Fitness,
+      activityType: LocationActivityType.Fitness,
       foregroundService: {
         notificationTitle: "mxrvs cardio tracking",
         notificationBody: "Recording outdoor cardio distance.",
@@ -150,12 +160,12 @@ export async function startBackgroundCardioLocation() {
 
 export async function stopBackgroundCardioLocation() {
   try {
-    const started = await Location.hasStartedLocationUpdatesAsync(
+    const started = await hasStartedLocationUpdatesAsync(
       BACKGROUND_CARDIO_LOCATION_TASK,
     ).catch(() => false);
 
     if (started) {
-      await Location.stopLocationUpdatesAsync(BACKGROUND_CARDIO_LOCATION_TASK);
+      await stopLocationUpdatesAsync(BACKGROUND_CARDIO_LOCATION_TASK);
     }
   } catch (error) {
     console.log("Stop background cardio location error:", error);

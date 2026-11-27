@@ -1,6 +1,7 @@
 {
   "build": {
     "preview": {
+      "node": "24.18.0",
       "environment": "preview",
       "channel": "preview",
       "android": {

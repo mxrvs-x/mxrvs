@@ -7,7 +7,7 @@ import {
 import { cacheOfflineUser } from "@/lib/offlineUser";
 import { useTheme } from "@/lib/theme";
 import * as LocalAuthentication from "expo-local-authentication";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import { useEffect, useState } from "react";
 import {
@@ -30,6 +30,10 @@ const BIOMETRIC_ENABLED_KEY = "mxrvs_biometric_enabled";
 
 export default function AuthScreen() {
   const router = useRouter();
+  const { sleepWidget } = useLocalSearchParams<{ sleepWidget?: string }>();
+  const afterLogin = sleepWidget === "1"
+    ? { pathname: "/(tabs)/sleep" as const, params: { review: "widget" } }
+    : "/(tabs)/workouts" as const;
   const theme = useTheme();
 
   const [email, setEmail] = useState("");
@@ -162,7 +166,7 @@ export default function AuthScreen() {
       });
     }
 
-    router.replace("/(tabs)/workouts" as any);
+    router.replace(afterLogin);
   }
 
   async function loginWithFingerprint() {
@@ -202,7 +206,7 @@ export default function AuthScreen() {
       await cacheOfflineUser(result.user).catch((cacheError) => {
         console.error("Failed to cache biometric user", cacheError);
       });
-      router.replace("/(tabs)/workouts" as any);
+      router.replace(afterLogin);
     } else if (result.status === "expired") {
       showAlert({
         title: "Session Expired",

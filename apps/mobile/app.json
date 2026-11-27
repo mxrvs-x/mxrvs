@@ -6,18 +6,7 @@
     "orientation": "portrait",
     "scheme": "mxrvs",
     "icon": "./assets/mxrvs.png",
-    "splash": {
-      "image": "./assets/mxrvs.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#F8FAFC",
-      "dark": {
-        "image": "./assets/mxrvs.png",
-        "resizeMode": "contain",
-        "backgroundColor": "#0B0F0C"
-      }
-    },
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.anonymous.mxrvs",
@@ -47,6 +36,26 @@
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/mxrvs.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#F8FAFC",
+          "dark": {
+            "image": "./assets/mxrvs.png",
+            "backgroundColor": "#0B0F0C"
+          }
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": false,
+          "recordAudioAndroid": false,
+          "enableBackgroundPlayback": false
+        }
+      ],
       "expo-notifications",
       "expo-secure-store",
       [
@@ -86,7 +95,7 @@
       "reactCompiler": false
     },
     "runtimeVersion": {
-      "policy": "appVersion"
+      "policy": "fingerprint"
     },
     "extra": {
       "router": {},

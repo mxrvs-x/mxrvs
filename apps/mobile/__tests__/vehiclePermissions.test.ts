@@ -27,7 +27,7 @@ jest.mock("expo-image-picker", () => ({
   requestCameraPermissionsAsync: jest.fn(),
 }));
 
-jest.mock("expo-media-library", () => ({
+jest.mock("expo-media-library/legacy", () => ({
   requestPermissionsAsync: jest.fn(),
 }));
 
@@ -58,7 +58,7 @@ import {
 } from "../lib/vehicleActivity";
 import * as Location from "expo-location";
 import * as ImagePicker from "expo-image-picker";
-import * as MediaLibrary from "expo-media-library";
+import * as MediaLibrary from "expo-media-library/legacy";
 import * as Notifications from "expo-notifications";
 import { Pedometer } from "expo-sensors";
 import { Alert, Linking, PermissionsAndroid } from "react-native";

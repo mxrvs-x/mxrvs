@@ -3,7 +3,7 @@ import ThemedAlert from "@/components/ThemedAlert";
 import { SafeRouteMap, type MapRegion } from "@/components/SafeRouteMap";
 import { AppTheme, useTheme } from "@/lib/theme";
 import { supabase } from "@/lib/supabase";
-import * as MediaLibrary from "expo-media-library";
+import * as MediaLibrary from "expo-media-library/legacy";
 import * as Sharing from "expo-sharing";
 import { Copy, Download, Share2, Trash2, X } from "lucide-react-native";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";

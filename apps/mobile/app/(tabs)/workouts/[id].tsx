@@ -12,7 +12,7 @@ import {
   isWorkoutType,
   type WorkoutType,
 } from "@/lib/workoutPlans";
-import * as MediaLibrary from "expo-media-library";
+import * as MediaLibrary from "expo-media-library/legacy";
 import {
   Stack,
   useFocusEffect,
