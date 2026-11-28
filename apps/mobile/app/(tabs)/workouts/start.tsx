@@ -1,3 +1,4 @@
+import { KeyboardFormInput as TextInput, KeyboardFormScrollView } from "@/components/KeyboardForm";
 import ExerciseSessionModal from "@/components/ExerciseSessionModal";
 import ThemedAlert from "@/components/ThemedAlert";
 import { toLocalDateKey } from "@/lib/dates";
@@ -42,11 +43,12 @@ import {
 import {
   ActivityIndicator,
   AppState,
+  KeyboardAvoidingView,
   Modal,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
-  TextInput,
   Vibration,
   View,
 } from "react-native";
@@ -1061,9 +1063,10 @@ export default function StartWorkoutScreen() {
         }}
       />
 
-      <ScrollView
+      <KeyboardFormScrollView
         contentContainerStyle={{ padding: 16, paddingBottom: 20 }}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
         {todayWorkout ? (
           <View
@@ -1698,7 +1701,7 @@ export default function StartWorkoutScreen() {
             color: theme.colors.text,
           }}
         />
-      </ScrollView>
+      </KeyboardFormScrollView>
 
       <Modal
         visible={addExerciseVisible}
@@ -1706,7 +1709,8 @@ export default function StartWorkoutScreen() {
         animationType="slide"
         onRequestClose={closeAddExercisePicker}
       >
-        <View
+        <KeyboardAvoidingView
+          behavior="padding"
           style={{
             flex: 1,
             justifyContent: "flex-end",
@@ -1716,16 +1720,17 @@ export default function StartWorkoutScreen() {
           <Pressable
             accessibilityLabel="Close exercise picker"
             onPress={closeAddExercisePicker}
-            style={{ flex: 1 }}
+            style={StyleSheet.absoluteFill}
           />
-          <View
+          <KeyboardFormScrollView
             style={{
-              maxHeight: "78%",
+              maxHeight: "90%",
+              flexGrow: 0,
               backgroundColor: theme.colors.surface,
               borderTopLeftRadius: 28,
               borderTopRightRadius: 28,
-              padding: 18,
             }}
+            contentContainerStyle={{ padding: 18 }}
           >
             <View
               style={{
@@ -1785,11 +1790,7 @@ export default function StartWorkoutScreen() {
               }}
             />
 
-            <ScrollView
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-              style={{ marginTop: 14 }}
-            >
+            <View style={{ marginTop: 14 }}>
               {availableExercises.length === 0 ? (
                 <View
                   style={{
@@ -1864,9 +1865,9 @@ export default function StartWorkoutScreen() {
                   </View>
                 ))
               )}
-            </ScrollView>
-          </View>
-        </View>
+            </View>
+          </KeyboardFormScrollView>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Modal

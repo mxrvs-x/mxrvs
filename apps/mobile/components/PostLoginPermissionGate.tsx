@@ -1,4 +1,5 @@
 import { requestAllAppPermissions } from "@/lib/appPermissions";
+import { refreshLogReminders } from "@/lib/logReminders";
 import { supabase } from "@/lib/supabase";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { Session } from "@supabase/supabase-js";
@@ -51,6 +52,7 @@ export default function PostLoginPermissionGate() {
         if (alreadyRequested || cancelled) return;
 
         const results = await requestAllAppPermissions();
+        if (results.notificationsGranted) void refreshLogReminders();
         if (cancelled) return;
 
         await AsyncStorage.setItem(storageKey, new Date().toISOString());

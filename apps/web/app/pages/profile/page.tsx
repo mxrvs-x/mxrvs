@@ -4,6 +4,7 @@ import { BarChart3, Ruler, Scale, UserRound } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Pagination from "@/app/components/Pagination";
+import AccountSettings from "@/app/components/AccountSettings";
 import {
   BodyWeightLog,
   emptyProfile,
@@ -15,6 +16,7 @@ import {
   WeightChart,
 } from "@/app/components/shared";
 import {
+  getWebUser,
   loadWebProfile,
   saveWebHeight,
   saveWebWeightLog,
@@ -57,6 +59,23 @@ export default function ProfilePage() {
 
     return () => {
       active = false;
+    };
+  }, [setProfile]);
+
+  useEffect(() => {
+    let active = true;
+    function refreshEmail() {
+      void getWebUser().then((user) => {
+        const email = user?.email;
+        if (active && email) {
+          setProfile((current) => current.email === email ? current : { ...current, email });
+        }
+      }).catch(() => {});
+    }
+    window.addEventListener("focus", refreshEmail);
+    return () => {
+      active = false;
+      window.removeEventListener("focus", refreshEmail);
     };
   }, [setProfile]);
 
@@ -174,7 +193,6 @@ export default function ProfilePage() {
             <p className="eyebrow">Profile</p>
             <h1>{profile.display_name}</h1>
             <p className="muted">{profile.email}</p>
-            <p className="muted">Data source: {syncState === "supabase" ? "Supabase" : "Waiting for session"}</p>
           </div>
         </div>
       </header>
@@ -192,6 +210,10 @@ export default function ProfilePage() {
               ) : null}
             </div>
           </div>
+
+          {syncState === "supabase" && (
+            <AccountSettings email={profile.email} onEmailChanged={(email) => setProfile((current) => ({ ...current, email }))} />
+          )}
 
           <div className="card stack">
             <div className="row between">

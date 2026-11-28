@@ -11,6 +11,7 @@ import {
   formatWorkoutType,
   MiniStat,
   recoveryCheckInLines,
+  RECOVERY_METRICS,
   totalVolume,
   type Workout,
   type WorkoutSet,
@@ -198,13 +199,15 @@ export default function WorkoutDetailsPage() {
     );
   }
 
+  const recovery = RECOVERY_METRICS.filter(({ key }) => typeof workout[key] === "number");
+
   return (
     <div className="page">
       <header className="page-header">
         <div>
           <p className="eyebrow">Workout</p>
           <h1>{formatWorkoutType(workout.workout_type)}</h1>
-          <p className="muted">{formatDate(workout.workout_date)}</p>
+          <time className="muted workout-date" dateTime={workout.workout_date}>{formatDate(workout.workout_date)}</time>
         </div>
         <div className="row responsive">
           <button className="button" onClick={copyWorkoutDetails} type="button">
@@ -230,87 +233,74 @@ export default function WorkoutDetailsPage() {
         </div>
       </header>
 
-      <section className="grid two-col">
-        <div className="stack">
-          <div className="card stack">
-            <h2>Summary</h2>
-            <div className="row wrap">
-              <MiniStat
-                label="Duration"
-                value={`${workout.duration_minutes || 0} min`}
-              />
-              <MiniStat label="Sets" value={`${workout.sets.length}`} />
-              <MiniStat
-                label="Volume"
-                value={`${totalVolume(workout).toLocaleString()} kg`}
-              />
-            </div>
+      <div className={`grid workout-review${recovery.length > 0 || workout.notes.trim() ? " has-sidebar" : ""}`}>
+        <section className="card stack workout-summary" aria-labelledby="workout-summary-title">
+          <h2 id="workout-summary-title">Summary</h2>
+          <div className="row wrap">
+            <MiniStat label="Duration" value={`${workout.duration_minutes || 0} min`} />
+            <MiniStat label="Sets" value={`${workout.sets.length}`} />
+            <MiniStat label="Volume" value={`${totalVolume(workout).toLocaleString()} kg`} />
           </div>
+        </section>
 
-          <div className="card stack">
-            <h2>Notes</h2>
-            <FormattedNotes notes={workout.notes} fallback="No notes saved." />
-          </div>
+        <section className="stack" aria-labelledby="workout-exercises-title">
+          <h2 id="workout-exercises-title">Exercises <span className="muted record-count">({groupedSets.length})</span></h2>
+          {groupedSets.length === 0 && <div className="card muted">No sets found.</div>}
+          {groupedSets.map((sets) => {
+            const firstSet = sets[0];
+            const volume = sets.reduce((sum, set) => sum + set.reps * set.weight_kg, 0);
+            const titleId = `exercise-${firstSet.exercise_id}`;
 
-          {recoveryCheckInLines(workout).length > 0 ? (
-            <div className="card stack">
-              <h2>Recovery Check-in</h2>
-              {recoveryCheckInLines(workout).map((line) => (
-                <p className="muted" key={line}>
-                  {line}
-                </p>
-              ))}
-            </div>
-          ) : null}
-        </div>
-
-        <div className="stack log-panel">
-          <div className="row between">
-            <h2>Exercises</h2>
-            <strong className="muted">{groupedSets.length}</strong>
-          </div>
-
-          <div className="stack log-scroll">
-            {groupedSets.length === 0 ? (
-              <div className="card">
-                <p className="muted">No sets found.</p>
-              </div>
-            ) : null}
-
-            {groupedSets.map((sets) => {
-              const firstSet = sets[0];
-              const exerciseVolume = sets.reduce(
-                (sum, set) => sum + set.reps * set.weight_kg,
-                0,
-              );
-
-              return (
-                <article className="list-item stack" key={firstSet.exercise_id}>
-                  <div className="row between">
-                    <div>
-                      <h3>{firstSet.exercise_name}</h3>
-                      <p className="muted">
-                        {sets.length} sets -{" "}
-                        {exerciseVolume.toLocaleString()} kg volume
-                      </p>
-                    </div>
-                  </div>
-                  <div className="stack">
+            return (
+              <article className="card stack" key={firstSet.exercise_id}>
+                <div className="row between wrap">
+                  <h3 id={titleId}>{firstSet.exercise_name}</h3>
+                  <span className="muted">{volume.toLocaleString()} kg volume</span>
+                </div>
+                <table className="records-table workout-set-table" aria-labelledby={titleId}>
+                  <thead>
+                    <tr>
+                      <th scope="col">Set</th>
+                      <th scope="col">Reps</th>
+                      <th scope="col">Weight</th>
+                    </tr>
+                  </thead>
+                  <tbody>
                     {sets.map((set) => (
-                      <div className="panel row between" key={set.id}>
-                        <strong>Set {set.set_number}</strong>
-                        <span className="muted">
-                          {set.reps} reps x {set.weight_kg} kg
-                        </span>
-                      </div>
+                      <tr key={set.id}>
+                        <th scope="row">{set.set_number}</th>
+                        <td>{set.reps}</td>
+                        <td>{set.weight_kg} kg</td>
+                      </tr>
                     ))}
-                  </div>
-                </article>
-              );
-            })}
+                  </tbody>
+                </table>
+              </article>
+            );
+          })}
+        </section>
+
+        {(recovery.length > 0 || workout.notes.trim()) && (
+          <div className="stack">
+            {recovery.length > 0 && (
+              <section className="card stack">
+                <h2>Recovery check-in</h2>
+                <div className="workout-recovery">
+                  {recovery.map(({ key, label }) => (
+                    <MiniStat key={key} label={label} value={`${workout[key]}/5`} />
+                  ))}
+                </div>
+              </section>
+            )}
+            {workout.notes.trim() && (
+              <section className="card stack">
+                <h2>Notes</h2>
+                <FormattedNotes notes={workout.notes} />
+              </section>
+            )}
           </div>
-        </div>
-      </section>
+        )}
+      </div>
     </div>
   );
 }

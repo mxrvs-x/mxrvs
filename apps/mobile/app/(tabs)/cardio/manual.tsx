@@ -1,3 +1,4 @@
+import { KeyboardFormInput as TextInput, KeyboardFormScrollView } from "@/components/KeyboardForm";
 import ThemedAlert from "@/components/ThemedAlert";
 import { toLocalDateKey } from "@/lib/dates";
 import {
@@ -17,12 +18,8 @@ import { X } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
-  ScrollView,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -159,10 +156,7 @@ export default function ManualCardioScreen() {
       edges={["top", "bottom"]}
       style={{ flex: 1, backgroundColor: theme.colors.background }}
     >
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
+      <View style={{ flex: 1 }}>
         <View
           style={{
             minHeight: 64,
@@ -190,7 +184,7 @@ export default function ManualCardioScreen() {
           </View>
         </View>
 
-        <ScrollView
+        <KeyboardFormScrollView
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ padding: 16, paddingBottom: 20 }}
         >
@@ -330,8 +324,8 @@ export default function ManualCardioScreen() {
               </Text>
             )}
           </Pressable>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </KeyboardFormScrollView>
+      </View>
 
       <ThemedAlert
         visible={alert.visible}

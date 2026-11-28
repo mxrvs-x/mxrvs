@@ -1,25 +1,28 @@
+import AssistantLauncher from "@/components/AssistantLauncher";
 import { useTheme } from "@/lib/theme";
 import { Tabs } from "expo-router";
 import { BottomTabBarHeightCallbackContext, type BottomTabBarProps } from "expo-router/js-tabs";
-import { Activity, Dumbbell, FlaskConical, Footprints, Menu, Moon, UserRound, Utensils, X } from "lucide-react-native";
-import { useContext, useState } from "react";
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Activity, Apple, Dumbbell, FlaskConical, Menu, Moon, UserRound, X } from "lucide-react-native";
+import { useContext, useEffect, useState } from "react";
+import { Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 const mainTabs = [
   { name: "workouts", label: "Workouts", Icon: Dumbbell },
   { name: "cardio", label: "Cardio", Icon: Activity },
-  { name: "macros", label: "Macros", Icon: Utensils },
+  { name: "macros", label: "Macros", Icon: Apple },
 ] as const;
 
 const drawerTabs = [
-  { name: "overall-activity", history: null, label: "Overall Activity", Icon: Footprints },
   { name: "sleep", history: null, label: "Sleep", Icon: Moon },
   { name: "creatine", history: "creatine-history", label: "Creatine", Icon: FlaskConical },
   { name: "profile", history: "weight-reports", label: "Profile", Icon: UserRound },
 ] as const;
 
-function CompactTabBar({ state, emitter, navigateToTab, insets }: BottomTabBarProps) {
+function CompactTabBar({ state, emitter, navigateToTab, insets, onHeight, keyboardOpen }: BottomTabBarProps & {
+  onHeight: (height: number) => void;
+  keyboardOpen: boolean;
+}) {
   const theme = useTheme();
   const { colors } = theme;
   const reportHeight = useContext(BottomTabBarHeightCallbackContext);
@@ -44,7 +47,11 @@ function CompactTabBar({ state, emitter, navigateToTab, insets }: BottomTabBarPr
 
   return (
     <>
-      <View onLayout={(event) => reportHeight?.(event.nativeEvent.layout.height)} style={{
+      {!keyboardOpen && <View onLayout={(event) => {
+        const height = event.nativeEvent.layout.height;
+        reportHeight?.(height);
+        onHeight(height);
+      }} style={{
         flexDirection: "row",
         backgroundColor: colors.surface,
         paddingTop: 8,
@@ -82,7 +89,7 @@ function CompactTabBar({ state, emitter, navigateToTab, insets }: BottomTabBarPr
           <Menu color={menuActive ? colors.primary : colors.textMuted} size={24} />
           <Text style={[styles.label, { color: menuActive ? colors.primary : colors.textMuted }]}>Menu</Text>
         </Pressable>
-      </View>
+      </View>}
 
       <Modal visible={menuOpen} transparent animationType="fade" onRequestClose={() => setMenuOpen(false)}>
         <View style={styles.overlay}>
@@ -138,8 +145,21 @@ function CompactTabBar({ state, emitter, navigateToTab, insets }: BottomTabBarPr
 }
 
 export default function TabsLayout() {
+  const [tabBarHeight, setTabBarHeight] = useState(0);
+  const [keyboardOpen, setKeyboardOpen] = useState(() => Keyboard.isVisible());
+
+  useEffect(() => {
+    const show = Keyboard.addListener(Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow", () => setKeyboardOpen(true));
+    const hide = Keyboard.addListener(Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide", () => setKeyboardOpen(false));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+
   return (
-    <Tabs screenOptions={{ headerShown: false }} tabBar={(props) => <CompactTabBar {...props} />}>
+    <View style={styles.navigator}>
+    <Tabs screenOptions={{ headerShown: false }} tabBar={(props) => <CompactTabBar {...props} onHeight={setTabBarHeight} keyboardOpen={keyboardOpen} />}>
       {mainTabs.map(({ name, label }) => (
         <Tabs.Screen key={name} name={name} options={{ title: label }} />
       ))}
@@ -147,13 +167,17 @@ export default function TabsLayout() {
       {drawerTabs.map(({ name, label }) => (
         <Tabs.Screen key={name} name={name} options={{ title: label }} />
       ))}
+      <Tabs.Screen name="overall-activity" />
       <Tabs.Screen name="weight-reports" />
       <Tabs.Screen name="creatine-history" />
     </Tabs>
+    <AssistantLauncher tabBarHeight={tabBarHeight} keyboardOpen={keyboardOpen} />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  navigator: { flex: 1 },
   tab: { flex: 1, minHeight: 56, gap: 4, alignItems: "center", justifyContent: "center" },
   label: { fontSize: 11, fontWeight: "800", textAlign: "center" },
   overlay: { flex: 1, flexDirection: "row", justifyContent: "flex-end", backgroundColor: "rgba(4,10,18,0.62)" },

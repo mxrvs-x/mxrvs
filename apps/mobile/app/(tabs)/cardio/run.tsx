@@ -1,3 +1,5 @@
+import { KeyboardFormInput as TextInput } from "@/components/KeyboardForm";
+import CardioFinishSheet from "@/components/CardioFinishSheet";
 import ThemedAlert from "@/components/ThemedAlert";
 import { SafeRouteMap, type MapRegion } from "@/components/SafeRouteMap";
 import { requestFitnessPermissions } from "@/lib/appPermissions";
@@ -38,10 +40,8 @@ import {
   Pressable,
   ScrollView,
   Text as RNText,
-  TextInput,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type RunSource = "outdoor" | "treadmill";
 
@@ -329,7 +329,6 @@ function resetSession() {
 
 export default function RunScreen() {
   const theme = useTheme();
-  const insets = useSafeAreaInsets();
   const Text = (props: any) => (
     <RNText {...props} style={[{ color: theme.colors.text }, props.style]} />
   );
@@ -1157,28 +1156,7 @@ export default function RunScreen() {
           }}
           onDismiss={dismissFinishModal}
         >
-          <Pressable
-            onPress={() => {
-              if (!saving) dismissFinishModal();
-            }}
-            style={{
-              flex: 1,
-              backgroundColor:
-                theme.mode === "dark" ? "rgba(0,0,0,0.65)" : "rgba(0,0,0,0.35)",
-              justifyContent: "flex-end",
-            }}
-          >
-            <Pressable
-              onPress={(event) => event.stopPropagation()}
-              style={{
-                backgroundColor: theme.colors.surface,
-                borderTopLeftRadius: 24,
-                borderTopRightRadius: 24,
-                paddingHorizontal: 20,
-                paddingTop: 20,
-                paddingBottom: Math.max(20, insets.bottom + 20),
-              }}
-            >
+          <CardioFinishSheet onClose={dismissFinishModal} saving={saving}>
               <Text style={{ fontSize: 22, fontWeight: "900" }}>
                 Finish Run
               </Text>
@@ -1279,11 +1257,9 @@ export default function RunScreen() {
                   {saving ? "Saving..." : "Save Run"}
                 </Text>
               </Pressable>
-            </Pressable>
-
-            {themedAlert}
-            {discardAlert}
-          </Pressable>
+          </CardioFinishSheet>
+          {themedAlert}
+          {discardAlert}
         </Modal>
 
         {!finishModalVisible ? themedAlert : null}

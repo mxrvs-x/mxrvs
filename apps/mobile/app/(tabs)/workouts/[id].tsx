@@ -2,6 +2,7 @@ import ExportBackgroundPicker from "@/components/ExportBackgroundPicker";
 import ThemedAlert from "@/components/ThemedAlert";
 import {
   recoveryCheckInLines,
+  RECOVERY_METRICS,
   type RecoveryCheckIn,
 } from "@/lib/recoveryCheckIn";
 import { supabase } from "@/lib/supabase";
@@ -25,6 +26,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
+  StyleSheet,
   ImageBackground,
   Pressable,
   Text,
@@ -92,6 +94,35 @@ function hasExportableSet(set: DisplaySet) {
   return Number(set.set_number || 0) > 0 && Number(set.reps || 0) > 0;
 }
 
+function groupWorkoutSets(sets: DisplaySet[]): GroupedExercise[] {
+  const grouped = sets.reduce<Record<string, GroupedExercise>>(
+    (acc, set) => {
+      const volume = Number(set.reps || 0) * Number(set.weight_kg || 0);
+
+      if (!acc[set.exercise_id]) {
+        acc[set.exercise_id] = {
+          exercise_id: set.exercise_id,
+          exercise_name: set.exercise_name,
+          muscle_group: set.muscle_group,
+          sets: [],
+          totalVolume: 0,
+        };
+      }
+
+      acc[set.exercise_id].sets.push(set);
+      acc[set.exercise_id].totalVolume += volume;
+
+      return acc;
+    },
+    {},
+  );
+
+  return Object.values(grouped).map((exercise) => ({
+    ...exercise,
+    sets: exercise.sets.sort((a, b) => a.set_number - b.set_number),
+  }));
+}
+
 export default function WorkoutDetailsScreen() {
   const router = useRouter();
   const theme = useTheme();
@@ -146,34 +177,8 @@ export default function WorkoutDetailsScreen() {
     return new Set(exportSets.map((set) => set.exercise_id)).size;
   }, [exportSets]);
 
-  const groupedExercises = useMemo<GroupedExercise[]>(() => {
-    const grouped = exportSets.reduce<Record<string, GroupedExercise>>(
-      (acc, set) => {
-        const volume = Number(set.reps || 0) * Number(set.weight_kg || 0);
-
-        if (!acc[set.exercise_id]) {
-          acc[set.exercise_id] = {
-            exercise_id: set.exercise_id,
-            exercise_name: set.exercise_name,
-            muscle_group: set.muscle_group,
-            sets: [],
-            totalVolume: 0,
-          };
-        }
-
-        acc[set.exercise_id].sets.push(set);
-        acc[set.exercise_id].totalVolume += volume;
-
-        return acc;
-      },
-      {},
-    );
-
-    return Object.values(grouped).map((exercise) => ({
-      ...exercise,
-      sets: exercise.sets.sort((a, b) => a.set_number - b.set_number),
-    }));
-  }, [exportSets]);
+  const groupedExercises = useMemo(() => groupWorkoutSets(exportSets), [exportSets]);
+  const allExercises = useMemo(() => groupWorkoutSets(sets), [sets]);
 
   function showAlert({
     title,
@@ -620,6 +625,8 @@ export default function WorkoutDetailsScreen() {
     );
   }
 
+  const recovery = RECOVERY_METRICS.filter(({ key }) => typeof workout[key] === "number");
+
   return (
     <>
       <Stack.Screen
@@ -708,8 +715,8 @@ export default function WorkoutDetailsScreen() {
       <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
         <FlatList
           style={{ flex: 1, backgroundColor: theme.colors.background }}
-          data={sets}
-          keyExtractor={(item) => item.id}
+          data={allExercises}
+          keyExtractor={(item) => item.exercise_id}
           removeClippedSubviews={false}
           contentContainerStyle={{ padding: 16, paddingBottom: 20 }}
           ListHeaderComponent={
@@ -1009,7 +1016,7 @@ export default function WorkoutDetailsScreen() {
                 )}
               </View>
 
-              {recoveryCheckInLines(workout).length > 0 ? (
+              {recovery.length > 0 ? (
                 <View
                   style={{
                     backgroundColor: theme.colors.surface,
@@ -1029,14 +1036,11 @@ export default function WorkoutDetailsScreen() {
                   >
                     Recovery Check-in
                   </Text>
-                  {recoveryCheckInLines(workout).map((line) => (
-                    <Text
-                      key={line}
-                      style={{ color: theme.colors.textMuted, marginTop: 7 }}
-                    >
-                      {line}
-                    </Text>
-                  ))}
+                  <View style={reviewStyles.recovery}>
+                    {recovery.map(({ key, label }) => (
+                      <MiniStat label={label} value={`${workout[key]}/5`} key={key} />
+                    ))}
+                  </View>
                 </View>
               ) : null}
 
@@ -1049,7 +1053,7 @@ export default function WorkoutDetailsScreen() {
                   color: theme.colors.text,
                 }}
               >
-                Sets
+                Exercises ({allExercises.length})
               </Text>
             </View>
           }
@@ -1108,55 +1112,30 @@ export default function WorkoutDetailsScreen() {
             </Pressable>
           }
           renderItem={({ item }) => (
-            <View
-              style={{
-                backgroundColor: theme.colors.surface,
-                borderRadius: 16,
-                padding: 14,
-                borderWidth: 1,
-                borderColor: theme.colors.border,
-                marginBottom: 10,
-              }}
-            >
-              <Text
-                style={{
-                  fontWeight: "900",
-                  fontSize: 16,
-                  color: theme.colors.text,
-                }}
-              >
+            <View style={[reviewStyles.exercise, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+              <Text accessibilityRole="header" style={[reviewStyles.exerciseTitle, { color: theme.colors.text }]}>
                 {item.exercise_name}
               </Text>
-
-              <Text
-                style={{
-                  color: theme.colors.textMuted,
-                  marginTop: 2,
-                  textTransform: "capitalize",
-                }}
-              >
-                {formatMuscleGroup(item.muscle_group)}
+              <Text style={{ color: theme.colors.textMuted }}>
+                {formatMuscleGroup(item.muscle_group)} ? {item.totalVolume.toLocaleString()} kg volume
               </Text>
-
-              <View
-                style={{
-                  flexDirection: "row",
-                  marginTop: 12,
-                  gap: 10,
-                  flexWrap: "wrap",
-                }}
-              >
-                <MiniStat label="Set" value={`${item.set_number}`} />
-                <MiniStat label="Reps" value={`${item.reps}`} />
-                <MiniStat label="Weight" value={`${item.weight_kg} kg`} />
-                <MiniStat
-                  label="Volume"
-                  value={`${(
-                    Number(item.reps || 0) * Number(item.weight_kg || 0)
-                  ).toLocaleString()} kg`}
-                />
-                <MiniStat label="Rest" value={formatRest(item.rest_seconds)} />
+              <View style={reviewStyles.setRow} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
+                {["Set", "Reps", "Weight", "Rest"].map((label) => (
+                  <Text key={label} style={[reviewStyles.setCell, { color: theme.colors.textMuted }]}>{label}</Text>
+                ))}
               </View>
+              {item.sets.map((set) => (
+                <View
+                  key={set.id}
+                  accessible
+                  accessibilityLabel={`Set ${set.set_number}, ${set.reps} reps, ${set.weight_kg} kilograms${set.rest_seconds ? `, rest ${set.rest_seconds} seconds` : ""}`}
+                  style={[reviewStyles.setRow, { borderTopWidth: StyleSheet.hairlineWidth, borderColor: theme.colors.border }]}
+                >
+                  {[set.set_number, set.reps, `${set.weight_kg} kg`, formatRest(set.rest_seconds)].map((value, index) => (
+                    <Text key={index} style={[reviewStyles.setCell, { color: theme.colors.text }]}>{value}</Text>
+                  ))}
+                </View>
+              ))}
             </View>
           )}
         />
@@ -1166,6 +1145,14 @@ export default function WorkoutDetailsScreen() {
     </>
   );
 }
+
+const reviewStyles = StyleSheet.create({
+  exercise: { borderRadius: 16, borderWidth: 1, padding: 14, marginBottom: 10 },
+  exerciseTitle: { fontWeight: "900", fontSize: 16, marginBottom: 2 },
+  recovery: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 10 },
+  setRow: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 8 },
+  setCell: { flex: 1, fontVariant: ["tabular-nums"] },
+});
 
 function MiniStat({ label, value }: { label: string; value: string }) {
   const theme = useTheme();

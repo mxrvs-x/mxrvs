@@ -1,6 +1,8 @@
+import { KeyboardFormInput as TextInput, KeyboardFormScrollView } from "@/components/KeyboardForm";
 import PaginationControls from "@/components/PaginationControls";
 import ThemedAlert from "@/components/ThemedAlert";
 import { toLocalDateKey } from "@/lib/dates";
+import { recordReminderLogChange } from "@/lib/logReminders";
 import {
   formatMinutes, parseSleepTime, sleepLocalTime, summarizeSleep, validateSleep,
   type ResumeType, type SleepEntry, type SleepLog, type Tracking,
@@ -12,8 +14,10 @@ import { useTheme } from "@/lib/theme";
 import { useSleepLogs } from "@/lib/useSleepLogs";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AppState, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
+import { AppState, KeyboardAvoidingView, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+
+type SleepLogChange = { added?: string; removed?: string };
 
 type AwakeningDraft = {
   id: number; woke: string; wokeApproximate: boolean; resume: ResumeType; resumed: string;
@@ -91,7 +95,8 @@ export default function SleepScreen() {
     return () => subscription.unsubscribe();
   }, []);
 
-  function finish(message: string) {
+  function finish(message: string, change: SleepLogChange) {
+    if (userId) void recordReminderLogChange(userId, "sleep", change);
     setPage(1);
     setEditor(null);
     logs.refresh();
@@ -102,7 +107,7 @@ export default function SleepScreen() {
     <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.background }}>
       <ScrollView contentContainerStyle={styles.screen}>
         <Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>Sleep</Text>
-        {userId && <SleepRecorder key={userId} userId={userId} onSaved={() => finish("Sleep logged")}
+        {userId && <SleepRecorder key={userId} userId={userId} onSaved={finish}
           reviewRequested={review === "widget"} onReviewHandled={clearReviewRequest} />}
         <Action label="Log sleep manually" onPress={() => setEditor({ log: null })} />
         <View style={styles.row}>
@@ -137,7 +142,7 @@ export default function SleepScreen() {
 }
 
 function SleepRecorder({ userId, onSaved, reviewRequested, onReviewHandled }: {
-  userId: string; onSaved: () => void; reviewRequested: boolean; onReviewHandled: () => void;
+  userId: string; onSaved: (message: string, change: SleepLogChange) => void; reviewRequested: boolean; onReviewHandled: () => void;
 }) {
   const { colors } = useTheme();
   const [recording, setRecording] = useState<SleepRecording | null>(null);
@@ -316,9 +321,9 @@ function SleepRecorder({ userId, onSaved, reviewRequested, onReviewHandled }: {
           </View>}
         </>}
       {error ? <Text accessibilityRole="alert" style={{ color: colors.danger }}>{error}</Text> : null}
-      {reviewEntry && <SleepEditor log={null} recording={reviewEntry} onClose={() => setReview(false)} onDone={() => {
+      {reviewEntry && <SleepEditor log={null} recording={reviewEntry} onClose={() => setReview(false)} onDone={(message, change) => {
         setReview(false);
-        onSaved();
+        onSaved(message, change);
         void persist(null);
       }} />}
     </View>
@@ -326,7 +331,7 @@ function SleepRecorder({ userId, onSaved, reviewRequested, onReviewHandled }: {
 }
 
 function SleepEditor({ log, recording, onClose, onDone }: {
-  log: SleepLog | null; recording?: SleepEntry; onClose: () => void; onDone: (message: string) => void;
+  log: SleepLog | null; recording?: SleepEntry; onClose: () => void; onDone: (message: string, change: SleepLogChange) => void;
 }) {
   const { colors } = useTheme();
   const [draft, setDraft] = useState(() => makeDraft(log ?? recording ?? null));
@@ -369,7 +374,10 @@ function SleepEditor({ log, recording, onClose, onDone }: {
         const { error: problem } = await supabase.rpc("save_sleep_log", { entry });
         if (problem) throw problem;
       }
-      onDone(remove ? "Sleep log deleted" : "Sleep logged");
+      onDone(
+        remove ? "Sleep log deleted" : "Sleep logged",
+        remove ? { removed: log?.log_date } : { removed: log?.log_date, added: entry?.log_date },
+      );
     } catch (problem) {
       const code = (problem as { code?: string } | null)?.code;
       setError(code === "23505" ? "A sleep log already exists for this date. Open it from Sleep History to edit it."
@@ -382,81 +390,81 @@ function SleepEditor({ log, recording, onClose, onDone }: {
 
   return (
     <Modal visible animationType="slide" onRequestClose={() => { if (!busy) onClose(); }}>
-      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.screen}>
-            <View style={styles.row}>
-              <Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>
-                {recording ? "Review sleep" : log ? "Edit sleep" : "Log sleep"}
-              </Text>
-              <Action label="Close" onPress={onClose} disabled={busy} />
-            </View>
-            <Text style={{ color: colors.textMuted }}>Times in {draft.zone}. Use YYYY-MM-DD HH:MM in 24-hour time. Include the next date for times after midnight.</Text>
-            <Field label="Log date" value={draft.day} onChange={(day) => change({ day })} disabled={busy} placeholder="YYYY-MM-DD" />
-            <Field label="Bedtime (optional)" value={draft.bedtime} onChange={(bedtime) => change({ bedtime })} disabled={busy} />
-            <Field label="Fell asleep" value={draft.onset} onChange={(onset) => change({ onset })} disabled={busy} />
-            <Toggle label="Sleep onset is approximate" value={draft.approximate} onChange={(approximate) => change({ approximate })} disabled={busy} />
-            <Field label="Final wake-up" value={draft.wake} onChange={(wake) => change({ wake })} disabled={busy} />
-
-            <Text accessibilityRole="header" style={[styles.heading, { color: colors.text }]}>Awakenings</Text>
-            <Choices value={draft.tracking} choices={[["complete", "Complete"], ["partial", "Partial"], ["unknown", "Unknown"]]}
-              onChange={(tracking) => change({ tracking })} disabled={busy} />
-            {draft.awakenings.map((item, index) => (
-              <View key={item.id} style={[styles.card, { backgroundColor: colors.surface }]}>
-                <View style={styles.row}>
-                  <Text style={[styles.heading, { color: colors.text }]}>Awakening {index + 1}</Text>
-                  <Action label="Remove" disabled={busy} onPress={() => change({ awakenings: draft.awakenings.filter((a) => a.id !== item.id) })} />
-                </View>
-                <Field label="Woke up at (blank if unknown)" value={item.woke} disabled={busy} onChange={(woke) => changeAwakening(item.id, { woke })} />
-                <Toggle label="Wake time is approximate" value={item.wokeApproximate} disabled={busy} onChange={(wokeApproximate) => changeAwakening(item.id, { wokeApproximate })} />
-                <Text style={{ color: colors.text, fontWeight: "700" }}>Fell back asleep</Text>
-                <Choices value={item.resume} choices={[["timed", "Enter time"], ["immediate", "Immediately"], ["unknown", "Unknown"]]}
-                  onChange={(resume) => changeAwakening(item.id, { resume, deduct: resume === "timed" })} disabled={busy} />
-                {item.resume === "timed" && <>
-                  <Field label="Fell back asleep at" value={item.resumed} disabled={busy} onChange={(resumed) => changeAwakening(item.id, { resumed })} />
-                  <Toggle label="Return time is approximate" value={item.resumedApproximate} disabled={busy} onChange={(resumedApproximate) => changeAwakening(item.id, { resumedApproximate })} />
-                </>}
-                {item.resume !== "immediate" && <Toggle label="Deduct time from sleep" value={item.deduct} disabled={busy} onChange={(deduct) => changeAwakening(item.id, { deduct })} />}
+      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+            <KeyboardFormScrollView contentContainerStyle={styles.screen}>
+              <View style={styles.row}>
+                <Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>
+                  {recording ? "Review sleep" : log ? "Edit sleep" : "Log sleep"}
+                </Text>
+                <Action label="Close" onPress={onClose} disabled={busy} />
               </View>
-            ))}
-            <Action label="Add awakening" disabled={busy} onPress={() => change({
-              awakenings: [...draft.awakenings, { id: nextId.current++, woke: "", wokeApproximate: false, resumed: "", resumedApproximate: false, resume: "timed", deduct: true }],
-            })} />
+              <Text style={{ color: colors.textMuted }}>Times in {draft.zone}. Use YYYY-MM-DD HH:MM in 24-hour time. Include the next date for times after midnight.</Text>
+              <Field label="Log date" value={draft.day} onChange={(day) => change({ day })} disabled={busy} placeholder="YYYY-MM-DD" />
+              <Field label="Bedtime (optional)" value={draft.bedtime} onChange={(bedtime) => change({ bedtime })} disabled={busy} />
+              <Field label="Fell asleep" value={draft.onset} onChange={(onset) => change({ onset })} disabled={busy} />
+              <Toggle label="Sleep onset is approximate" value={draft.approximate} onChange={(approximate) => change({ approximate })} disabled={busy} />
+              <Field label="Final wake-up" value={draft.wake} onChange={(wake) => change({ wake })} disabled={busy} />
 
-            <Text accessibilityRole="header" style={[styles.heading, { color: colors.text }]}>Naps</Text>
-            {draft.naps.map((nap, index) => (
-              <View key={nap.id} style={[styles.card, { backgroundColor: colors.surface }]}>
-                <View style={styles.row}>
-                  <Text style={[styles.heading, { color: colors.text }]}>Nap {index + 1}</Text>
-                  <Action label="Remove" disabled={busy} onPress={() => change({ naps: draft.naps.filter((n) => n.id !== nap.id) })} />
+              <Text accessibilityRole="header" style={[styles.heading, { color: colors.text }]}>Awakenings</Text>
+              <Choices value={draft.tracking} choices={[["complete", "Complete"], ["partial", "Partial"], ["unknown", "Unknown"]]}
+                onChange={(tracking) => change({ tracking })} disabled={busy} />
+              {draft.awakenings.map((item, index) => (
+                <View key={item.id} style={[styles.card, { backgroundColor: colors.surface }]}>
+                  <View style={styles.row}>
+                    <Text style={[styles.heading, { color: colors.text }]}>Awakening {index + 1}</Text>
+                    <Action label="Remove" disabled={busy} onPress={() => change({ awakenings: draft.awakenings.filter((a) => a.id !== item.id) })} />
+                  </View>
+                  <Field label="Woke up at (blank if unknown)" value={item.woke} disabled={busy} onChange={(woke) => changeAwakening(item.id, { woke })} />
+                  <Toggle label="Wake time is approximate" value={item.wokeApproximate} disabled={busy} onChange={(wokeApproximate) => changeAwakening(item.id, { wokeApproximate })} />
+                  <Text style={{ color: colors.text, fontWeight: "700" }}>Fell back asleep</Text>
+                  <Choices value={item.resume} choices={[["timed", "Enter time"], ["immediate", "Immediately"], ["unknown", "Unknown"]]}
+                    onChange={(resume) => changeAwakening(item.id, { resume, deduct: resume === "timed" })} disabled={busy} />
+                  {item.resume === "timed" && <>
+                    <Field label="Fell back asleep at" value={item.resumed} disabled={busy} onChange={(resumed) => changeAwakening(item.id, { resumed })} />
+                    <Toggle label="Return time is approximate" value={item.resumedApproximate} disabled={busy} onChange={(resumedApproximate) => changeAwakening(item.id, { resumedApproximate })} />
+                  </>}
+                  {item.resume !== "immediate" && <Toggle label="Deduct time from sleep" value={item.deduct} disabled={busy} onChange={(deduct) => changeAwakening(item.id, { deduct })} />}
                 </View>
-                <Field label="Nap started" value={nap.start} disabled={busy} onChange={(start) => changeNap(nap.id, { start })} />
-                <Field label="Nap ended" value={nap.end} disabled={busy} onChange={(end) => changeNap(nap.id, { end })} />
-              </View>
-            ))}
-            <Action label="Add nap" disabled={busy} onPress={() => change({ naps: [...draft.naps, { id: nextId.current++, start: "", end: "" }] })} />
-            <Field label="Recorded total in minutes (optional, including naps)" value={draft.recorded}
-              onChange={(recorded) => change({ recorded })} disabled={busy} placeholder="Use calculated total" numeric />
-            <Field label="Notes (optional)" value={draft.notes} disabled={busy} onChange={(notes) => change({ notes })} placeholder="" multiline />
-            {entry && !validation && <View style={[styles.card, { backgroundColor: colors.surface }]}><SleepSummary entry={entry} /></View>}
-            {error ? <Text accessibilityRole="alert" style={{ color: colors.danger }}>{error}</Text> : null}
-            {confirmDelete ? (
-              <>
-                <Text style={{ color: colors.text }}>Delete this log, its awakenings, and its naps?</Text>
-                <View style={styles.row}>
-                  <Action label={busy ? "Deleting…" : "Delete log"} disabled={busy} danger onPress={() => void submit(true)} />
-                  <Action label="Cancel" disabled={busy} onPress={() => setConfirmDelete(false)} />
+              ))}
+              <Action label="Add awakening" disabled={busy} onPress={() => change({
+                awakenings: [...draft.awakenings, { id: nextId.current++, woke: "", wokeApproximate: false, resumed: "", resumedApproximate: false, resume: "timed", deduct: true }],
+              })} />
+
+              <Text accessibilityRole="header" style={[styles.heading, { color: colors.text }]}>Naps</Text>
+              {draft.naps.map((nap, index) => (
+                <View key={nap.id} style={[styles.card, { backgroundColor: colors.surface }]}>
+                  <View style={styles.row}>
+                    <Text style={[styles.heading, { color: colors.text }]}>Nap {index + 1}</Text>
+                    <Action label="Remove" disabled={busy} onPress={() => change({ naps: draft.naps.filter((n) => n.id !== nap.id) })} />
+                  </View>
+                  <Field label="Nap started" value={nap.start} disabled={busy} onChange={(start) => changeNap(nap.id, { start })} />
+                  <Field label="Nap ended" value={nap.end} disabled={busy} onChange={(end) => changeNap(nap.id, { end })} />
                 </View>
-              </>
-            ) : (
-              <>
-                <Action label={busy ? "Saving…" : "Save sleep"} disabled={busy} primary onPress={() => void submit()} />
-                {log && <Action label="Delete log" disabled={busy} danger onPress={() => { setError(""); setConfirmDelete(true); }} />}
-              </>
-            )}
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
+              ))}
+              <Action label="Add nap" disabled={busy} onPress={() => change({ naps: [...draft.naps, { id: nextId.current++, start: "", end: "" }] })} />
+              <Field label="Recorded total in minutes (optional, including naps)" value={draft.recorded}
+                onChange={(recorded) => change({ recorded })} disabled={busy} placeholder="Use calculated total" numeric />
+              <Field label="Notes (optional)" value={draft.notes} disabled={busy} onChange={(notes) => change({ notes })} placeholder="" multiline />
+              {entry && !validation && <View style={[styles.card, { backgroundColor: colors.surface }]}><SleepSummary entry={entry} /></View>}
+              {error ? <Text accessibilityRole="alert" style={{ color: colors.danger }}>{error}</Text> : null}
+              {confirmDelete ? (
+                <>
+                  <Text style={{ color: colors.text }}>Delete this log, its awakenings, and its naps?</Text>
+                  <View style={styles.row}>
+                    <Action label={busy ? "Deleting…" : "Delete log"} disabled={busy} danger onPress={() => void submit(true)} />
+                    <Action label="Cancel" disabled={busy} onPress={() => setConfirmDelete(false)} />
+                  </View>
+                </>
+              ) : (
+                <>
+                  <Action label={busy ? "Saving…" : "Save sleep"} disabled={busy} primary onPress={() => void submit()} />
+                  {log && <Action label="Delete log" disabled={busy} danger onPress={() => { setError(""); setConfirmDelete(true); }} />}
+                </>
+              )}
+            </KeyboardFormScrollView>
+        </SafeAreaView>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

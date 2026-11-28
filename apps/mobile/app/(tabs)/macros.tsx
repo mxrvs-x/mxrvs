@@ -1,10 +1,11 @@
+import { KeyboardFormInput as TextInput, KeyboardFormScrollView } from "@/components/KeyboardForm";
 import PaginationControls from "@/components/PaginationControls";
 import ThemedAlert from "@/components/ThemedAlert";
 import { supabase } from "@/lib/supabase";
 import { useTheme } from "@/lib/theme";
 import { Pencil, Trash2, X } from "lucide-react-native";
 import { useState } from "react";
-import { Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Keyboard, KeyboardAvoidingView, Modal, Pressable, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { formatMacroDate, isMacroDate, macroFields, macroToday, type DailyMacroLog } from "@/lib/dailyMacros";
 import { useDailyMacroHistory, useDailyMacros, useMacroLogEditor } from "@/lib/useDailyMacros";
@@ -21,7 +22,7 @@ export default function MacrosScreen() {
 
   return (
     <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.background }}>
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, paddingBottom: 20, gap: 16 }}>
+      <KeyboardFormScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, paddingBottom: 20, gap: 16 }}>
         <Text accessibilityRole="header" style={{ color: colors.text, fontSize: 28, fontWeight: "800" }}>Daily Macros</Text>
         <View style={{ padding: 16, gap: 14, borderRadius: 18, backgroundColor: colors.surface }}>
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
@@ -75,7 +76,7 @@ export default function MacrosScreen() {
           ))}
           <PaginationControls page={history.page} totalPages={history.totalPages} onPageChange={history.setPage} />
         </View>
-      </ScrollView>
+      </KeyboardFormScrollView>
       {selectedLog && (
         <MacroLogModal
           row={selectedLog}
@@ -187,17 +188,17 @@ function MacroLogModal({ row, onClose, onSaved, onDeleted }: {
   function dismiss() {
     if (editor.saving || editor.deleting) return;
     if (editor.confirmingDelete) editor.setDeleteConfirmation(false);
-    else if (editor.editing) editor.cancel();
+    else if (editor.editing) {
+      Keyboard.dismiss();
+      editor.cancel();
+    }
     else onClose();
   }
 
   return (
     <Modal visible transparent animationType="fade" onRequestClose={dismiss}>
-      <SafeAreaView style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.55)" }}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={{ flex: 1, justifyContent: "center", padding: 16 }}
-        >
+      <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.55)" }}>
+        <SafeAreaView style={{ flex: 1, justifyContent: "center", padding: 16 }}>
           <View
             accessibilityViewIsModal
             style={{
@@ -206,7 +207,7 @@ function MacroLogModal({ row, onClose, onSaved, onDeleted }: {
               borderWidth: 1, borderColor: colors.border,
             }}
           >
-            <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, gap: 14 }}>
+            <KeyboardFormScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, gap: 14 }}>
               <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
                 <Text accessibilityRole="header" style={{ flex: 1, color: colors.text, fontSize: 22, fontWeight: "800" }}>
                   {formatMacroDate(row.log_date)}
@@ -260,10 +261,10 @@ function MacroLogModal({ row, onClose, onSaved, onDeleted }: {
                   <MacroModalAction label="Delete" icon={Trash2} danger disabled={false} onPress={() => editor.setDeleteConfirmation(true)} />
                 )}
               </View>}
-            </ScrollView>
+            </KeyboardFormScrollView>
           </View>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
+        </SafeAreaView>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
