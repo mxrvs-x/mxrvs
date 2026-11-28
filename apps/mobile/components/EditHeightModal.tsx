@@ -169,7 +169,7 @@ export default function EditHeightModal({
                 borderRadius: theme.radius.lg,
                 backgroundColor: saving
                   ? theme.colors.textFaint
-                  : theme.colors.primary,
+                  : theme.colors.primaryFill,
                 justifyContent: "center",
                 alignItems: "center",
               }}

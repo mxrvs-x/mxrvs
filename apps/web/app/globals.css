@@ -1,27 +1,29 @@
 :root {
   color-scheme: light;
-  --primary: #16a34a;
-  --primary-dark: #052e16;
-  --primary-soft: #dcfce7;
+  --primary: #075985;
+  --primary-fill: #0369a1;
+  --primary-dark: #0c3046;
+  --primary-soft: #e0f2fe;
+  --primary-chart-fill: rgba(3, 105, 161, 0.14);
   --accent: #f97316;
   --accent-soft: #ffedd5;
-  --background: #f4f7f5;
+  --background: #f3f7fb;
   --surface: #ffffff;
-  --surface-alt: #edf2ef;
+  --surface-alt: #eaf1f8;
   --surface-raised: rgba(255, 255, 255, 0.88);
-  --border: #dce5e0;
-  --text: #102019;
-  --text-muted: #56675f;
-  --text-faint: #8b9992;
+  --border: #d6e2ef;
+  --text: #0f172a;
+  --text-muted: #475569;
+  --text-faint: #64748b;
   --text-inverse: #ffffff;
   --success: #16a34a;
   --warning: #eab308;
   --danger: #dc2626;
   --info: #0284c7;
-  --walking: #16a34a;
+  --walking: #0369a1;
   --running: #ea580c;
-  --shadow-card: 0 10px 30px rgba(16, 32, 25, 0.07);
-  --shadow-float: 0 20px 50px rgba(16, 32, 25, 0.14);
+  --shadow-card: 0 10px 30px rgba(15, 23, 42, 0.07);
+  --shadow-float: 0 20px 50px rgba(15, 23, 42, 0.14);
   --radius-md: 14px;
   --radius-lg: 20px;
   --radius-xl: 28px;
@@ -29,25 +31,27 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --primary: #16a34a;
-  --primary-dark: #052e16;
-  --primary-soft: #052e16;
+  --primary: #22d3ee;
+  --primary-fill: #0369a1;
+  --primary-dark: #0c3046;
+  --primary-soft: #0c3046;
+  --primary-chart-fill: rgba(34, 211, 238, 0.14);
   --accent: #f97316;
   --accent-soft: #431407;
-  --background: #070b0a;
-  --surface: #101614;
-  --surface-alt: #18211e;
-  --surface-raised: rgba(16, 22, 20, 0.9);
-  --border: #26332e;
-  --text: #f4f7f5;
-  --text-muted: #a4b0aa;
-  --text-faint: #718079;
+  --background: #090f17;
+  --surface: #111b27;
+  --surface-alt: #182636;
+  --surface-raised: rgba(17, 27, 39, 0.9);
+  --border: #2b3c50;
+  --text: #f4f7fb;
+  --text-muted: #a5b5c8;
+  --text-faint: #8498af;
   --text-inverse: #ffffff;
   --success: #22c55e;
   --warning: #facc15;
   --danger: #ef4444;
   --info: #38bdf8;
-  --walking: #22c55e;
+  --walking: #22d3ee;
   --running: #f97316;
   --shadow-card: 0 12px 34px rgba(0, 0, 0, 0.26);
   --shadow-float: 0 24px 60px rgba(0, 0, 0, 0.42);
@@ -313,14 +317,14 @@ h3 {
 }
 
 .primary-panel {
-  background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary) 72%, #000));
-  border-color: var(--primary);
+  background: linear-gradient(135deg, var(--primary-fill), var(--primary-dark));
+  border-color: var(--primary-fill);
   color: var(--text-inverse);
 }
 
 .session-panel {
-  background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary) 68%, #000));
-  border-color: var(--primary);
+  background: linear-gradient(135deg, var(--primary-fill), var(--primary-dark));
+  border-color: var(--primary-fill);
   color: var(--text-inverse);
 }
 
@@ -540,7 +544,7 @@ h3 {
 
 .tab.active,
 .chip.active {
-  background: var(--primary);
+  background: var(--primary-fill);
   border-color: var(--primary);
   color: var(--text-inverse);
 }
@@ -554,7 +558,7 @@ h3 {
 }
 
 .button.primary {
-  background: var(--primary);
+  background: var(--primary-fill);
   border-color: var(--primary);
   color: var(--text-inverse);
   box-shadow: 0 10px 22px color-mix(in srgb, var(--primary) 22%, transparent);
@@ -747,7 +751,7 @@ button.list-item:hover {
 }
 
 .check-dot.active {
-  background: var(--primary);
+  background: var(--primary-fill);
   border-color: var(--primary);
 }
 
@@ -760,7 +764,7 @@ button.list-item:hover {
 .modal-backdrop {
   align-items: center;
   backdrop-filter: blur(8px);
-  background: rgba(3, 8, 6, 0.62);
+  background: rgba(4, 10, 18, 0.62);
   display: flex;
   inset: 0;
   justify-content: center;
@@ -790,7 +794,7 @@ button.list-item:hover {
 
 .macro-dialog::backdrop,
 .sleep-dialog::backdrop {
-  background: rgba(3, 8, 6, 0.62);
+  background: rgba(4, 10, 18, 0.62);
   backdrop-filter: blur(8px);
 }
 
@@ -855,7 +859,7 @@ button.list-item:hover {
 }
 
 .compact-menu::backdrop {
-  background: rgba(3, 8, 6, 0.62);
+  background: rgba(4, 10, 18, 0.62);
 }
 
 .compact-menu-content {

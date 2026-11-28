@@ -230,7 +230,7 @@ export default function AppUpdateGate() {
                   flex: 1,
                   height: 48,
                   borderRadius: 16,
-                  backgroundColor: theme.colors.primary,
+                  backgroundColor: theme.colors.primaryFill,
                   alignItems: "center",
                   justifyContent: "center",
                 }}

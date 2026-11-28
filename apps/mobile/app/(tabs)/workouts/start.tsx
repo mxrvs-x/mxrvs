@@ -1132,7 +1132,7 @@ export default function StartWorkoutScreen() {
                 style={{
                   minWidth: 132,
                   backgroundColor: active
-                    ? theme.colors.primary
+                    ? theme.colors.primaryFill
                     : theme.colors.surface,
                   borderRadius: 16,
                   padding: 12,
@@ -1174,7 +1174,7 @@ export default function StartWorkoutScreen() {
           style={{
             backgroundColor: session.isPaused
               ? theme.colors.warning
-              : theme.colors.primary,
+              : theme.colors.primaryFill,
             borderRadius: 20,
             padding: 18,
             marginTop: 20,
@@ -1251,7 +1251,7 @@ export default function StartWorkoutScreen() {
             onPress={startSession}
             disabled={loading || selectedExercises.length === 0}
             style={{
-              backgroundColor: theme.colors.primary,
+              backgroundColor: theme.colors.primaryFill,
               borderRadius: 18,
               padding: 18,
               alignItems: "center",
@@ -1277,7 +1277,7 @@ export default function StartWorkoutScreen() {
               style={{
                 flex: 1,
                 backgroundColor: session.isPaused
-                  ? theme.colors.primary
+                  ? theme.colors.primaryFill
                   : theme.colors.surface,
                 borderRadius: 18,
                 padding: 18,
@@ -1471,7 +1471,7 @@ export default function StartWorkoutScreen() {
                                 ? theme.colors.primary
                                 : theme.colors.border,
                               backgroundColor: isSelected
-                                ? theme.colors.primary
+                                ? theme.colors.primaryFill
                                 : theme.colors.surfaceAlt,
                               alignItems: "center",
                               justifyContent: "center",
@@ -1945,7 +1945,7 @@ export default function StartWorkoutScreen() {
                               ? theme.colors.primary
                               : theme.colors.border,
                             backgroundColor: active
-                              ? theme.colors.primary
+                              ? theme.colors.primaryFill
                               : theme.colors.surfaceAlt,
                           }}
                         >
@@ -1991,7 +1991,7 @@ export default function StartWorkoutScreen() {
                     alignItems: "center",
                     padding: 14,
                     borderRadius: 14,
-                    backgroundColor: theme.colors.primary,
+                    backgroundColor: theme.colors.primaryFill,
                   }}
                 >
                   <Text

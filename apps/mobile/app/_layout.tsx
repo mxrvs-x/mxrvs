@@ -8,14 +8,29 @@ import "@/lib/backgroundCardioLocation";
 import { setSleepWidgetOwner } from "@/lib/sleepRecordingStorage";
 import { supabase } from "@/lib/supabase";
 import { AppThemeProvider, useTheme } from "@/lib/theme";
-import { Stack } from "expo-router";
+import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 function RootStack() {
   const theme = useTheme();
+  const navigationTheme = useMemo(() => {
+    const base = theme.mode === "dark" ? DarkTheme : DefaultTheme;
+    return {
+      ...base,
+      colors: {
+        ...base.colors,
+        primary: theme.colors.primary,
+        background: theme.colors.background,
+        card: theme.colors.surface,
+        text: theme.colors.text,
+        border: theme.colors.border,
+        notification: theme.colors.danger,
+      },
+    };
+  }, [theme]);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -35,20 +50,20 @@ function RootStack() {
       <DailyActivityGate />
       <CreatineReminderGate />
       <WeightReminderGate />
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          contentStyle: {
-            backgroundColor: theme.colors.background,
-          },
-        }}
-      >
-        <Stack.Screen name="index" />
-        <Stack.Screen name="auth" />
-
-        {/* ✅ IMPORTANT: use drawer instead of tabs */}
-        <Stack.Screen name="(tabs)" />
-      </Stack>
+      <ThemeProvider value={navigationTheme}>
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: {
+              backgroundColor: theme.colors.background,
+            },
+          }}
+        >
+          <Stack.Screen name="index" />
+          <Stack.Screen name="auth" />
+          <Stack.Screen name="(tabs)" />
+        </Stack>
+      </ThemeProvider>
     </>
   );
 }

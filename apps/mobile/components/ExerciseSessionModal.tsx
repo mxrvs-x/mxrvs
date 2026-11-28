@@ -218,7 +218,7 @@ export default function ExerciseSessionModal({
                 onPress={onSkipRest}
                 style={{
                   marginTop: 24,
-                  backgroundColor: theme.colors.primary,
+                  backgroundColor: theme.colors.primaryFill,
                   paddingHorizontal: 24,
                   paddingVertical: 14,
                   borderRadius: theme.radius.pill,
@@ -238,7 +238,7 @@ export default function ExerciseSessionModal({
             <>
               <View
                 style={{
-                  backgroundColor: theme.colors.primary,
+                  backgroundColor: theme.colors.primaryFill,
                   borderRadius: 20,
                   padding: 18,
                   marginTop: 20,
@@ -352,7 +352,7 @@ export default function ExerciseSessionModal({
               <Pressable
                 onPress={completeSet}
                 style={{
-                  backgroundColor: theme.colors.primary,
+                  backgroundColor: theme.colors.primaryFill,
                   borderRadius: theme.radius.lg,
                   padding: 18,
                   alignItems: "center",

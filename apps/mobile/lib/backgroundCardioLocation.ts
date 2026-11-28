@@ -142,7 +142,7 @@ export async function startBackgroundCardioLocation() {
       foregroundService: {
         notificationTitle: "mxrvs cardio tracking",
         notificationBody: "Recording outdoor cardio distance.",
-        notificationColor: "#16A34A",
+        notificationColor: "#0369A1",
         killServiceOnDestroy: false,
       },
     });

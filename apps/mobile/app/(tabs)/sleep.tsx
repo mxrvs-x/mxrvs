@@ -519,7 +519,7 @@ function Action({ label, onPress, primary, danger, disabled, selected }: {
   const { colors } = useTheme();
   return (
     <Pressable accessibilityRole="button" accessibilityState={{ disabled, selected }} disabled={disabled} onPress={onPress}
-      style={[styles.button, { backgroundColor: danger ? colors.danger : primary ? colors.primary : colors.surfaceAlt, opacity: disabled ? 0.6 : 1 }]}>
+      style={[styles.button, { backgroundColor: danger ? colors.danger : primary ? colors.primaryFill : colors.surfaceAlt, opacity: disabled ? 0.6 : 1 }]}>
       <Text style={{ color: primary || danger ? colors.textInverse : colors.text, fontWeight: "800" }}>{label}</Text>
     </Pressable>
   );

@@ -209,7 +209,7 @@ export default function ManualCardioScreen() {
                     alignItems: "center",
                     justifyContent: "center",
                     backgroundColor: selected
-                      ? theme.colors.primary
+                      ? theme.colors.primaryFill
                       : theme.colors.surface,
                     borderWidth: 1,
                     borderColor: selected
@@ -315,7 +315,7 @@ export default function ManualCardioScreen() {
             style={{
               minHeight: 54,
               borderRadius: 18,
-              backgroundColor: theme.colors.primary,
+              backgroundColor: theme.colors.primaryFill,
               alignItems: "center",
               justifyContent: "center",
               marginTop: 24,

@@ -149,7 +149,7 @@ export default function AddExerciseModal({
                       paddingVertical: 8,
                       borderRadius: theme.radius.pill,
                       backgroundColor: active
-                        ? theme.colors.primary
+                        ? theme.colors.primaryFill
                         : theme.colors.surfaceAlt,
                       borderWidth: 1,
                       borderColor: active
@@ -193,7 +193,7 @@ export default function AddExerciseModal({
                   padding: 14,
                   borderRadius: theme.radius.lg,
                   backgroundColor: localForm.is_compound
-                    ? theme.colors.primary
+                    ? theme.colors.primaryFill
                     : theme.colors.surfaceAlt,
                   alignItems: "center",
                   borderWidth: 1,
@@ -223,7 +223,7 @@ export default function AddExerciseModal({
                   padding: 14,
                   borderRadius: theme.radius.lg,
                   backgroundColor: !localForm.is_compound
-                    ? theme.colors.primary
+                    ? theme.colors.primaryFill
                     : theme.colors.surfaceAlt,
                   alignItems: "center",
                   borderWidth: 1,
@@ -274,7 +274,7 @@ export default function AddExerciseModal({
                 disabled={saving}
                 style={{
                   flex: 1,
-                  backgroundColor: theme.colors.primary,
+                  backgroundColor: theme.colors.primaryFill,
                   borderRadius: theme.radius.lg,
                   padding: 16,
                   alignItems: "center",

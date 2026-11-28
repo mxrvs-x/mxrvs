@@ -485,7 +485,7 @@ export default function CardioDetailsScreen() {
                   width: 42,
                   height: 42,
                   borderRadius: 21,
-                  backgroundColor: theme.colors.primary,
+                  backgroundColor: theme.colors.primaryFill,
                   alignItems: "center",
                   justifyContent: "center",
                   opacity: exporting ? 0.5 : 1,

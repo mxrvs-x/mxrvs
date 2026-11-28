@@ -348,7 +348,7 @@ export default function AuthScreen() {
                   <Pressable
                     onPress={loginWithFingerprint}
                     style={{
-                      backgroundColor: theme.colors.primary,
+                      backgroundColor: theme.colors.primaryFill,
                       padding: 15,
                       borderRadius: theme.radius.md,
                       alignItems: "center",
@@ -432,7 +432,7 @@ export default function AuthScreen() {
                     <Pressable
                       onPress={signIn}
                       style={{
-                        backgroundColor: theme.colors.primary,
+                        backgroundColor: theme.colors.primaryFill,
                         padding: 15,
                         borderRadius: theme.radius.md,
                         alignItems: "center",

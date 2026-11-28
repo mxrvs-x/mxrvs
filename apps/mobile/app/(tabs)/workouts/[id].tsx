@@ -604,7 +604,7 @@ export default function WorkoutDetailsScreen() {
           onPress={handleClosePress}
           style={{
             marginTop: 18,
-            backgroundColor: theme.colors.primary,
+            backgroundColor: theme.colors.primaryFill,
             paddingHorizontal: 20,
             paddingVertical: 12,
             borderRadius: 999,
@@ -692,7 +692,7 @@ export default function WorkoutDetailsScreen() {
                   width: 42,
                   height: 42,
                   borderRadius: 21,
-                  backgroundColor: theme.colors.primary,
+                  backgroundColor: theme.colors.primaryFill,
                   alignItems: "center",
                   justifyContent: "center",
                   opacity: exporting ? 0.5 : 1,
@@ -791,7 +791,7 @@ export default function WorkoutDetailsScreen() {
 
                 <View
                   style={{
-                    backgroundColor: theme.colors.primary,
+                    backgroundColor: theme.colors.primaryFill,
                     borderRadius: 20,
                     padding: 18,
                     marginTop: 20,

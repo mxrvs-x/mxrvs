@@ -1,7 +1,7 @@
 import { useTheme } from "@/lib/theme";
 import { Tabs } from "expo-router";
 import { BottomTabBarHeightCallbackContext, type BottomTabBarProps } from "expo-router/js-tabs";
-import { Activity, Dumbbell, FlaskConical, Menu, Moon, UserRound, Utensils, X } from "lucide-react-native";
+import { Activity, Dumbbell, FlaskConical, Footprints, Menu, Moon, UserRound, Utensils, X } from "lucide-react-native";
 import { useContext, useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -13,6 +13,7 @@ const mainTabs = [
 ] as const;
 
 const drawerTabs = [
+  { name: "overall-activity", history: null, label: "Overall Activity", Icon: Footprints },
   { name: "sleep", history: null, label: "Sleep", Icon: Moon },
   { name: "creatine", history: "creatine-history", label: "Creatine", Icon: FlaskConical },
   { name: "profile", history: "weight-reports", label: "Profile", Icon: UserRound },
@@ -155,7 +156,7 @@ export default function TabsLayout() {
 const styles = StyleSheet.create({
   tab: { flex: 1, minHeight: 56, gap: 4, alignItems: "center", justifyContent: "center" },
   label: { fontSize: 11, fontWeight: "800", textAlign: "center" },
-  overlay: { flex: 1, flexDirection: "row", justifyContent: "flex-end", backgroundColor: "rgba(3,8,6,0.62)" },
+  overlay: { flex: 1, flexDirection: "row", justifyContent: "flex-end", backgroundColor: "rgba(4,10,18,0.62)" },
   drawer: { width: "85%", maxWidth: 320, borderLeftWidth: 1 },
   drawerContent: { padding: 16, gap: 8 },
   drawerHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },

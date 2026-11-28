@@ -285,7 +285,7 @@ export default function CreatineScreen() {
                   borderRadius: theme.radius.md,
                   backgroundColor: selectedLog
                     ? theme.colors.surfaceAlt
-                    : theme.colors.primary,
+                    : theme.colors.primaryFill,
                   alignItems: "center",
                   justifyContent: "center",
                   flexDirection: "row",

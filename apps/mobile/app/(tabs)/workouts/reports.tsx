@@ -503,7 +503,7 @@ export default function WorkoutReportsScreen() {
                       width: 180,
                       minHeight: 104,
                       backgroundColor: active
-                        ? theme.colors.primary
+                        ? theme.colors.primaryFill
                         : theme.colors.surface,
                       borderRadius: 16,
                       padding: 12,

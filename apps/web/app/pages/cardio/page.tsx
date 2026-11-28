@@ -114,8 +114,9 @@ export default function CardioPage() {
           <p className="eyebrow">Cardio</p>
           <h1>History</h1>
           <p className="muted">Data source: {syncState === "supabase" ? "Supabase" : "Waiting for session"}</p>
+          <p className="muted">View-only on web. Start cardio sessions from mobile.</p>
         </div>
-        <p className="muted">View-only on web. Start cardio sessions from mobile.</p>
+        <Link className="button" href="/pages/overall-activity">Overall Activity</Link>
       </header>
 
       <section className="grid two-col">
