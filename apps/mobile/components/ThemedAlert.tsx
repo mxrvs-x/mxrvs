@@ -172,7 +172,7 @@ export default function ThemedAlert({
               borderRadius: 18,
               backgroundColor: danger
                 ? theme.colors.danger ?? "#ef4444"
-                : theme.colors.primary,
+                : theme.colors.primaryFill,
               alignItems: "center",
               justifyContent: "center",
             }}

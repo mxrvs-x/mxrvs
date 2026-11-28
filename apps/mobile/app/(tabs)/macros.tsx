@@ -149,7 +149,7 @@ function MacroForm({ date, onSaved }: { date: string; onSaved: () => void }) {
           minHeight: 48,
           alignItems: "center",
           justifyContent: "center",
-          backgroundColor: colors.primary,
+          backgroundColor: colors.primaryFill,
           borderRadius: 12,
           opacity: disabled ? 0.6 : 1,
         }}
@@ -287,7 +287,7 @@ function MacroModalAction({ label, icon: Icon, primary = false, danger = false, 
       style={{
         flex: 1, minHeight: 48, borderRadius: 12, borderWidth: 1,
         borderColor: danger ? colors.danger : primary ? colors.primary : colors.border,
-        backgroundColor: danger ? colors.danger : primary ? colors.primary : colors.surfaceAlt,
+        backgroundColor: danger ? colors.danger : primary ? colors.primaryFill : colors.surfaceAlt,
         alignItems: "center", justifyContent: "center", opacity: disabled ? 0.6 : 1,
       }}
     >

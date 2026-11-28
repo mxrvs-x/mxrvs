@@ -231,7 +231,7 @@ export default function WorkoutIndexScreen() {
       <View
         style={{
           marginTop: 20,
-          backgroundColor: theme.colors.primary,
+          backgroundColor: theme.colors.primaryFill,
           borderRadius: 20,
           padding: 18,
         }}
@@ -326,7 +326,7 @@ export default function WorkoutIndexScreen() {
             flex: 1,
             backgroundColor: todayWorkout
               ? theme.colors.surfaceAlt
-              : theme.colors.primary,
+              : theme.colors.primaryFill,
             borderRadius: 16,
             padding: 16,
             borderWidth: todayWorkout ? 1 : 0,

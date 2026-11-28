@@ -155,7 +155,7 @@ export default function LogBodyWeightModal({
                 borderRadius: theme.radius.lg,
                 backgroundColor: saving
                   ? theme.colors.textFaint
-                  : theme.colors.primary,
+                  : theme.colors.primaryFill,
                 justifyContent: "center",
                 alignItems: "center",
               }}

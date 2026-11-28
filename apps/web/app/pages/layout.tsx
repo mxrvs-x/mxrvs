@@ -7,6 +7,7 @@ import {
   Activity,
   Dumbbell,
   FlaskConical,
+  Footprints,
   Menu,
   Moon,
   UserRound,
@@ -20,6 +21,7 @@ import { hasActiveStoredWorkoutSession } from "@/lib/workoutSessionStore";
 const links = [
   { href: "/pages/workouts", label: "Workouts", icon: Dumbbell },
   { href: "/pages/cardio", label: "Cardio", icon: Activity },
+  { href: "/pages/overall-activity", label: "Overall Activity", icon: Footprints, inDrawer: true },
   { href: "/pages/creatine", label: "Creatine", icon: FlaskConical, inDrawer: true },
   { href: "/pages/macros", label: "Macros", icon: Utensils },
   { href: "/pages/sleep", label: "Sleep", icon: Moon, inDrawer: true },

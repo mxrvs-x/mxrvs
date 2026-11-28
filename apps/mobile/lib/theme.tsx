@@ -6,7 +6,7 @@ import React, {
   useMemo,
   useState,
 } from "react";
-import { Appearance, type ColorSchemeName } from "react-native";
+import { readSystemAppearance, subscribeSystemAppearance } from "./systemAppearance";
 
 export type SessionThemeKey =
   | "default"
@@ -51,25 +51,37 @@ const shared = {
   },
 };
 
+const primaryFill = "#0369A1";
+const workoutColors = {
+  push: primaryFill,
+  pull: primaryFill,
+  legs: primaryFill,
+  upper: primaryFill,
+  lower: primaryFill,
+  arms: primaryFill,
+  rest: primaryFill,
+};
+
 export const darkTheme = {
   ...shared,
   mode: "dark" as const,
   colors: {
-    primary: "#16A34A",
-    primaryDark: "#052E16",
-    primarySoft: "#052E16",
+    primary: "#22D3EE",
+    primaryFill,
+    primaryDark: "#0C3046",
+    primarySoft: "#0C3046",
 
     accent: "#F97316",
     accentSoft: "#431407",
 
-    background: "#070B0A",
-    surface: "#101614",
-    surfaceAlt: "#18211E",
-    border: "#26332E",
+    background: "#090F17",
+    surface: "#111B27",
+    surfaceAlt: "#182636",
+    border: "#2B3C50",
 
-    text: "#F4F7F5",
-    textMuted: "#A4B0AA",
-    textFaint: "#718079",
+    text: "#F4F7FB",
+    textMuted: "#A5B5C8",
+    textFaint: "#8498AF",
     textInverse: "#FFFFFF",
 
     success: "#22C55E",
@@ -83,21 +95,15 @@ export const darkTheme = {
     fat: "#FB923C",
     fiber: "#A78BFA",
 
-    push: "#16A34A",
-    pull: "#16A34A",
-    legs: "#16A34A",
-    upper: "#16A34A",
-    lower: "#16A34A",
-    arms: "#16A34A",
-    rest: "#16A34A",
+    ...workoutColors,
 
-    walking: "#22C55E",
+    walking: "#22D3EE",
     running: "#F97316",
     pace: "#38BDF8",
     heartRate: "#EF4444",
 
     activeDay: "#F97316",
-    selectedDay: "#16A34A",
+    selectedDay: primaryFill,
     today: "#38BDF8",
   },
 
@@ -116,21 +122,22 @@ export const lightTheme = {
   ...shared,
   mode: "light" as const,
   colors: {
-    primary: "#16A34A",
-    primaryDark: "#052E16",
-    primarySoft: "#DCFCE7",
+    primary: "#075985",
+    primaryFill,
+    primaryDark: "#0C3046",
+    primarySoft: "#E0F2FE",
 
     accent: "#F97316",
     accentSoft: "#FFEDD5",
 
-    background: "#F4F7F5",
+    background: "#F3F7FB",
     surface: "#FFFFFF",
-    surfaceAlt: "#EDF2EF",
-    border: "#DCE5E0",
+    surfaceAlt: "#EAF1F8",
+    border: "#D6E2EF",
 
     text: "#0F172A",
     textMuted: "#475569",
-    textFaint: "#94A3B8",
+    textFaint: "#64748B",
     textInverse: "#FFFFFF",
 
     success: "#16A34A",
@@ -144,21 +151,15 @@ export const lightTheme = {
     fat: "#F97316",
     fiber: "#8B5CF6",
 
-    push: "#16A34A",
-    pull: "#16A34A",
-    legs: "#16A34A",
-    upper: "#16A34A",
-    lower: "#16A34A",
-    arms: "#16A34A",
-    rest: "#16A34A",
+    ...workoutColors,
 
-    walking: "#16A34A",
+    walking: "#0369A1",
     running: "#EA580C",
     pace: "#0284C7",
     heartRate: "#DC2626",
 
     activeDay: "#EA580C",
-    selectedDay: "#16A34A",
+    selectedDay: primaryFill,
     today: "#0284C7",
   },
 
@@ -193,29 +194,14 @@ const ThemeContext = createContext<AppTheme>({
 });
 
 export function AppThemeProvider({ children }: { children: React.ReactNode }) {
-  const [scheme, setScheme] = useState<ColorSchemeName | null>(() =>
-    Appearance.getColorScheme(),
-  );
-  useEffect(() => {
-    Appearance.setColorScheme("auto");
-    setScheme(Appearance.getColorScheme());
-    const subscription = Appearance.addChangeListener(({ colorScheme }) => {
-      setScheme(colorScheme);
-    });
+  const [scheme, setScheme] = useState(() => readSystemAppearance() ?? "light");
+  useEffect(() => subscribeSystemAppearance(setScheme), []);
 
-    return () => subscription.remove();
-  }, []);
-
-  const baseTheme = useMemo<BaseTheme>(
-    () =>
-      scheme === "dark"
-        ? { ...darkTheme, colors: darkTheme.colors }
-        : { ...lightTheme, colors: lightTheme.colors },
-    [scheme],
-  );
+  const baseTheme = scheme === "dark" ? darkTheme : lightTheme;
 
   useEffect(() => {
-    void SystemUI.setBackgroundColorAsync(baseTheme.colors.background);
+    // The React screen has its own background if the native window is unavailable.
+    void SystemUI.setBackgroundColorAsync(baseTheme.colors.background).catch(() => {});
   }, [baseTheme.colors.background]);
 
   const theme = useMemo<AppTheme>(() => {

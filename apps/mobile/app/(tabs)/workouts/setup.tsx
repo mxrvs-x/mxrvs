@@ -368,7 +368,7 @@ export default function WorkoutSetupScreen() {
                   width: 46,
                   height: 46,
                   borderRadius: 23,
-                  backgroundColor: theme.colors.primary,
+                  backgroundColor: theme.colors.primaryFill,
                   alignItems: "center",
                   justifyContent: "center",
                 }}
@@ -427,7 +427,7 @@ export default function WorkoutSetupScreen() {
                   paddingVertical: 9,
                   borderRadius: 999,
                   backgroundColor: active
-                    ? theme.colors.primary
+                    ? theme.colors.primaryFill
                     : theme.colors.surface,
                   borderWidth: 1,
                   borderColor: active

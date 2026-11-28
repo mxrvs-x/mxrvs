@@ -220,7 +220,7 @@ export default function ExportBackgroundPicker({
                 flex: 1,
                 minHeight: 48,
                 borderRadius: 16,
-                backgroundColor: theme.colors.primary,
+                backgroundColor: theme.colors.primaryFill,
                 alignItems: "center",
                 justifyContent: "center",
                 flexDirection: "row",

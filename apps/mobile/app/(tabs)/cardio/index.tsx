@@ -280,9 +280,14 @@ export default function CardioHome() {
           padding: 16,
         }}
       >
-        <Text style={{ fontSize: 18, fontWeight: "900" }}>
-          Today&apos;s Activity
-        </Text>
+        <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", justifyContent: "space-between", gap: 8 }}>
+          <Text style={{ fontSize: 18, fontWeight: "900", color: theme.colors.text }}>
+            Today&apos;s Activity
+          </Text>
+          <Pressable accessibilityRole="link" onPress={() => router.navigate("/overall-activity")} hitSlop={8}>
+            <Text style={{ fontWeight: "800", color: theme.colors.primary }}>Activity History</Text>
+          </Pressable>
+        </View>
 
         {!dailyActivity.available ? (
           <Text style={{ color: theme.colors.textMuted, marginTop: 10 }}>

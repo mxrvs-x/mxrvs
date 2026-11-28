@@ -305,7 +305,7 @@ export default function WorkoutHistoryScreen() {
                   height: 42,
                   paddingHorizontal: 12,
                   borderRadius: 14,
-                  backgroundColor: theme.colors.primary,
+                  backgroundColor: theme.colors.primaryFill,
                   flexDirection: "row",
                   alignItems: "center",
                   gap: 8,

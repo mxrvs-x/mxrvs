@@ -677,7 +677,7 @@ export function WeightChart({ logs }: { logs: BodyWeightLog[] }) {
         label: "Weight kg",
         data: visible.map((log) => log.weight_kg),
         borderColor: cssVar("--primary"),
-        backgroundColor: "rgba(22, 163, 74, 0.14)",
+        backgroundColor: cssVar("--primary-chart-fill"),
         fill: true,
         tension: 0.35,
       },

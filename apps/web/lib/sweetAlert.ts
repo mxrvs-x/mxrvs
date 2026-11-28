@@ -11,7 +11,7 @@ function sharedOptions() {
   return {
     background: isDarkTheme() ? "#111827" : "#ffffff",
     color: isDarkTheme() ? "#e5e7eb" : "#0f172a",
-    confirmButtonColor: "#16a34a",
+    confirmButtonColor: "var(--primary-fill)",
     cancelButtonColor: "#64748b",
     customClass: {
       popup: "mxrvs-alert",

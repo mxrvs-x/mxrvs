@@ -653,7 +653,7 @@ function ActionButton({
         flex: 1,
         minHeight: 46,
         borderRadius: theme.radius.md,
-        backgroundColor: primary ? theme.colors.primary : theme.colors.surfaceAlt,
+        backgroundColor: primary ? theme.colors.primaryFill : theme.colors.surfaceAlt,
         borderWidth: 1,
         borderColor: primary ? theme.colors.primary : theme.colors.border,
         justifyContent: "center",
