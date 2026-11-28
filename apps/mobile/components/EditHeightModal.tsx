@@ -1,13 +1,12 @@
+import { KeyboardFormInput as TextInput, KeyboardFormScrollView } from "@/components/KeyboardForm";
 import { useTheme } from "@/lib/theme";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   Text,
-  TextInput,
   View,
 } from "react-native";
 
@@ -42,7 +41,7 @@ export default function EditHeightModal({
   return (
     <Modal visible={visible} animationType="fade" transparent>
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior="padding"
         style={{
           flex: 1,
           backgroundColor:
@@ -53,16 +52,19 @@ export default function EditHeightModal({
           padding: 20,
         }}
       >
-        <View
+        <KeyboardFormScrollView
           style={{
             width: "100%",
+            flexGrow: 0,
+            maxHeight: "100%",
             backgroundColor: theme.colors.surface,
             borderRadius: theme.radius.xl,
-            padding: 20,
             borderWidth: 1,
             borderColor: theme.colors.border,
             ...theme.shadow.card,
           }}
+          contentContainerStyle={{ padding: 20 }}
+          showsVerticalScrollIndicator={false}
         >
           <Text
             style={{
@@ -188,7 +190,7 @@ export default function EditHeightModal({
               )}
             </Pressable>
           </View>
-        </View>
+        </KeyboardFormScrollView>
       </KeyboardAvoidingView>
     </Modal>
   );

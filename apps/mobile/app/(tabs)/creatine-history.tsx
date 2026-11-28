@@ -5,7 +5,7 @@ import {
   deleteCreatineLog,
   loadCreatineLogs,
 } from "@/lib/creatine";
-import { syncCreatineReminderState } from "@/lib/creatineNotifications";
+import { refreshLogReminders } from "@/lib/logReminders";
 import { useTheme } from "@/lib/theme";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Check, ChevronLeft, Trash2 } from "lucide-react-native";
@@ -75,7 +75,7 @@ export default function CreatineHistoryScreen() {
     setDeletingId(target.id);
     await deleteCreatineLog(target);
     await loadLogs();
-    await syncCreatineReminderState({ allowImmediate: false });
+    void refreshLogReminders("creatine");
     setDeletingId(null);
   }
 

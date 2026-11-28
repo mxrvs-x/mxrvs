@@ -1,7 +1,8 @@
+import { KeyboardFormInput as TextInput, KeyboardFormScrollView } from "@/components/KeyboardForm";
 import ThemedAlert from "@/components/ThemedAlert";
 import { useTheme } from "@/lib/theme";
 import { useEffect, useState } from "react";
-import { Modal, Pressable, Text, TextInput, View } from "react-native";
+import { Keyboard, KeyboardAvoidingView, Modal, Pressable, Text, View } from "react-native";
 
 type Exercise = {
   id: string;
@@ -63,6 +64,7 @@ export default function ExerciseSessionModal({
     if (!visible) return;
 
     setSetNumber(startingSetNumber);
+    Keyboard.dismiss();
     setReps("");
     setWeightKg("");
     setRestSeconds("90");
@@ -96,6 +98,7 @@ export default function ExerciseSessionModal({
       rest_seconds: String(rest),
     });
 
+    Keyboard.dismiss();
     setReps("");
     setWeightKg("");
   }
@@ -104,7 +107,8 @@ export default function ExerciseSessionModal({
 
   return (
     <Modal visible={visible} animationType="fade" transparent>
-      <View
+      <KeyboardAvoidingView
+        behavior="padding"
         style={{
           flex: 1,
           backgroundColor:
@@ -116,18 +120,20 @@ export default function ExerciseSessionModal({
           padding: 18,
         }}
       >
-        <View
+        <KeyboardFormScrollView
           style={{
             width: "100%",
+            flexGrow: 0,
+            maxHeight: "100%",
             maxWidth: 420,
             backgroundColor: theme.colors.surface,
             borderRadius: theme.radius.xl,
-            padding: 20,
-            minHeight: 440,
             borderWidth: 1,
             borderColor: theme.colors.border,
             ...theme.shadow.card,
           }}
+          contentContainerStyle={{ padding: 20 }}
+          showsVerticalScrollIndicator={false}
         >
           <View
             style={{
@@ -387,7 +393,7 @@ export default function ExerciseSessionModal({
               </Pressable>
             </>
           )}
-        </View>
+        </KeyboardFormScrollView>
 
         <ThemedAlert
           visible={Boolean(validationMessage)}
@@ -397,7 +403,7 @@ export default function ExerciseSessionModal({
           danger
           onClose={() => setValidationMessage(null)}
         />
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

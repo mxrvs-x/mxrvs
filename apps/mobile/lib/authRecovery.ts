@@ -1,4 +1,5 @@
 export type AuthRoute = "/auth" | "/(tabs)/workouts";
+export const SAVED_EMAIL_KEY = "mxrvs_saved_email";
 
 type AuthUser = {
   id: string;

@@ -5,25 +5,24 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Activity,
+  Apple,
   Dumbbell,
   FlaskConical,
-  Footprints,
   Menu,
   Moon,
   UserRound,
-  Utensils,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { getWebUser } from "@/lib/webData";
+import AssistantLauncher from "@/app/components/AssistantLauncher";
 import { hasActiveStoredWorkoutSession } from "@/lib/workoutSessionStore";
 
 const links = [
   { href: "/pages/workouts", label: "Workouts", icon: Dumbbell },
   { href: "/pages/cardio", label: "Cardio", icon: Activity },
-  { href: "/pages/overall-activity", label: "Overall Activity", icon: Footprints, inDrawer: true },
   { href: "/pages/creatine", label: "Creatine", icon: FlaskConical, inDrawer: true },
-  { href: "/pages/macros", label: "Macros", icon: Utensils },
+  { href: "/pages/macros", label: "Macros", icon: Apple },
   { href: "/pages/sleep", label: "Sleep", icon: Moon, inDrawer: true },
   { href: "/pages/profile", label: "Profile", icon: UserRound, inDrawer: true },
 ];
@@ -139,6 +138,7 @@ export default function PagesLayout({
       </aside>
 
       <main className="page-frame">{children}</main>
+      <AssistantLauncher />
 
       <nav className="bottom-nav" aria-label="Primary">
         {bottomLinks.map((link) => {

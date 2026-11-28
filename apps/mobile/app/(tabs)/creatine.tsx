@@ -6,7 +6,7 @@ import {
   logCreatineForDate,
   toDateKey,
 } from "@/lib/creatine";
-import { syncCreatineReminderState } from "@/lib/creatineNotifications";
+import { recordReminderLogChange, refreshLogReminders } from "@/lib/logReminders";
 import { useTheme } from "@/lib/theme";
 import NetInfo from "@react-native-community/netinfo";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -62,14 +62,14 @@ export default function CreatineScreen() {
   useFocusEffect(
     useCallback(() => {
       loadLogs(true);
-      syncCreatineReminderState({ allowImmediate: false });
+      void refreshLogReminders("creatine");
     }, []),
   );
 
   async function onRefresh() {
     setRefreshing(true);
     await loadLogs(false);
-    await syncCreatineReminderState({ allowImmediate: false });
+    void refreshLogReminders("creatine");
   }
 
   async function handleLogCreatine() {
@@ -79,9 +79,10 @@ export default function CreatineScreen() {
 
     try {
       setSaving(true);
-      await logCreatineForDate({ date: selectedDate, grams: 5 });
+      const log = await logCreatineForDate({ date: selectedDate, grams: 5 });
+      if (log.offline) void refreshLogReminders("creatine");
+      else void recordReminderLogChange(log.user_id, "creatine", { added: log.date });
       await loadLogs(false);
-      await syncCreatineReminderState({ allowImmediate: false });
     } catch (error) {
       Alert.alert(
         "Could not log creatine",
@@ -102,7 +103,7 @@ export default function CreatineScreen() {
       setSaving(true);
       await deleteCreatineLog(selectedLog);
       await loadLogs(false);
-      await syncCreatineReminderState({ allowImmediate: false });
+      void refreshLogReminders("creatine");
     } finally {
       savingRef.current = false;
       setSaving(false);

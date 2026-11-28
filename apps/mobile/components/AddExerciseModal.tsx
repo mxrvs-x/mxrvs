@@ -1,3 +1,4 @@
+import { KeyboardFormInput as TextInput, KeyboardFormScrollView } from "@/components/KeyboardForm";
 import {
   MUSCLE_GROUPS,
   formatMuscleGroup,
@@ -6,11 +7,10 @@ import {
 } from "@/lib/workoutPlans";
 import { useEffect, useState } from "react";
 import {
+  KeyboardAvoidingView,
   Modal,
   Pressable,
-  ScrollView,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { useTheme } from "@/lib/theme";
@@ -47,7 +47,8 @@ export default function AddExerciseModal({
 
   return (
     <Modal visible={visible} animationType="fade" transparent>
-      <View
+      <KeyboardAvoidingView
+        behavior="padding"
         style={{
           flex: 1,
           backgroundColor:
@@ -70,7 +71,7 @@ export default function AddExerciseModal({
             ...theme.shadow.card,
           }}
         >
-          <ScrollView showsVerticalScrollIndicator={false}>
+          <KeyboardFormScrollView showsVerticalScrollIndicator={false}>
             {/* HEADER */}
             <View
               style={{
@@ -291,9 +292,9 @@ export default function AddExerciseModal({
                 </Text>
               </Pressable>
             </View>
-          </ScrollView>
+          </KeyboardFormScrollView>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

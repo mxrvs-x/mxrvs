@@ -1,9 +1,8 @@
 import AppUpdateGate from "@/components/AppUpdateGate";
-import CreatineReminderGate from "@/components/CreatineReminderGate";
 import DailyActivityGate from "@/components/DailyActivityGate";
+import LogReminderGate from "@/components/LogReminderGate";
 import OfflineSyncGate from "@/components/OfflineSyncGate";
 import PostLoginPermissionGate from "@/components/PostLoginPermissionGate";
-import WeightReminderGate from "@/components/WeightReminderGate";
 import "@/lib/backgroundCardioLocation";
 import { setSleepWidgetOwner } from "@/lib/sleepRecordingStorage";
 import { supabase } from "@/lib/supabase";
@@ -11,6 +10,7 @@ import { AppThemeProvider, useTheme } from "@/lib/theme";
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useMemo } from "react";
+import { KeyboardAvoidingView } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
@@ -48,8 +48,7 @@ function RootStack() {
       <OfflineSyncGate />
       <PostLoginPermissionGate />
       <DailyActivityGate />
-      <CreatineReminderGate />
-      <WeightReminderGate />
+      <LogReminderGate />
       <ThemeProvider value={navigationTheme}>
         <Stack
           screenOptions={{
@@ -72,9 +71,11 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <AppThemeProvider>
-          <RootStack />
-        </AppThemeProvider>
+        <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
+          <AppThemeProvider>
+            <RootStack />
+          </AppThemeProvider>
+        </KeyboardAvoidingView>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

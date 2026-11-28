@@ -296,6 +296,144 @@ h3 {
   grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
 }
 
+.cardio-overview > .page-header {
+  margin-bottom: 4px;
+}
+
+.view-switcher {
+  display: flex;
+  width: fit-content;
+  max-width: 100%;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+.view-switcher a {
+  display: grid;
+  align-items: center;
+  min-height: 44px;
+  padding: 6px 14px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  color: var(--text-muted);
+  font-weight: 800;
+  text-align: center;
+}
+
+.view-switcher a[aria-current="page"] {
+  background: var(--surface-raised);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.workout-review {
+  align-items: start;
+}
+
+.record-count {
+  font-size: 0.85em;
+}
+
+.records-table-scroll {
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.records-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.records-table :is(th, td) {
+  padding: 10px clamp(8px, 1.2vw, 16px);
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+
+.records-table thead {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.table-date-filter {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.table-date-filter input {
+  max-width: 100%;
+  min-height: 36px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.table-clear-date {
+  margin-top: 4px;
+}
+
+.records-table tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
+.records-table-scroll .records-table td {
+  white-space: nowrap;
+}
+
+.daily-records td:last-child {
+  white-space: normal;
+}
+
+.records-table a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.records-table small {
+  display: block;
+  margin-top: 2px;
+  font-weight: 500;
+}
+
+.workout-date {
+  display: block;
+  margin-top: 8px;
+}
+
+.workout-recovery {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 105px), 1fr));
+}
+
+.workout-recovery > * {
+  min-width: 0;
+}
+
+.workout-set-table :is(th, td) {
+  width: 33.333%;
+}
+
+@media (min-width: 1100px) {
+  .workout-review.has-sidebar {
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  }
+
+  .workout-summary {
+    grid-column: 1 / -1;
+  }
+}
+
 .three-col {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -759,6 +897,213 @@ button.list-item:hover {
   height: 280px;
   min-width: 0;
   position: relative;
+}
+
+.button.assistant-launcher {
+  border-radius: 50%;
+  bottom: max(20px, env(safe-area-inset-bottom));
+  height: 56px;
+  padding: 0;
+  position: fixed;
+  right: max(20px, env(safe-area-inset-right));
+  width: 56px;
+  z-index: 25;
+}
+
+.assistant-dialog {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--text);
+  height: min(600px, calc(100dvh - 40px));
+  inset: auto max(20px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) auto;
+  margin: 0;
+  max-height: none;
+  max-width: none;
+  overflow: hidden;
+  padding: 14px;
+  position: fixed;
+  width: min(460px, calc(100vw - 40px));
+}
+
+.assistant-dialog[open] {
+  display: grid;
+  gap: 12px;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.assistant-dialog.expanded {
+  height: min(850px, calc(100dvh - 40px));
+  width: min(940px, calc(100vw - 40px));
+}
+
+.assistant-dialog::backdrop {
+  background: rgba(4, 10, 18, 0.48);
+}
+
+.assistant-header {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.assistant-actions {
+  display: flex;
+  gap: 6px;
+}
+
+@media (max-width: 1199px) {
+  .button.assistant-launcher {
+    bottom: calc(88px + env(safe-area-inset-bottom));
+  }
+}
+
+@media (max-width: 540px) {
+  .assistant-dialog,
+  .assistant-dialog.expanded {
+    inset: auto 8px max(8px, env(safe-area-inset-bottom));
+    width: auto;
+  }
+
+  .assistant-dialog.expanded {
+    height: calc(100dvh - 16px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  }
+}
+
+.assistant-chat {
+  display: grid;
+  gap: 12px;
+  grid-template-rows: minmax(0, 1fr) auto auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+.assistant-transcript {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  overflow: auto;
+}
+
+.assistant-empty {
+  margin-block: auto;
+  padding: 8px;
+}
+
+.assistant-empty svg {
+  color: var(--primary);
+}
+
+.assistant-empty button {
+  text-align: left;
+  white-space: normal;
+}
+
+.assistant-message {
+  align-self: flex-start;
+  flex: 0 0 auto;
+  background: var(--surface-alt);
+  border-radius: var(--radius-md);
+  max-width: 92%;
+  overflow-wrap: anywhere;
+  padding: 12px 16px;
+}
+
+.assistant-message.user {
+  align-self: flex-end;
+  background: var(--primary-soft);
+}
+
+.assistant-author {
+  color: var(--primary);
+  font-size: 13px;
+}
+
+.assistant-message p {
+  margin: 5px 0 0;
+  white-space: pre-wrap;
+}
+
+.assistant-reply {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  margin-top: 5px;
+}
+
+.assistant-reply p,
+.assistant-reply h3,
+.assistant-reply ul,
+.assistant-reply ol {
+  margin: 0;
+}
+
+.assistant-reply h3 {
+  font-size: 1em;
+}
+
+.assistant-reply ul,
+.assistant-reply ol {
+  padding-inline-start: 1.35em;
+}
+
+.assistant-reply li + li {
+  margin-top: 4px;
+}
+
+.assistant-table-scroll {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.assistant-table {
+  border-collapse: collapse;
+  font-size: 14px;
+  width: 100%;
+}
+
+.assistant-table th,
+.assistant-table td {
+  border-bottom: 1px solid var(--border);
+  max-width: 260px;
+  min-width: 100px;
+  padding: 8px 12px;
+  vertical-align: top;
+}
+
+.assistant-table th {
+  background: var(--primary-soft);
+}
+
+.assistant-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.assistant-retry {
+  justify-self: start;
+}
+
+.assistant-composer {
+  align-items: end;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.assistant-composer textarea {
+  max-height: 120px;
+  min-height: 48px;
+  resize: vertical;
+}
+
+.assistant-privacy {
+  font-size: 12px;
+  margin: 0;
 }
 
 .modal-backdrop {

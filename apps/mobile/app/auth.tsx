@@ -1,8 +1,10 @@
+import { KeyboardFormInput as TextInput, KeyboardFormScrollView } from "@/components/KeyboardForm";
 import ThemedAlert from "@/components/ThemedAlert";
 import {
   authenticateBiometricSession,
   persistBiometricPreference,
   readBiometricReadiness,
+  SAVED_EMAIL_KEY,
 } from "@/lib/authRecovery";
 import { cacheOfflineUser } from "@/lib/offlineUser";
 import { useTheme } from "@/lib/theme";
@@ -13,19 +15,14 @@ import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Keyboard,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
-  ScrollView,
   Text,
-  TextInput,
   TouchableWithoutFeedback,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase, supabaseConfigError } from "../lib/supabase";
 
-const SAVED_EMAIL_KEY = "mxrvs_saved_email";
 const BIOMETRIC_ENABLED_KEY = "mxrvs_biometric_enabled";
 
 export default function AuthScreen() {
@@ -266,87 +263,167 @@ export default function AuthScreen() {
         backgroundColor: theme.colors.background,
       }}
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={{ flex: 1 }}
-      >
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <ScrollView
-            contentContainerStyle={{
-              flexGrow: 1,
-              justifyContent: "center",
-              padding: 24,
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <KeyboardFormScrollView
+          contentContainerStyle={{
+            flexGrow: 1,
+            justifyContent: "center",
+            padding: 24,
+          }}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View
+            style={{
+              backgroundColor: theme.colors.surface,
+              borderRadius: theme.radius.xl,
+              padding: 22,
+              borderWidth: 1,
+              borderColor: theme.colors.border,
+              ...theme.shadow.card,
             }}
-            keyboardShouldPersistTaps="handled"
           >
-            <View
+            <Text
               style={{
-                backgroundColor: theme.colors.surface,
-                borderRadius: theme.radius.xl,
-                padding: 22,
-                borderWidth: 1,
-                borderColor: theme.colors.border,
-                ...theme.shadow.card,
+                fontSize: theme.fontSize.xxl,
+                fontWeight: "900",
+                color: theme.colors.text,
               }}
             >
-              <Text
+              mxrvs
+            </Text>
+
+            <Text
+              style={{
+                marginTop: 6,
+                marginBottom: 24,
+                color: theme.colors.textMuted,
+                fontSize: theme.fontSize.md,
+              }}
+            >
+              Login to track your workouts and cardio.
+            </Text>
+
+            {supabaseConfigError ? (
+              <View
                 style={{
-                  fontSize: theme.fontSize.xxl,
-                  fontWeight: "900",
-                  color: theme.colors.text,
+                  padding: 14,
+                  borderRadius: theme.radius.md,
+                  borderWidth: 1,
+                  borderColor: theme.colors.danger,
+                  backgroundColor: theme.colors.surfaceAlt,
                 }}
               >
-                mxrvs
-              </Text>
-
-              <Text
-                style={{
-                  marginTop: 6,
-                  marginBottom: 24,
-                  color: theme.colors.textMuted,
-                  fontSize: theme.fontSize.md,
-                }}
-              >
-                Login to track your workouts and cardio.
-              </Text>
-
-              {supabaseConfigError ? (
-                <View
+                <Text
                   style={{
-                    padding: 14,
+                    color: theme.colors.danger,
+                    fontWeight: "900",
+                    fontSize: theme.fontSize.md,
+                  }}
+                >
+                  Configuration Issue
+                </Text>
+
+                <Text
+                  style={{
+                    marginTop: 8,
+                    color: theme.colors.textMuted,
+                    fontSize: theme.fontSize.sm,
+                    lineHeight: 20,
+                  }}
+                >
+                  {supabaseConfigError}
+                </Text>
+              </View>
+            ) : biometricReady ? (
+              loading ? (
+                <ActivityIndicator color={theme.colors.primary} />
+              ) : (
+                <Pressable
+                  onPress={loginWithFingerprint}
+                  style={{
+                    backgroundColor: theme.colors.primaryFill,
+                    padding: 15,
                     borderRadius: theme.radius.md,
-                    borderWidth: 1,
-                    borderColor: theme.colors.danger,
-                    backgroundColor: theme.colors.surfaceAlt,
+                    alignItems: "center",
                   }}
                 >
                   <Text
                     style={{
-                      color: theme.colors.danger,
+                      color: theme.colors.textInverse,
                       fontWeight: "900",
                       fontSize: theme.fontSize.md,
                     }}
                   >
-                    Configuration Issue
+                    Login
                   </Text>
+                </Pressable>
+              )
+            ) : (
+              <>
+                <Text
+                  style={{
+                    marginBottom: 6,
+                    color: theme.colors.textMuted,
+                    fontWeight: "700",
+                  }}
+                >
+                  Email
+                </Text>
 
-                  <Text
-                    style={{
-                      marginTop: 8,
-                      color: theme.colors.textMuted,
-                      fontSize: theme.fontSize.sm,
-                      lineHeight: 20,
-                    }}
-                  >
-                    {supabaseConfigError}
-                  </Text>
-                </View>
-              ) : biometricReady ? (
-                loading ? (
+                <TextInput
+                  placeholder="Email"
+                  placeholderTextColor={theme.colors.textFaint}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="email-address"
+                  returnKeyType="next"
+                  value={email}
+                  onChangeText={setEmail}
+                  style={{
+                    borderWidth: 1,
+                    borderColor: theme.colors.border,
+                    borderRadius: theme.radius.md,
+                    padding: 14,
+                    color: theme.colors.text,
+                    backgroundColor: theme.colors.surfaceAlt,
+                    marginBottom: 14,
+                  }}
+                />
+
+                <Text
+                  style={{
+                    marginBottom: 6,
+                    color: theme.colors.textMuted,
+                    fontWeight: "700",
+                  }}
+                >
+                  Password
+                </Text>
+
+                <TextInput
+                  placeholder="Password"
+                  placeholderTextColor={theme.colors.textFaint}
+                  secureTextEntry
+                  returnKeyType="done"
+                  value={password}
+                  onChangeText={setPassword}
+                  onSubmitEditing={signIn}
+                  style={{
+                    borderWidth: 1,
+                    borderColor: theme.colors.border,
+                    borderRadius: theme.radius.md,
+                    padding: 14,
+                    color: theme.colors.text,
+                    backgroundColor: theme.colors.surfaceAlt,
+                    marginBottom: 18,
+                  }}
+                />
+
+                {loading ? (
                   <ActivityIndicator color={theme.colors.primary} />
                 ) : (
                   <Pressable
-                    onPress={loginWithFingerprint}
+                    onPress={signIn}
                     style={{
                       backgroundColor: theme.colors.primaryFill,
                       padding: 15,
@@ -361,100 +438,15 @@ export default function AuthScreen() {
                         fontSize: theme.fontSize.md,
                       }}
                     >
-                      Login
+                      Login with Email
                     </Text>
                   </Pressable>
-                )
-              ) : (
-                <>
-                  <Text
-                    style={{
-                      marginBottom: 6,
-                      color: theme.colors.textMuted,
-                      fontWeight: "700",
-                    }}
-                  >
-                    Email
-                  </Text>
-
-                  <TextInput
-                    placeholder="Email"
-                    placeholderTextColor={theme.colors.textFaint}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    keyboardType="email-address"
-                    returnKeyType="next"
-                    value={email}
-                    onChangeText={setEmail}
-                    style={{
-                      borderWidth: 1,
-                      borderColor: theme.colors.border,
-                      borderRadius: theme.radius.md,
-                      padding: 14,
-                      color: theme.colors.text,
-                      backgroundColor: theme.colors.surfaceAlt,
-                      marginBottom: 14,
-                    }}
-                  />
-
-                  <Text
-                    style={{
-                      marginBottom: 6,
-                      color: theme.colors.textMuted,
-                      fontWeight: "700",
-                    }}
-                  >
-                    Password
-                  </Text>
-
-                  <TextInput
-                    placeholder="Password"
-                    placeholderTextColor={theme.colors.textFaint}
-                    secureTextEntry
-                    returnKeyType="done"
-                    value={password}
-                    onChangeText={setPassword}
-                    onSubmitEditing={signIn}
-                    style={{
-                      borderWidth: 1,
-                      borderColor: theme.colors.border,
-                      borderRadius: theme.radius.md,
-                      padding: 14,
-                      color: theme.colors.text,
-                      backgroundColor: theme.colors.surfaceAlt,
-                      marginBottom: 18,
-                    }}
-                  />
-
-                  {loading ? (
-                    <ActivityIndicator color={theme.colors.primary} />
-                  ) : (
-                    <Pressable
-                      onPress={signIn}
-                      style={{
-                        backgroundColor: theme.colors.primaryFill,
-                        padding: 15,
-                        borderRadius: theme.radius.md,
-                        alignItems: "center",
-                      }}
-                    >
-                      <Text
-                        style={{
-                          color: theme.colors.textInverse,
-                          fontWeight: "900",
-                          fontSize: theme.fontSize.md,
-                        }}
-                      >
-                        Login with Email
-                      </Text>
-                    </Pressable>
-                  )}
-                </>
-              )}
-            </View>
-          </ScrollView>
-        </TouchableWithoutFeedback>
-      </KeyboardAvoidingView>
+                )}
+              </>
+            )}
+          </View>
+        </KeyboardFormScrollView>
+      </TouchableWithoutFeedback>
 
       {themedAlert}
     </SafeAreaView>

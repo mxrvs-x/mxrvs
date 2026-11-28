@@ -1,11 +1,14 @@
+import { KeyboardFormScrollView } from "@/components/KeyboardForm";
+import AccountSettings from "@/components/AccountSettings";
 import EditHeightModal, { HeightForm } from "@/components/EditHeightModal";
 import LogBodyWeightModal, {
   BodyWeightLogForm,
 } from "@/components/LogBodyWeightModal";
 import ThemedAlert from "@/components/ThemedAlert";
+import { SAVED_EMAIL_KEY } from "@/lib/authRecovery";
 import { refreshDailyActivity } from "@/lib/dailyActivity";
 import { cacheOfflineBodyWeightKg, isOnline } from "@/lib/offlineCardio";
-import { resolveOfflineUserId } from "@/lib/offlineUser";
+import { cacheOfflineUser, resolveOfflineUserId } from "@/lib/offlineUser";
 import {
   cacheBodyStats,
   cacheBodyWeightForWidget,
@@ -16,16 +19,17 @@ import {
 } from "@/lib/offlineWeight";
 import { supabase } from "@/lib/supabase";
 import { AppTheme, useTheme } from "@/lib/theme";
-import { syncWeightReminderState } from "@/lib/weightNotifications";
+import { recordReminderLogChange, refreshLogReminders } from "@/lib/logReminders";
 import { useFocusEffect, useRouter } from "expo-router";
+import * as SecureStore from "expo-secure-store";
 import { BarChart3, Ruler, Scale, UserRound } from "lucide-react-native";
 import { useCallback, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   ActivityIndicator,
+  AppState,
   Pressable,
   RefreshControl,
-  ScrollView,
   Text,
   View,
 } from "react-native";
@@ -54,6 +58,13 @@ type UserDetails = {
   email: string;
   display_name: string;
 };
+
+async function cacheConfirmedEmail(userId: string, previous: string, email: string) {
+  await cacheOfflineUser({ id: userId, email });
+  if (previous && (await SecureStore.getItemAsync(SAVED_EMAIL_KEY)) === previous) {
+    await SecureStore.setItemAsync(SAVED_EMAIL_KEY, email);
+  }
+}
 
 function localDateString(date: Date) {
   const year = date.getFullYear();
@@ -193,15 +204,36 @@ export default function ProfileScreen() {
     setRefreshing(false);
   }
 
+  const refreshAccountEmail = useCallback(async () => {
+    if (!(await isOnline())) return;
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user?.email || user.id !== session.user.id) return;
+    const email = user.email;
+    const previous = session.user.email ?? "";
+    setUserDetails((current) => current?.id === user.id && current.email !== email ? { ...current, email } : current);
+    if (previous !== email) {
+      const { data, error } = await supabase.auth.refreshSession();
+      if (!error && data.session?.user.id === user.id) await cacheConfirmedEmail(user.id, previous, email);
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
-      loadProfile();
-    }, []),
+      const refreshEmail = () => void refreshAccountEmail().catch(() => {});
+      void loadProfile().then(refreshEmail);
+      const subscription = AppState.addEventListener("change", (state) => {
+        if (state === "active") refreshEmail();
+      });
+      return () => subscription.remove();
+    }, [refreshAccountEmail]),
   );
 
   async function onRefresh() {
     setRefreshing(true);
     await loadProfile();
+    await refreshAccountEmail().catch(() => {});
   }
 
   function getInitialWeightLogForm(): BodyWeightLogForm {
@@ -274,9 +306,9 @@ export default function ProfileScreen() {
       if (!(await isOnline())) {
         const nextLog = await logBodyWeightOffline(payload);
         setBodyWeightLog(nextLog as BodyWeightLog);
+        void refreshLogReminders("weight");
         await cacheOfflineBodyWeightKg(Number(nextLog.weight_kg));
         await refreshDailyActivity();
-        await syncWeightReminderState({ allowImmediate: false });
         setLogWeightVisible(false);
         showAlert("Saved Offline", "Your weight will sync when you are online.");
         return;
@@ -292,6 +324,7 @@ export default function ProfileScreen() {
         console.log("Log body weight upload error:", error);
         const nextLog = await logBodyWeightOffline(payload);
         setBodyWeightLog(nextLog as BodyWeightLog);
+        void refreshLogReminders("weight");
         await cacheOfflineBodyWeightKg(Number(nextLog.weight_kg));
         await refreshDailyActivity();
         setLogWeightVisible(false);
@@ -301,9 +334,9 @@ export default function ProfileScreen() {
 
       const nextLog = data as BodyWeightLog;
       setBodyWeightLog(nextLog);
+      void recordReminderLogChange(userId, "weight", { added: payload.date });
       await cacheBodyWeightForWidget(nextLog);
       await refreshDailyActivity();
-      await syncWeightReminderState({ allowImmediate: false });
       setLogWeightVisible(false);
       showAlert("Logged", "Your weight is saved for cardio estimates.");
     } catch (error) {
@@ -424,8 +457,9 @@ export default function ProfileScreen() {
         onSave={updateHeight}
       />
 
-      <ScrollView
+      <KeyboardFormScrollView
         style={{ flex: 1 }}
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
           padding: theme.layout.screenPadding,
           paddingBottom: 32,
@@ -469,6 +503,13 @@ export default function ProfileScreen() {
             </Text>
           </View>
         </View>
+
+        {userDetails && (
+          <AccountSettings key={userDetails.id} email={userDetails.email} onEmailChanged={(email) => {
+            setUserDetails((current) => current?.id === userDetails.id ? { ...current, email } : current);
+            void cacheConfirmedEmail(userDetails.id, userDetails.email, email).catch(() => {});
+          }} />
+        )}
 
         <Text
           style={{
@@ -562,7 +603,7 @@ export default function ProfileScreen() {
             />
           </View>
         </View>
-      </ScrollView>
+      </KeyboardFormScrollView>
 
       {alert}
     </SafeAreaView>

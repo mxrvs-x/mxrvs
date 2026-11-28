@@ -1,14 +1,12 @@
+import { KeyboardFormInput as TextInput, KeyboardFormScrollView } from "@/components/KeyboardForm";
 import { useTheme } from "@/lib/theme";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
-  ScrollView,
   Text,
-  TextInput,
   View,
   type KeyboardTypeOptions,
 } from "react-native";
@@ -57,7 +55,7 @@ export default function LogBodyWeightModal({
   return (
     <Modal visible={visible} animationType="fade" transparent>
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior="padding"
         style={{
           flex: 1,
           backgroundColor:
@@ -68,17 +66,19 @@ export default function LogBodyWeightModal({
           padding: 20,
         }}
       >
-        <View
+        <KeyboardFormScrollView
           style={{
             width: "100%",
-            maxHeight: "86%",
+            flexGrow: 0,
+            maxHeight: "100%",
             backgroundColor: theme.colors.surface,
             borderRadius: theme.radius.xl,
-            padding: 20,
             borderWidth: 1,
             borderColor: theme.colors.border,
             ...theme.shadow.card,
           }}
+          contentContainerStyle={{ padding: 20 }}
+          showsVerticalScrollIndicator={false}
         >
           <Text
             style={{
@@ -101,28 +101,22 @@ export default function LogBodyWeightModal({
             Track your daily weight. Each save creates a new timestamped log.
           </Text>
 
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            contentContainerStyle={{ paddingTop: 2 }}
-          >
-            <FormInput
-              label="Weight"
-              value={form.weight_kg}
-              onChangeText={(value) => updateField("weight_kg", value)}
-              keyboardType="decimal-pad"
-              suffix="kg"
-            />
+          <FormInput
+            label="Weight"
+            value={form.weight_kg}
+            onChangeText={(value) => updateField("weight_kg", value)}
+            keyboardType="decimal-pad"
+            suffix="kg"
+          />
 
-            <FormInput
-              label="Body Fat"
-              value={form.body_fat_percent}
-              onChangeText={(value) => updateField("body_fat_percent", value)}
-              keyboardType="decimal-pad"
-              placeholder="Optional"
-              suffix="%"
-            />
-          </ScrollView>
+          <FormInput
+            label="Body Fat"
+            value={form.body_fat_percent}
+            onChangeText={(value) => updateField("body_fat_percent", value)}
+            keyboardType="decimal-pad"
+            placeholder="Optional"
+            suffix="%"
+          />
 
           <View style={{ flexDirection: "row", marginTop: 20 }}>
             <Pressable
@@ -174,7 +168,7 @@ export default function LogBodyWeightModal({
               )}
             </Pressable>
           </View>
-        </View>
+        </KeyboardFormScrollView>
       </KeyboardAvoidingView>
     </Modal>
   );

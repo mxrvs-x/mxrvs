@@ -1,301 +1,215 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+﻿import AsyncStorage from "@react-native-async-storage/async-storage";
+import NetInfo from "@react-native-community/netinfo";
+import * as Notifications from "expo-notifications";
+import { getCachedCreatineLogs, getOfflineCreatineLogs } from "@/lib/creatine";
+import { getCachedBodyWeightLogs, getOfflineBodyWeightLogs } from "@/lib/offlineWeight";
+import { supabase } from "@/lib/supabase";
+import {
+  configureLogReminders, getLastLogReminderUser, recordReminderLogChange, refreshLogReminders, setLogReminderUser,
+} from "@/lib/logReminders";
 
-jest.mock(
-  "@react-native-async-storage/async-storage",
-  () =>
-    require("@react-native-async-storage/async-storage/jest/async-storage-mock"),
+jest.mock("@react-native-async-storage/async-storage", () =>
+  require("@react-native-async-storage/async-storage/jest/async-storage-mock"),
 );
-
+jest.mock("@react-native-community/netinfo", () => ({ __esModule: true, default: { fetch: jest.fn() } }));
 jest.mock("expo-notifications", () => ({
   AndroidImportance: { HIGH: 4 },
-  SchedulableTriggerInputTypes: { DATE: "date" },
+  SchedulableTriggerInputTypes: { DATE: "date", DAILY: "daily" },
   cancelScheduledNotificationAsync: jest.fn(),
   getAllScheduledNotificationsAsync: jest.fn(),
   getPermissionsAsync: jest.fn(),
-  requestPermissionsAsync: jest.fn(),
   scheduleNotificationAsync: jest.fn(),
   setNotificationChannelAsync: jest.fn(),
   setNotificationHandler: jest.fn(),
 }));
-
-jest.mock("@react-native-community/netinfo", () => ({
-  __esModule: true,
-  default: { fetch: jest.fn() },
-}));
-
 jest.mock("@/lib/creatine", () => ({
   getCachedCreatineLogs: jest.fn(),
   getOfflineCreatineLogs: jest.fn(),
-  syncOfflineCreatineLogs: jest.fn(),
-  toDateKey: jest.fn((date: Date) => {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
-  }),
 }));
-
 jest.mock("@/lib/offlineWeight", () => ({
   getCachedBodyWeightLogs: jest.fn(),
   getOfflineBodyWeightLogs: jest.fn(),
 }));
+jest.mock("@/lib/supabase", () => ({ supabase: { from: jest.fn() } }));
 
-jest.mock("@/lib/supabase", () => ({
-  supabase: {
-    auth: { getSession: jest.fn() },
-    from: jest.fn(),
-  },
-}));
+const fetchNetwork = NetInfo.fetch as jest.Mock;
+const getPermissions = Notifications.getPermissionsAsync as jest.Mock;
+const schedule = Notifications.scheduleNotificationAsync as jest.Mock;
+const pending = new Map<string, Notifications.NotificationRequestInput>();
+const cancel = Notifications.cancelScheduledNotificationAsync as jest.Mock;
+const from = supabase.from as jest.Mock;
+const remoteRows: Record<string, { date?: string; log_date?: string }[]> = {};
+const today = "2026-11-22";
 
-import NetInfo from "@react-native-community/netinfo";
-import * as Notifications from "expo-notifications";
-import {
-  getCachedCreatineLogs,
-  getOfflineCreatineLogs,
-  syncOfflineCreatineLogs,
-} from "../lib/creatine";
-import {
-  configureCreatineNotifications,
-  syncCreatineReminderState,
-} from "../lib/creatineNotifications";
-import {
-  getCachedBodyWeightLogs,
-  getOfflineBodyWeightLogs,
-} from "../lib/offlineWeight";
-import { supabase } from "../lib/supabase";
-import {
-  configureWeightNotifications,
-  syncWeightReminderState,
-} from "../lib/weightNotifications";
-
-type Deferred<T> = {
-  promise: Promise<T>;
-  resolve: (value: T) => void;
-};
-
-function deferred<T>(): Deferred<T> {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((nextResolve) => {
-    resolve = nextResolve;
+function todayHours(kind: string) {
+  return [...pending.values()].flatMap(({ content, trigger }) => {
+    if (
+      content.data?.reminderType !== kind + "-reminder" || !trigger || typeof trigger !== "object" ||
+      !("date" in trigger) || !(trigger.date instanceof Date) || trigger.date.getDate() !== 22
+    ) return [];
+    return [trigger.date.getHours()];
   });
-  return { promise, resolve };
 }
 
-const mockFetch = NetInfo.fetch as jest.MockedFunction<typeof NetInfo.fetch>;
-const mockGetPermissions = Notifications.getPermissionsAsync as jest.Mock;
-const mockRequestPermissions = Notifications.requestPermissionsAsync as jest.Mock;
-const mockGetScheduled =
-  Notifications.getAllScheduledNotificationsAsync as jest.Mock;
-const mockCancelScheduled =
-  Notifications.cancelScheduledNotificationAsync as jest.Mock;
-const mockSchedule = Notifications.scheduleNotificationAsync as jest.Mock;
-const mockSetHandler = Notifications.setNotificationHandler as jest.Mock;
-const mockGetSession = supabase.auth.getSession as jest.Mock;
-const mockFrom = supabase.from as jest.Mock;
-const mockCreatineQuery = jest.fn();
-const mockWeightQuery = jest.fn();
-const mockGetOfflineCreatine = getOfflineCreatineLogs as jest.Mock;
-const mockGetCachedCreatine = getCachedCreatineLogs as jest.Mock;
-const mockSyncOfflineCreatine = syncOfflineCreatineLogs as jest.Mock;
-const mockGetOfflineWeight = getOfflineBodyWeightLogs as jest.Mock;
-const mockGetCachedWeight = getCachedBodyWeightLogs as jest.Mock;
-
-function queryChain(result: jest.Mock) {
-  const chain = {
-    eq: jest.fn(),
-    limit: jest.fn(),
-    maybeSingle: result,
-  };
-  chain.eq.mockReturnValue(chain);
-  chain.limit.mockReturnValue(chain);
-  return chain;
+function goOnline(online: boolean) {
+  fetchNetwork.mockResolvedValue({ isConnected: online, isInternetReachable: online });
 }
 
-function recurringScheduleCall() {
-  return mockSchedule.mock.calls.find(([request]) => request.trigger !== null)?.[0];
-}
-
-function immediateScheduleCalls() {
-  return mockSchedule.mock.calls.filter(([request]) => request.trigger === null);
-}
-
-describe("reminder notification scheduling", () => {
-  beforeEach(async () => {
-    await AsyncStorage.clear();
-    jest.clearAllMocks();
-    jest.useFakeTimers().setSystemTime(new Date(2026, 10, 22, 10, 0, 0));
-
-    mockGetPermissions.mockResolvedValue({ granted: true });
-    mockRequestPermissions.mockResolvedValue({ granted: true });
-    mockGetScheduled.mockResolvedValue([]);
-    mockCancelScheduled.mockResolvedValue(undefined);
-    mockSchedule.mockResolvedValue("new-reminder-id");
-    mockGetSession.mockResolvedValue({
-      data: { user: null, session: { user: { id: "user-1" } } },
-      error: null,
-    });
-    mockFetch.mockResolvedValue({
-      isConnected: true,
-      isInternetReachable: true,
-    } as Awaited<ReturnType<typeof NetInfo.fetch>>);
-    mockGetOfflineCreatine.mockResolvedValue([]);
-    mockGetCachedCreatine.mockResolvedValue([]);
-    mockSyncOfflineCreatine.mockResolvedValue({ synced: 0, remaining: 0 });
-    mockGetOfflineWeight.mockResolvedValue([]);
-    mockGetCachedWeight.mockResolvedValue([]);
-    mockCreatineQuery.mockResolvedValue({ data: null, error: null });
-    mockWeightQuery.mockResolvedValue({ data: null, error: null });
-
-    mockFrom.mockImplementation((table: string) => {
-      if (table === "creatine_logs") {
-        return { select: jest.fn(() => queryChain(mockCreatineQuery)) };
-      }
-      if (table === "body_weight_logs") {
-        return { select: jest.fn(() => queryChain(mockWeightQuery)) };
-      }
-      throw new Error(`Unexpected Supabase table: ${table}`);
-    });
+beforeEach(async () => {
+  await AsyncStorage.clear();
+  jest.clearAllMocks();
+  jest.useFakeTimers().setSystemTime(new Date(2026, 10, 22, 6));
+  pending.clear();
+  Object.keys(remoteRows).forEach((key) => delete remoteRows[key]);
+  goOnline(false);
+  getPermissions.mockResolvedValue({ granted: true });
+  (Notifications.getAllScheduledNotificationsAsync as jest.Mock).mockImplementation(async () => [...pending.values()]);
+  schedule.mockImplementation(async (request: Notifications.NotificationRequestInput) => {
+    pending.set(request.identifier!, request);
+    return request.identifier;
   });
-
-  afterEach(() => {
-    jest.useRealTimers();
+  cancel.mockImplementation(async (identifier: string) => { pending.delete(identifier); });
+  for (const cache of [getOfflineBodyWeightLogs, getCachedBodyWeightLogs, getOfflineCreatineLogs, getCachedCreatineLogs]) {
+    (cache as jest.Mock).mockResolvedValue([]);
+  }
+  from.mockImplementation((table: string) => {
+    const query = {
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      gte: jest.fn().mockReturnThis(),
+      lte: jest.fn().mockReturnThis(),
+      abortSignal: async () => ({ data: remoteRows[table] ?? [], error: null }),
+    };
+    return query;
   });
+  await setLogReminderUser(null);
+  jest.clearAllMocks();
+});
 
-  it("configures notification handlers for both reminder types", () => {
-    configureCreatineNotifications();
-    configureWeightNotifications();
+afterEach(() => jest.useRealTimers());
 
-    expect(mockSetHandler).toHaveBeenCalledTimes(2);
+test("configures foreground delivery and schedules the requested local hours while offline", async () => {
+  configureLogReminders();
+  await setLogReminderUser("user-1");
+
+  expect(Notifications.setNotificationHandler).toHaveBeenCalledTimes(1);
+  expect(from).not.toHaveBeenCalled();
+  expect(todayHours("sleep")).toEqual([9, 21]);
+  expect(todayHours("weight")).toEqual([7, 20]);
+  expect(todayHours("creatine")).toEqual([9, 21]);
+  expect([...pending.values()].find(({ content }) => content.data?.screen === "macros")?.trigger)
+    .toMatchObject({ type: "daily", hour: 21, minute: 0 });
+  expect(pending.size).toBe(43);
+});
+
+test("reconnection preserves pending alarms without replaying delivered or missed reminders", async () => {
+  await setLogReminderUser("user-1");
+  const seven = new Date(2026, 10, 22, 7).getTime();
+  const nine = new Date(2026, 10, 22, 9).getTime();
+  pending.delete("mxrvs:user-1:weight:" + seven);
+  pending.delete("mxrvs:user-1:sleep:" + nine);
+  // Creatine's 9 AM alarm remains pending if Android is deferring delivery.
+  jest.setSystemTime(new Date(2026, 10, 22, 10));
+  schedule.mockClear();
+  cancel.mockClear();
+
+  goOnline(true);
+  await Promise.all([refreshLogReminders(), refreshLogReminders()]);
+
+  expect(schedule).not.toHaveBeenCalled();
+  expect(cancel).not.toHaveBeenCalled();
+  expect(todayHours("weight")).toEqual([20]);
+  expect(todayHours("sleep")).toEqual([21]);
+  expect(todayHours("creatine")).toEqual([9, 21]);
+});
+
+test("today's sleep save cancels the second reminder offline and deletion restores the future slot", async () => {
+  await setLogReminderUser("user-1");
+  const nine = new Date(2026, 10, 22, 9).getTime();
+  pending.delete("mxrvs:user-1:sleep:" + nine);
+  jest.setSystemTime(new Date(2026, 10, 22, 10));
+  await recordReminderLogChange("user-1", "sleep", { added: today });
+  expect(todayHours("sleep")).toEqual([]);
+  expect([...pending.values()].some(({ content }) => content.data?.screen === "macros")).toBe(true);
+
+  await recordReminderLogChange("user-1", "sleep", { removed: today });
+  expect(todayHours("sleep")).toEqual([21]);
+});
+
+test("remote logs stay known offline and pending writes suppress same-day weight and creatine reminders", async () => {
+  goOnline(true);
+  remoteRows.sleep_logs = [{ log_date: today }];
+  await setLogReminderUser("user-1");
+  expect(todayHours("sleep")).toEqual([]);
+
+  goOnline(false);
+  (getOfflineBodyWeightLogs as jest.Mock).mockResolvedValue([{ user_id: "user-1", date: today }]);
+  (getOfflineCreatineLogs as jest.Mock).mockResolvedValue([{ user_id: "user-1", date: today }]);
+  await refreshLogReminders();
+  expect(todayHours("sleep")).toEqual([]);
+  expect(todayHours("weight")).toEqual([]);
+  expect(todayHours("creatine")).toEqual([]);
+
+  // An unrelated account's cached entry cannot suppress this account's reminders.
+  (getOfflineCreatineLogs as jest.Mock).mockResolvedValue([]);
+  (getCachedCreatineLogs as jest.Mock).mockResolvedValue([{ user_id: "user-2", date: today }]);
+  await refreshLogReminders("creatine");
+  expect(todayHours("creatine")).toEqual([9, 21]);
+});
+
+test("an offline weight log that syncs during the query still suppresses today's reminders", async () => {
+  goOnline(true);
+  (getOfflineBodyWeightLogs as jest.Mock).mockResolvedValueOnce([{ user_id: "user-1", date: today }]);
+  await setLogReminderUser("user-1");
+  expect(todayHours("weight")).toEqual([]);
+});
+
+test("opening the app the next day extends the schedule without a catch-up notification", async () => {
+  await setLogReminderUser("user-1");
+  jest.setSystemTime(new Date(2026, 10, 23, 10));
+  schedule.mockClear();
+  await refreshLogReminders();
+
+  expect(schedule).toHaveBeenCalledTimes(6);
+  for (const [request] of schedule.mock.calls) {
+    expect(request.trigger.type).toBe("date");
+    expect(request.trigger.date.getDate()).toBe(29);
+  }
+  expect([...pending.values()].some(({ trigger }) =>
+    trigger && typeof trigger === "object" && "date" in trigger &&
+    trigger.date instanceof Date && trigger.date.getDate() === 22,
+  )).toBe(false);
+});
+
+test("a dropped connection during the sleep query preserves the locally known log", async () => {
+  goOnline(true);
+  remoteRows.sleep_logs = [{ log_date: today }];
+  await setLogReminderUser("user-1");
+  const normalQuery = from.getMockImplementation();
+  from.mockImplementation((table: string) => {
+    const query = normalQuery?.(table);
+    if (table === "sleep_logs") query.abortSignal = async () => { throw new Error("Offline"); };
+    return query;
   });
+  await refreshLogReminders();
+  expect(todayHours("sleep")).toEqual([]);
+});
 
-  it("does nothing when notification permission is denied", async () => {
-    mockGetPermissions.mockResolvedValue({ granted: false });
-    mockRequestPermissions.mockResolvedValue({ granted: false });
+test("cleans up old and signed-out reminders while preserving unrelated notifications", async () => {
+  pending.set("legacy", { identifier: "legacy", content: { data: { reminderType: "weight-reminder" } }, trigger: null });
+  pending.set("unrelated", { identifier: "unrelated", content: { title: "Other" }, trigger: null });
+  await setLogReminderUser("user-1");
+  expect(await getLastLogReminderUser()).toBe("user-1");
+  expect(cancel).toHaveBeenCalledWith("legacy");
+  await setLogReminderUser(null);
+  expect([...pending.keys()]).toEqual(["unrelated"]);
+  expect(await getLastLogReminderUser()).toBeNull();
+});
 
-    await syncCreatineReminderState();
-    await syncWeightReminderState();
-
-    expect(mockSchedule).not.toHaveBeenCalled();
-    expect(mockFrom).not.toHaveBeenCalled();
-  });
-
-  it("uses an offline creatine log to avoid a false immediate reminder", async () => {
-    mockGetOfflineCreatine.mockResolvedValue([{ date: "2026-11-22" }]);
-
-    await syncCreatineReminderState();
-
-    expect(mockFetch).not.toHaveBeenCalled();
-    expect(mockFrom).not.toHaveBeenCalled();
-    expect(immediateScheduleCalls()).toHaveLength(0);
-    expect(recurringScheduleCall().trigger.date.getHours()).toBe(9);
-    expect(recurringScheduleCall().trigger.date.getDate()).toBe(23);
-  });
-
-  it("uses cached creatine history when no pending log exists", async () => {
-    mockGetCachedCreatine.mockResolvedValue([{ date: "2026-11-22" }]);
-
-    await syncCreatineReminderState();
-
-    expect(mockSyncOfflineCreatine).not.toHaveBeenCalled();
-    expect(mockFrom).not.toHaveBeenCalled();
-    expect(immediateScheduleCalls()).toHaveLength(0);
-  });
-
-  it("uses an offline weight log to avoid a false immediate reminder", async () => {
-    mockGetOfflineWeight.mockResolvedValue([{ date: "2026-11-22" }]);
-
-    await syncWeightReminderState();
-
-    expect(mockFetch).not.toHaveBeenCalled();
-    expect(mockFrom).not.toHaveBeenCalled();
-    expect(immediateScheduleCalls()).toHaveLength(0);
-    expect(recurringScheduleCall().trigger.date.getHours()).toBe(7);
-    expect(recurringScheduleCall().trigger.date.getDate()).toBe(23);
-  });
-
-  it("uses cached weight history when no pending log exists", async () => {
-    mockGetCachedWeight.mockResolvedValue([{ date: "2026-11-22" }]);
-
-    await syncWeightReminderState();
-
-    expect(mockFrom).not.toHaveBeenCalled();
-    expect(immediateScheduleCalls()).toHaveLength(0);
-  });
-
-  it("schedules only one immediate creatine reminder per day", async () => {
-    await syncCreatineReminderState();
-    await syncCreatineReminderState();
-
-    expect(immediateScheduleCalls()).toHaveLength(1);
-    const recurring = recurringScheduleCall();
-    expect(recurring.trigger.date.getHours()).toBe(21);
-    expect(recurring.trigger.date.getDate()).toBe(22);
-  });
-
-  it("schedules only one immediate weight reminder per day", async () => {
-    await syncWeightReminderState();
-    await syncWeightReminderState();
-
-    expect(immediateScheduleCalls()).toHaveLength(1);
-    const recurring = recurringScheduleCall();
-    expect(recurring.trigger.date.getHours()).toBe(20);
-    expect(recurring.trigger.date.getDate()).toBe(22);
-  });
-
-  it("cancels matching stale reminders without touching unrelated ones", async () => {
-    mockGetScheduled.mockResolvedValue([
-      {
-        identifier: "old-creatine",
-        content: { data: { reminderType: "creatine-reminder" } },
-      },
-      {
-        identifier: "unrelated",
-        content: { title: "Something else", data: { screen: "home" } },
-      },
-    ]);
-
-    await syncCreatineReminderState({ allowImmediate: false });
-
-    expect(mockCancelScheduled).toHaveBeenCalledTimes(1);
-    expect(mockCancelScheduled).toHaveBeenCalledWith("old-creatine");
-    expect(mockCancelScheduled).not.toHaveBeenCalledWith("unrelated");
-  });
-
-  it("shares one active creatine reminder synchronization", async () => {
-    const session = deferred<{
-      data: { session: { user: { id: string } } };
-      error: null;
-    }>();
-    mockGetSession.mockReturnValue(session.promise);
-
-    const first = syncCreatineReminderState({ allowImmediate: false });
-    const second = syncCreatineReminderState({ allowImmediate: false });
-    session.resolve({
-      data: { session: { user: { id: "user-1" } } },
-      error: null,
-    });
-    await Promise.all([first, second]);
-
-    expect(mockGetSession).toHaveBeenCalledTimes(1);
-    expect(mockSchedule).toHaveBeenCalledTimes(1);
-  });
-
-  it("shares one active weight reminder synchronization", async () => {
-    const session = deferred<{
-      data: { session: { user: { id: string } } };
-      error: null;
-    }>();
-    mockGetSession.mockReturnValue(session.promise);
-
-    const first = syncWeightReminderState({ allowImmediate: false });
-    const second = syncWeightReminderState({ allowImmediate: false });
-    session.resolve({
-      data: { session: { user: { id: "user-1" } } },
-      error: null,
-    });
-    await Promise.all([first, second]);
-
-    expect(mockGetSession).toHaveBeenCalledTimes(1);
-    expect(mockSchedule).toHaveBeenCalledTimes(1);
-  });
+test("does not schedule or query when notifications are denied", async () => {
+  getPermissions.mockResolvedValue({ granted: false });
+  goOnline(true);
+  await setLogReminderUser("user-1");
+  expect(schedule).not.toHaveBeenCalled();
+  expect(from).not.toHaveBeenCalled();
 });
