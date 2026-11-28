@@ -4,6 +4,9 @@
       "node": "24.18.0",
       "environment": "preview",
       "channel": "preview",
+      "env": {
+        "EXPO_PUBLIC_AI_API_URL": "https://mxrvs-web.vercel.app/api/assistant"
+      },
       "android": {
         "buildType": "apk"
       },

@@ -45,7 +45,7 @@ The Expo config in `apps/mobile/app.config.js` reads `.env` from either `apps/mo
 
 Set `GROQ_API_KEY` and `AI_ASSISTANT_USER_ID` in the Next.js server environment. For local development, use `apps/web/.env.local`. For deployment, set them in the web host's environment settings. The user ID is your UUID in Supabase under **Authentication → Users**.
 
-Set `EXPO_PUBLIC_AI_API_URL` in the mobile environment to the web deployment's assistant endpoint, such as `https://your-web-app.example/api/assistant`, then restart Expo or include it in your next build.
+The EAS `preview` APK profile sets `EXPO_PUBLIC_AI_API_URL` to `https://mxrvs-web.vercel.app/api/assistant`. For local development, set `EXPO_PUBLIC_AI_API_URL` to your local Next.js assistant endpoint and restart Expo.
 
 Open **HERA** (Health, Exercise and Recovery Assistant) with the floating sparkles button on web or mobile. Ask about workout sets, cardio, activity, macros, sleep, weight, or creatine. The latest chat is saved on the current browser or phone for your account, up to 101 messages. Select **New chat** to clear it and get different suggested questions. The assistant sends recent conversation turns and relevant fitness records to Groq when you ask a question. Only the configured account can send messages, and the assistant reads records through that account's Supabase permissions.
 
